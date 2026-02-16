@@ -1,5 +1,7 @@
 # Acceptance Criteria: SPEC-QUEUE-001
 
+Version: 1.1.0
+
 ## Overview
 
 This document defines the acceptance criteria for the asynchronous message processing and ESP provider integration system. All scenarios use Given/When/Then format for clarity and testability.
@@ -188,7 +190,147 @@ func TestSuccessfulDeliveryViaSES(t *testing.T) {
 
 ---
 
-### Scenario 4: Retry on Transient ESP Failure (4xx)
+### Scenario 4: Successful Delivery via Microsoft Graph
+
+**Priority**: P0 (Critical Path)
+
+**Given**:
+- Message is queued in Redis Stream
+- Microsoft Graph provider is configured with Azure AD credentials (tenant_id, client_id, client_secret)
+- Microsoft Graph API is healthy and responsive
+- OAuth 2.0 access token is cached and valid
+- Routing rule for tenant specifies Microsoft Graph as primary provider
+
+**When**:
+- Queue worker picks message from stream using XREADGROUP
+- Worker resolves provider via routing engine → Microsoft Graph
+- Worker calls `msgraphProvider.Send(ctx, msg)`
+- Microsoft Graph API POST /v1.0/users/{user-id}/sendMail returns 202 Accepted
+
+**Then**:
+- Message status updated to "sent" in delivery_logs table
+- Provider message ID stored (Microsoft Graph tracking ID if available)
+- Message acknowledged in Redis Stream with XACK
+- Prometheus metric `messages_sent_total{provider="msgraph"}` incremented
+- Trace span completed with correlation ID
+
+**Success Metrics**:
+- End-to-end latency <5s (P95)
+- Microsoft Graph delivery success rate >99.5%
+
+**Test Implementation**:
+```go
+func TestSuccessfulDeliveryViaMSGraph(t *testing.T) {
+    // Given: Queued message and mocked Microsoft Graph API
+    mockMSGraph := &MockMSGraphAPI{
+        Response: &http.Response{
+            StatusCode: 202,
+            Body:       io.NopCloser(strings.NewReader(`{}`)),
+        },
+    }
+    tokenManager := &MockTokenManager{
+        Token: "valid-access-token",
+    }
+    provider := provider.NewMSGraphProvider(mockMSGraph, tokenManager)
+
+    msg := &queue.Message{
+        ID:       "msg-010",
+        TenantID: "tenant-005",
+        From:     "sender@example.com",
+        To:       []string{"recipient@example.com"},
+    }
+
+    // When: Send via provider
+    result, err := provider.Send(ctx, msg)
+
+    // Then: Verify success
+    assert.NoError(t, err)
+    assert.Equal(t, provider.StatusSent, result.Status)
+
+    // Verify delivery log update
+    log := deliveryRepo.GetByMessageID(ctx, "msg-010")
+    assert.Equal(t, "sent", log.Status)
+    assert.Equal(t, "msgraph", log.Provider)
+}
+```
+
+---
+
+### Scenario 5: OAuth Token Refresh During Delivery
+
+**Priority**: P0 (Critical Path)
+
+**Given**:
+- Message is queued in Redis Stream
+- Microsoft Graph provider has expired OAuth token in cache
+- Azure AD token endpoint is responsive
+- Token refresh credentials are valid (tenant_id, client_id, client_secret)
+
+**When**:
+- Worker calls `msgraphProvider.Send(ctx, msg)`
+- Provider detects expired token (cache expiry or 401 response)
+- Token manager calls Azure AD token endpoint with client credentials flow
+- Azure AD returns new access token with 60-minute expiry
+- Token manager caches new token
+- Provider retries sendMail request with new token
+- Microsoft Graph API returns 202 Accepted
+
+**Then**:
+- New access token cached with expiry timestamp
+- Message delivered successfully via Microsoft Graph
+- Message status updated to "sent" in delivery_logs table
+- Prometheus metric `msgraph_token_refresh_total` incremented
+- No user-visible error or retry count increment
+
+**Success Metrics**:
+- Token refresh latency <2s
+- Token refresh success rate >99.9%
+
+**Test Implementation**:
+```go
+func TestOAuthTokenRefreshDuringDelivery(t *testing.T) {
+    // Given: Expired token and mock Azure AD
+    mockAzureAD := &MockAzureADTokenEndpoint{
+        Response: &oauth2.Token{
+            AccessToken: "new-access-token",
+            Expiry:      time.Now().Add(60 * time.Minute),
+        },
+    }
+    tokenManager := provider.NewTokenManager(mockAzureAD, "tenant-id", "client-id", "client-secret")
+
+    // Set expired token in cache
+    tokenManager.SetToken(&oauth2.Token{
+        AccessToken: "expired-token",
+        Expiry:      time.Now().Add(-1 * time.Hour),
+    })
+
+    mockMSGraph := &MockMSGraphAPI{
+        OnRequest: func(req *http.Request) (*http.Response, error) {
+            // First request with expired token fails
+            if req.Header.Get("Authorization") == "Bearer expired-token" {
+                return &http.Response{StatusCode: 401}, nil
+            }
+            // Second request with new token succeeds
+            return &http.Response{StatusCode: 202}, nil
+        },
+    }
+
+    provider := provider.NewMSGraphProvider(mockMSGraph, tokenManager)
+    msg := &queue.Message{ID: "msg-011"}
+
+    // When: Send triggers token refresh
+    result, err := provider.Send(ctx, msg)
+
+    // Then: Verify success after refresh
+    assert.NoError(t, err)
+    assert.Equal(t, provider.StatusSent, result.Status)
+    assert.Equal(t, "new-access-token", tokenManager.GetToken().AccessToken)
+}
+```
+
+---
+
+### Scenario 6: Retry on Transient ESP Failure (4xx)
 
 **Priority**: P0 (Critical Path)
 
@@ -258,7 +400,7 @@ func TestRetryOnTransientFailure(t *testing.T) {
 
 ---
 
-### Scenario 5: DLQ Routing on Permanent Failure
+### Scenario 7: DLQ Routing on Permanent Failure
 
 **Priority**: P0 (Critical Path)
 
@@ -330,7 +472,7 @@ func TestDLQRoutingOnPermanentFailure(t *testing.T) {
 
 ---
 
-### Scenario 6: ESP Provider Failover
+### Scenario 8: ESP Provider Failover
 
 **Priority**: P1 (High)
 
@@ -402,7 +544,7 @@ func TestESPProviderFailover(t *testing.T) {
 
 ---
 
-### Scenario 7: Delivery Status Webhook Processing
+### Scenario 9: Delivery Status Webhook Processing
 
 **Priority**: P1 (High)
 
@@ -477,7 +619,7 @@ func TestDeliveryStatusWebhookProcessing(t *testing.T) {
 
 ---
 
-### Scenario 8: DLQ Manual Reprocessing
+### Scenario 10: DLQ Manual Reprocessing
 
 **Priority**: P2 (Medium)
 
@@ -644,6 +786,30 @@ func TestConcurrentWorkerProcessing(t *testing.T) {
 }
 ```
 
+### Edge Case 5: Azure AD Token Expiry Mid-Batch
+
+**Scenario**:
+- Worker processes batch of 50 messages
+- OAuth token valid at batch start (expires in 5 minutes)
+- Token expires after processing 30 messages
+- Remaining 20 messages encounter 401 Unauthorized
+
+**Expected Behavior**:
+- Token manager detects expiry on first 401 response
+- Token manager refreshes token via client credentials flow
+- Failed request automatically retried with new token
+- Remaining messages use refreshed token
+- No messages moved to DLQ due to token expiry
+
+**Test**:
+```go
+func TestAzureADTokenExpiryMidBatch(t *testing.T) {
+    // Simulate token expiry after 30 messages
+    // Verify automatic refresh and retry
+    // Verify all 50 messages delivered successfully
+}
+```
+
 ---
 
 ## Performance Criteria
@@ -761,13 +927,15 @@ func TestConcurrentWorkerProcessing(t *testing.T) {
 
 ## Definition of Done
 
-1. All 8 test scenarios pass with automated tests
-2. All 4 edge cases verified with integration tests
+1. All 10 test scenarios pass with automated tests (including MS Graph scenarios)
+2. All 5 edge cases verified with integration tests (including Azure AD token expiry)
 3. Performance criteria met: 10K msg/min, <5s P95 latency, zero message loss
 4. Code coverage ≥85% with unit + integration tests
 5. Zero linter warnings (golangci-lint)
-6. Security audit confirms no API key exposure
+6. Security audit confirms no API key or client_secret exposure
 7. Operational documentation complete (runbook, monitoring setup)
 8. E2E tests run successfully in Docker Compose environment
 9. Manual verification of DLQ reprocess workflow
 10. Peer code review completed and approved
+11. Microsoft Graph OAuth token refresh verified in integration tests
+12. Azure AD client credentials flow tested with mock token endpoint

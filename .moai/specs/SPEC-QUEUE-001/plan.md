@@ -1,5 +1,7 @@
 # Implementation Plan: SPEC-QUEUE-001
 
+Version: 1.1.0
+
 ## Overview
 
 This document outlines the implementation plan for asynchronous message processing and ESP provider integration. The plan is organized by functional areas with clear task decomposition, technology stack, and architecture decisions.
@@ -15,6 +17,7 @@ This document outlines the implementation plan for asynchronous message processi
 - **SendGrid**: sendgrid/sendgrid-go v3.14+
 - **AWS SES**: aws-sdk-go-v2/service/sesv2 v1.30+
 - **Mailgun**: mailgun/mailgun-go/v4 v4.12+
+- **Microsoft Graph**: github.com/microsoftgraph/msgraph-sdk-go latest
 
 ### Database
 - **PostgreSQL 14+**: Delivery tracking and audit logs
@@ -297,7 +300,17 @@ type RoutingRule struct {
 - Deliverable: Tests with mock ESP APIs
 - Estimate: 8 hours
 
-**Phase 2 Total**: 38 hours
+**Task 2.9**: Microsoft Graph provider implementation
+- File: `backend/internal/provider/msgraph.go`
+- Deliverable: Microsoft Graph SDK integration with OAuth2 token management
+- Estimate: 8 hours
+
+**Task 2.10**: Azure AD OAuth2 token manager
+- File: `backend/internal/provider/msgraph_auth.go`
+- Deliverable: Client credentials flow with token refresh and caching
+- Estimate: 6 hours
+
+**Phase 2 Total**: 52 hours
 
 ### Phase 3: Retry and DLQ Logic (6 tasks)
 
@@ -442,20 +455,20 @@ type RoutingRule struct {
 ## Total Effort Estimate
 
 - Phase 1: 37 hours
-- Phase 2: 38 hours
+- Phase 2: 52 hours (includes MS Graph provider)
 - Phase 3: 26 hours
 - Phase 4: 25 hours
 - Phase 5: 15 hours
 - Phase 6: 22 hours
 - Phase 7: 20 hours
 
-**Total**: 183 hours (~4.5 weeks for 1 developer at 40 hours/week)
+**Total**: 197 hours (~5 weeks for 1 developer at 40 hours/week)
 
 ## File Mapping
 
 ### Backend Queue System
 - `backend/internal/queue/`: Core queue logic (producer, consumer, worker)
-- `backend/internal/provider/`: ESP provider implementations
+- `backend/internal/provider/`: ESP provider implementations (including msgraph.go, msgraph_auth.go)
 - `backend/internal/routing/`: Routing engine
 - `backend/internal/repository/`: Database access layer
 - `backend/internal/service/`: Business logic services

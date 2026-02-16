@@ -1,14 +1,20 @@
 ---
 id: SPEC-QUEUE-001
-version: "1.0.0"
+version: "1.1.0"
 status: approved
 created: "2026-02-15"
-updated: "2026-02-15"
+updated: "2026-02-16"
 author: sungwon
 priority: P0
 ---
 
 # HISTORY
+
+**2026-02-16 - v1.1.0 - Added Microsoft Graph Mail API**
+- Added Microsoft Graph Mail API as 5th ESP provider
+- Added event-driven requirement for MS Graph delivery
+- Added state-driven requirement for OAuth token refresh
+- Added unwanted requirement: SHALL NOT store Azure AD client_secret in plaintext
 
 **2026-02-15 - v1.0.0 - Initial Specification**
 - Created EARS-formatted requirements for asynchronous message processing
@@ -29,9 +35,9 @@ This specification defines the asynchronous message queue system for processing 
 - **Runtime**: Go 1.21+
 - **Queue Backend**: Redis Streams with consumer groups
 - **Database**: PostgreSQL 14+ for delivery tracking
-- **ESP Providers**: SendGrid, AWS SES, Mailgun
+- **ESP Providers**: SendGrid, AWS SES, Mailgun, Microsoft Graph Mail API
 - **Queue Library**: go-redis v9
-- **ESP SDKs**: SendGrid Go SDK, AWS SDK Go v2 SES, Mailgun Go SDK
+- **ESP SDKs**: SendGrid Go SDK, AWS SDK Go v2 SES, Mailgun Go SDK, Microsoft Graph SDK Go
 
 ## Assumptions
 
@@ -56,7 +62,7 @@ This specification defines the asynchronous message queue system for processing 
 - WHY: Status tracking provides delivery visibility and audit trail
 - IMPACT: Missing status updates prevent delivery confirmation
 
-**REQ-QUEUE-U003**: ESP provider abstraction SHALL always normalize response formats across all providers (SendGrid, AWS SES, Mailgun)
+**REQ-QUEUE-U003**: ESP provider abstraction SHALL always normalize response formats across all providers (SendGrid, AWS SES, Mailgun, Microsoft Graph)
 - WHY: Normalized responses enable consistent error handling and status mapping
 - IMPACT: Provider-specific responses require per-provider logic duplication
 
@@ -110,6 +116,10 @@ This specification defines the asynchronous message queue system for processing 
 - WHY: Acknowledgment removes message from pending state
 - IMPACT: Unacknowledged messages reappear in queue
 
+**REQ-QUEUE-E011**: WHEN delivering via Microsoft Graph, THEN system SHALL acquire OAuth 2.0 access token using client credentials flow
+- WHY: Microsoft Graph API requires Azure AD authentication for all requests
+- IMPACT: Missing or expired tokens cause authentication failures
+
 ### State-Driven Requirements (Conditional)
 
 **REQ-QUEUE-S001**: IF retry count exceeds 5, THEN system SHALL move message to Dead Letter Queue
@@ -136,9 +146,13 @@ This specification defines the asynchronous message queue system for processing 
 - WHY: Oversized messages cannot be delivered
 - IMPACT: Retry of oversized messages wastes resources
 
-**REQ-QUEUE-S007**: IF tenant routing rule missing, THEN system SHALL use default ESP provider with fallback order (SendGrid → AWS SES → Mailgun)
+**REQ-QUEUE-S007**: IF tenant routing rule missing, THEN system SHALL use default ESP provider with fallback order (SendGrid → AWS SES → Mailgun → Microsoft Graph)
 - WHY: Fallback ensures delivery even without explicit routing
 - IMPACT: Missing fallback causes delivery failures
+
+**REQ-QUEUE-S008**: IF Microsoft Graph OAuth token expires during delivery, THEN system SHALL refresh token automatically and retry request
+- WHY: Azure AD tokens expire after 60-90 minutes, requiring refresh
+- IMPACT: Expired tokens cause authentication failures without refresh
 
 ### Unwanted Requirements (Prohibitions)
 
@@ -161,6 +175,10 @@ This specification defines the asynchronous message queue system for processing 
 **REQ-QUEUE-N005**: System SHALL NOT acknowledge message before delivery confirmation or DLQ routing
 - WHY: Early acknowledgment risks message loss
 - IMPACT: Premature ACK causes delivery failures to be silent
+
+**REQ-QUEUE-N006**: System SHALL NOT store Azure AD client_secret in plaintext logs, metrics, or responses
+- WHY: Client secrets enable unauthorized access to Microsoft Graph API
+- IMPACT: Secret exposure creates security vulnerability for Office 365 accounts
 
 ### Optional Requirements (Enhancements)
 
@@ -270,7 +288,7 @@ CREATE TABLE delivery_logs (
 ## Success Criteria
 
 1. All EARS requirements implemented and verified
-2. Provider abstraction supports SendGrid, AWS SES, and Mailgun with normalized responses
+2. Provider abstraction supports SendGrid, AWS SES, Mailgun, and Microsoft Graph with normalized responses
 3. Retry strategy with exponential backoff tested under failure scenarios
 4. DLQ routing functional with manual reprocess API
 5. Delivery tracking schema populated with status transitions
@@ -278,4 +296,6 @@ CREATE TABLE delivery_logs (
 7. Zero message loss during queue backend restart (Redis persistence verified)
 8. Integration tests cover normal, retry, DLQ, and webhook scenarios
 9. 85%+ code coverage with unit and integration tests
-10. Security audit confirms no API key exposure in logs/metrics
+10. Security audit confirms no API key or client_secret exposure in logs/metrics
+11. Microsoft Graph OAuth token refresh functional with automatic retry
+12. Microsoft Graph provider delivers messages successfully via POST /v1.0/users/{user-id}/sendMail

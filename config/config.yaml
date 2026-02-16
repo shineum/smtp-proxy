@@ -1,0 +1,27 @@
+smtp:
+  host: 0.0.0.0
+  port: 587
+  max_connections: 1000
+  read_timeout: 30s
+  write_timeout: 30s
+  max_message_size: 26214400
+
+api:
+  host: 0.0.0.0
+  port: 8080
+  read_timeout: 10s
+  write_timeout: 10s
+
+database:
+  url: "postgres://smtp_proxy:smtp_proxy_dev@localhost:5432/smtp_proxy?sslmode=disable"
+  pool_min: 5
+  pool_max: 20
+  connect_timeout: 5s
+
+logging:
+  level: info
+  format: json
+
+tls:
+  cert_file: ""
+  key_file: ""

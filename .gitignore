@@ -195,3 +195,21 @@ dist-ssr/
 .vercel/
 .netlify/
 .firebase/
+
+# ===========================================
+# SMTP Proxy Specific
+# ===========================================
+# Binaries
+/smtp-server
+/api-server
+/queue-worker
+
+# Test
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Docker volumes
+postgres-data/
+redis-data/

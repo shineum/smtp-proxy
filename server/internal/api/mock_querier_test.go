@@ -37,6 +37,10 @@ type mockQuerier struct {
 	listRoutingRulesByAccountFn func(ctx context.Context, accountID uuid.UUID) ([]storage.RoutingRule, error)
 	updateRoutingRuleFn        func(ctx context.Context, arg storage.UpdateRoutingRuleParams) (storage.RoutingRule, error)
 	deleteRoutingRuleFn        func(ctx context.Context, id uuid.UUID) error
+
+	// Delivery Log methods
+	getDeliveryLogByProviderMessageIDFn func(ctx context.Context, providerMessageID sql.NullString) (storage.DeliveryLog, error)
+	updateDeliveryLogStatusFn           func(ctx context.Context, arg storage.UpdateDeliveryLogStatusParams) error
 }
 
 // --- Account methods ---
@@ -192,8 +196,34 @@ func (m *mockQuerier) CreateDeliveryLog(ctx context.Context, arg storage.CreateD
 	return storage.DeliveryLog{}, nil
 }
 
+func (m *mockQuerier) GetDeliveryLogByMessageID(ctx context.Context, messageID uuid.UUID) (storage.DeliveryLog, error) {
+	return storage.DeliveryLog{}, nil
+}
+
+func (m *mockQuerier) GetDeliveryLogByProviderMessageID(ctx context.Context, providerMessageID sql.NullString) (storage.DeliveryLog, error) {
+	if m.getDeliveryLogByProviderMessageIDFn != nil {
+		return m.getDeliveryLogByProviderMessageIDFn(ctx, providerMessageID)
+	}
+	return storage.DeliveryLog{}, nil
+}
+
+func (m *mockQuerier) IncrementRetryCount(ctx context.Context, arg storage.IncrementRetryCountParams) error {
+	return nil
+}
+
 func (m *mockQuerier) ListDeliveryLogsByMessageID(ctx context.Context, messageID uuid.UUID) ([]storage.DeliveryLog, error) {
 	return nil, nil
+}
+
+func (m *mockQuerier) ListDeliveryLogsByTenantAndStatus(ctx context.Context, arg storage.ListDeliveryLogsByTenantAndStatusParams) ([]storage.DeliveryLog, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) UpdateDeliveryLogStatus(ctx context.Context, arg storage.UpdateDeliveryLogStatusParams) error {
+	if m.updateDeliveryLogStatusFn != nil {
+		return m.updateDeliveryLogStatusFn(ctx, arg)
+	}
+	return nil
 }
 
 // --- Test helpers ---

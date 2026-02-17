@@ -47,7 +47,7 @@ func main() {
 	queries := storage.New(db.Pool)
 
 	// Build router
-	router := api.NewRouter(queries, db, log)
+	router := api.NewRouter(queries, db, log, nil)
 
 	// Configure HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.API.Host, cfg.API.Port)

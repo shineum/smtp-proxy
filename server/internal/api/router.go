@@ -7,11 +7,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
+	"github.com/sungwon/smtp-proxy/server/internal/queue"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 // NewRouter creates a chi.Mux with all routes, middleware, and handlers configured.
-func NewRouter(queries storage.Querier, db *storage.DB, log zerolog.Logger) *chi.Mux {
+// The dlq parameter is optional; when nil, DLQ reprocess endpoints are not registered.
+func NewRouter(queries storage.Querier, db *storage.DB, log zerolog.Logger, dlq *queue.DLQ) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Global middleware
@@ -25,6 +27,11 @@ func NewRouter(queries storage.Querier, db *storage.DB, log zerolog.Logger) *chi
 
 	// Account creation endpoint (no auth required)
 	r.Post("/api/v1/accounts", CreateAccountHandler(queries))
+
+	// Webhook endpoints (no auth required - called by ESP providers)
+	r.Post("/api/v1/webhooks/sendgrid", SendGridWebhookHandler(queries))
+	r.Post("/api/v1/webhooks/ses", SESWebhookHandler(queries))
+	r.Post("/api/v1/webhooks/mailgun", MailgunWebhookHandler(queries))
 
 	// API routes (auth required)
 	accountLookup := func(ctx context.Context, apiKey string) (uuid.UUID, error) {
@@ -56,6 +63,11 @@ func NewRouter(queries storage.Querier, db *storage.DB, log zerolog.Logger) *chi
 		r.Get("/routing-rules/{id}", GetRoutingRuleHandler(queries))
 		r.Put("/routing-rules/{id}", UpdateRoutingRuleHandler(queries))
 		r.Delete("/routing-rules/{id}", DeleteRoutingRuleHandler(queries))
+
+		// DLQ Reprocess
+		if dlq != nil {
+			r.Post("/dlq/reprocess", DLQReprocessHandler(dlq))
+		}
 	})
 
 	return r

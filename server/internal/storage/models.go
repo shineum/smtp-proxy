@@ -13,6 +13,53 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type DeliveryStatus string
+
+const (
+	DeliveryStatusPending    DeliveryStatus = "pending"
+	DeliveryStatusQueued     DeliveryStatus = "queued"
+	DeliveryStatusProcessing DeliveryStatus = "processing"
+	DeliveryStatusSent       DeliveryStatus = "sent"
+	DeliveryStatusFailed     DeliveryStatus = "failed"
+	DeliveryStatusBounced    DeliveryStatus = "bounced"
+	DeliveryStatusComplained DeliveryStatus = "complained"
+)
+
+func (e *DeliveryStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = DeliveryStatus(s)
+	case string:
+		*e = DeliveryStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for DeliveryStatus: %T", src)
+	}
+	return nil
+}
+
+type NullDeliveryStatus struct {
+	DeliveryStatus DeliveryStatus `json:"delivery_status"`
+	Valid          bool           `json:"valid"` // Valid is true if DeliveryStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullDeliveryStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.DeliveryStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.DeliveryStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullDeliveryStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.DeliveryStatus), nil
+}
+
 type MessageStatus string
 
 const (
@@ -114,13 +161,21 @@ type Account struct {
 }
 
 type DeliveryLog struct {
-	ID           uuid.UUID          `json:"id"`
-	MessageID    uuid.UUID          `json:"message_id"`
-	ProviderID   uuid.UUID          `json:"provider_id"`
-	Status       string             `json:"status"`
-	ResponseCode pgtype.Int4        `json:"response_code"`
-	ResponseBody pgtype.Text        `json:"response_body"`
-	DeliveredAt  pgtype.Timestamptz `json:"delivered_at"`
+	ID                uuid.UUID          `json:"id"`
+	MessageID         uuid.UUID          `json:"message_id"`
+	ProviderID        uuid.UUID          `json:"provider_id"`
+	Status            string             `json:"status"`
+	ResponseCode      pgtype.Int4        `json:"response_code"`
+	ResponseBody      pgtype.Text        `json:"response_body"`
+	DeliveredAt       pgtype.Timestamptz `json:"delivered_at"`
+	TenantID          sql.NullString     `json:"tenant_id"`
+	Provider          sql.NullString     `json:"provider"`
+	ProviderMessageID sql.NullString     `json:"provider_message_id"`
+	RetryCount        int32              `json:"retry_count"`
+	LastError         pgtype.Text        `json:"last_error"`
+	Metadata          []byte             `json:"metadata"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 type EspProvider struct {

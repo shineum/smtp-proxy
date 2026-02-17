@@ -7,32 +7,49 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createDeliveryLog = `-- name: CreateDeliveryLog :one
-INSERT INTO delivery_logs (message_id, provider_id, status, response_code, response_body)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, message_id, provider_id, status, response_code, response_body, delivered_at
+INSERT INTO delivery_logs (
+    message_id, provider_id, tenant_id, status, provider,
+    provider_message_id, response_code, response_body,
+    retry_count, last_error, metadata
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+RETURNING id, message_id, provider_id, status, response_code, response_body, delivered_at, tenant_id, provider, provider_message_id, retry_count, last_error, metadata, created_at, updated_at
 `
 
 type CreateDeliveryLogParams struct {
-	MessageID    uuid.UUID   `json:"message_id"`
-	ProviderID   uuid.UUID   `json:"provider_id"`
-	Status       string      `json:"status"`
-	ResponseCode pgtype.Int4 `json:"response_code"`
-	ResponseBody pgtype.Text `json:"response_body"`
+	MessageID         uuid.UUID      `json:"message_id"`
+	ProviderID        uuid.UUID      `json:"provider_id"`
+	TenantID          sql.NullString `json:"tenant_id"`
+	Status            string         `json:"status"`
+	Provider          sql.NullString `json:"provider"`
+	ProviderMessageID sql.NullString `json:"provider_message_id"`
+	ResponseCode      pgtype.Int4    `json:"response_code"`
+	ResponseBody      pgtype.Text    `json:"response_body"`
+	RetryCount        int32          `json:"retry_count"`
+	LastError         pgtype.Text    `json:"last_error"`
+	Metadata          []byte         `json:"metadata"`
 }
 
 func (q *Queries) CreateDeliveryLog(ctx context.Context, arg CreateDeliveryLogParams) (DeliveryLog, error) {
 	row := q.db.QueryRow(ctx, createDeliveryLog,
 		arg.MessageID,
 		arg.ProviderID,
+		arg.TenantID,
 		arg.Status,
+		arg.Provider,
+		arg.ProviderMessageID,
 		arg.ResponseCode,
 		arg.ResponseBody,
+		arg.RetryCount,
+		arg.LastError,
+		arg.Metadata,
 	)
 	var i DeliveryLog
 	err := row.Scan(
@@ -43,12 +60,92 @@ func (q *Queries) CreateDeliveryLog(ctx context.Context, arg CreateDeliveryLogPa
 		&i.ResponseCode,
 		&i.ResponseBody,
 		&i.DeliveredAt,
+		&i.TenantID,
+		&i.Provider,
+		&i.ProviderMessageID,
+		&i.RetryCount,
+		&i.LastError,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const getDeliveryLogByMessageID = `-- name: GetDeliveryLogByMessageID :one
+SELECT id, message_id, provider_id, status, response_code, response_body, delivered_at, tenant_id, provider, provider_message_id, retry_count, last_error, metadata, created_at, updated_at FROM delivery_logs WHERE message_id = $1
+`
+
+func (q *Queries) GetDeliveryLogByMessageID(ctx context.Context, messageID uuid.UUID) (DeliveryLog, error) {
+	row := q.db.QueryRow(ctx, getDeliveryLogByMessageID, messageID)
+	var i DeliveryLog
+	err := row.Scan(
+		&i.ID,
+		&i.MessageID,
+		&i.ProviderID,
+		&i.Status,
+		&i.ResponseCode,
+		&i.ResponseBody,
+		&i.DeliveredAt,
+		&i.TenantID,
+		&i.Provider,
+		&i.ProviderMessageID,
+		&i.RetryCount,
+		&i.LastError,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getDeliveryLogByProviderMessageID = `-- name: GetDeliveryLogByProviderMessageID :one
+SELECT id, message_id, provider_id, status, response_code, response_body, delivered_at, tenant_id, provider, provider_message_id, retry_count, last_error, metadata, created_at, updated_at FROM delivery_logs WHERE provider_message_id = $1
+`
+
+func (q *Queries) GetDeliveryLogByProviderMessageID(ctx context.Context, providerMessageID sql.NullString) (DeliveryLog, error) {
+	row := q.db.QueryRow(ctx, getDeliveryLogByProviderMessageID, providerMessageID)
+	var i DeliveryLog
+	err := row.Scan(
+		&i.ID,
+		&i.MessageID,
+		&i.ProviderID,
+		&i.Status,
+		&i.ResponseCode,
+		&i.ResponseBody,
+		&i.DeliveredAt,
+		&i.TenantID,
+		&i.Provider,
+		&i.ProviderMessageID,
+		&i.RetryCount,
+		&i.LastError,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const incrementRetryCount = `-- name: IncrementRetryCount :exec
+UPDATE delivery_logs
+SET retry_count = retry_count + 1,
+    last_error = $2,
+    updated_at = NOW()
+WHERE message_id = $1
+`
+
+type IncrementRetryCountParams struct {
+	MessageID uuid.UUID   `json:"message_id"`
+	LastError pgtype.Text `json:"last_error"`
+}
+
+func (q *Queries) IncrementRetryCount(ctx context.Context, arg IncrementRetryCountParams) error {
+	_, err := q.db.Exec(ctx, incrementRetryCount, arg.MessageID, arg.LastError)
+	return err
+}
+
 const listDeliveryLogsByMessageID = `-- name: ListDeliveryLogsByMessageID :many
-SELECT id, message_id, provider_id, status, response_code, response_body, delivered_at FROM delivery_logs WHERE message_id = $1 ORDER BY delivered_at DESC
+SELECT id, message_id, provider_id, status, response_code, response_body, delivered_at, tenant_id, provider, provider_message_id, retry_count, last_error, metadata, created_at, updated_at FROM delivery_logs WHERE message_id = $1 ORDER BY delivered_at DESC
 `
 
 func (q *Queries) ListDeliveryLogsByMessageID(ctx context.Context, messageID uuid.UUID) ([]DeliveryLog, error) {
@@ -68,6 +165,14 @@ func (q *Queries) ListDeliveryLogsByMessageID(ctx context.Context, messageID uui
 			&i.ResponseCode,
 			&i.ResponseBody,
 			&i.DeliveredAt,
+			&i.TenantID,
+			&i.Provider,
+			&i.ProviderMessageID,
+			&i.RetryCount,
+			&i.LastError,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -77,4 +182,94 @@ func (q *Queries) ListDeliveryLogsByMessageID(ctx context.Context, messageID uui
 		return nil, err
 	}
 	return items, nil
+}
+
+const listDeliveryLogsByTenantAndStatus = `-- name: ListDeliveryLogsByTenantAndStatus :many
+SELECT id, message_id, provider_id, status, response_code, response_body, delivered_at, tenant_id, provider, provider_message_id, retry_count, last_error, metadata, created_at, updated_at FROM delivery_logs
+WHERE tenant_id = $1 AND status = $2
+ORDER BY created_at DESC
+LIMIT $3 OFFSET $4
+`
+
+type ListDeliveryLogsByTenantAndStatusParams struct {
+	TenantID sql.NullString `json:"tenant_id"`
+	Status   string         `json:"status"`
+	Limit    int32          `json:"limit"`
+	Offset   int32          `json:"offset"`
+}
+
+func (q *Queries) ListDeliveryLogsByTenantAndStatus(ctx context.Context, arg ListDeliveryLogsByTenantAndStatusParams) ([]DeliveryLog, error) {
+	rows, err := q.db.Query(ctx, listDeliveryLogsByTenantAndStatus,
+		arg.TenantID,
+		arg.Status,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeliveryLog
+	for rows.Next() {
+		var i DeliveryLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.MessageID,
+			&i.ProviderID,
+			&i.Status,
+			&i.ResponseCode,
+			&i.ResponseBody,
+			&i.DeliveredAt,
+			&i.TenantID,
+			&i.Provider,
+			&i.ProviderMessageID,
+			&i.RetryCount,
+			&i.LastError,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateDeliveryLogStatus = `-- name: UpdateDeliveryLogStatus :exec
+UPDATE delivery_logs
+SET status = $2,
+    provider = $3,
+    provider_message_id = $4,
+    retry_count = $5,
+    last_error = $6,
+    metadata = $7,
+    updated_at = NOW()
+WHERE message_id = $1
+`
+
+type UpdateDeliveryLogStatusParams struct {
+	MessageID         uuid.UUID      `json:"message_id"`
+	Status            string         `json:"status"`
+	Provider          sql.NullString `json:"provider"`
+	ProviderMessageID sql.NullString `json:"provider_message_id"`
+	RetryCount        int32          `json:"retry_count"`
+	LastError         pgtype.Text    `json:"last_error"`
+	Metadata          []byte         `json:"metadata"`
+}
+
+func (q *Queries) UpdateDeliveryLogStatus(ctx context.Context, arg UpdateDeliveryLogStatusParams) error {
+	_, err := q.db.Exec(ctx, updateDeliveryLogStatus,
+		arg.MessageID,
+		arg.Status,
+		arg.Provider,
+		arg.ProviderMessageID,
+		arg.RetryCount,
+		arg.LastError,
+		arg.Metadata,
+	)
+	return err
 }

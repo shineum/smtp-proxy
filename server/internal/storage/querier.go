@@ -6,6 +6,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 )
@@ -22,16 +23,21 @@ type Querier interface {
 	GetAccountByAPIKey(ctx context.Context, apiKey string) (Account, error)
 	GetAccountByID(ctx context.Context, id uuid.UUID) (Account, error)
 	GetAccountByName(ctx context.Context, name string) (Account, error)
+	GetDeliveryLogByMessageID(ctx context.Context, messageID uuid.UUID) (DeliveryLog, error)
+	GetDeliveryLogByProviderMessageID(ctx context.Context, providerMessageID sql.NullString) (DeliveryLog, error)
 	GetMessageByID(ctx context.Context, id uuid.UUID) (Message, error)
 	GetProviderByID(ctx context.Context, id uuid.UUID) (EspProvider, error)
 	GetQueuedMessages(ctx context.Context, limit int32) ([]Message, error)
 	GetRoutingRuleByID(ctx context.Context, id uuid.UUID) (RoutingRule, error)
+	IncrementRetryCount(ctx context.Context, arg IncrementRetryCountParams) error
 	ListAccounts(ctx context.Context) ([]Account, error)
 	ListDeliveryLogsByMessageID(ctx context.Context, messageID uuid.UUID) ([]DeliveryLog, error)
+	ListDeliveryLogsByTenantAndStatus(ctx context.Context, arg ListDeliveryLogsByTenantAndStatusParams) ([]DeliveryLog, error)
 	ListMessagesByAccountID(ctx context.Context, arg ListMessagesByAccountIDParams) ([]Message, error)
 	ListProvidersByAccountID(ctx context.Context, accountID uuid.UUID) ([]EspProvider, error)
 	ListRoutingRulesByAccountID(ctx context.Context, accountID uuid.UUID) ([]RoutingRule, error)
 	UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error)
+	UpdateDeliveryLogStatus(ctx context.Context, arg UpdateDeliveryLogStatusParams) error
 	UpdateMessageStatus(ctx context.Context, arg UpdateMessageStatusParams) error
 	UpdateProvider(ctx context.Context, arg UpdateProviderParams) (EspProvider, error)
 	UpdateRoutingRule(ctx context.Context, arg UpdateRoutingRuleParams) (RoutingRule, error)

@@ -73,6 +73,10 @@ func NewProvider(cfg ProviderConfig, client HTTPClient) (Provider, error) {
 		return NewMailgun(cfg, client), nil
 	case "msgraph":
 		return NewMSGraph(cfg, client), nil
+	case "stdout":
+		return NewStdout(cfg), nil
+	case "file":
+		return NewFile(cfg), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", cfg.Type)
 	}

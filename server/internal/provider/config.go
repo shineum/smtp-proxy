@@ -7,7 +7,7 @@ import (
 
 // ProviderConfig holds configuration for an ESP provider.
 type ProviderConfig struct {
-	// Type identifies the provider: "sendgrid", "ses", "mailgun", "msgraph".
+	// Type identifies the provider: "sendgrid", "ses", "mailgun", "msgraph", "stdout", "file".
 	Type string
 
 	// APIKey is the authentication credential for the provider.
@@ -76,6 +76,10 @@ func (c *ProviderConfig) Validate() error {
 		if c.UserID == "" {
 			return errors.New("msgraph: user_id is required")
 		}
+	case "stdout":
+		// No configuration required.
+	case "file":
+		// Endpoint is used as output directory; optional (defaults to ./mail_output).
 	default:
 		return errors.New("unknown provider type: " + c.Type)
 	}

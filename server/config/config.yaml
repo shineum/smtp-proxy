@@ -25,3 +25,16 @@ logging:
 tls:
   cert_file: ""
   key_file: ""
+
+delivery:
+  mode: "sync"  # "sync" (no Redis required) or "async" (requires Redis)
+
+queue:
+  redis_addr: "localhost:6379"
+  redis_password: ""
+  redis_db: 0
+  stream_name: "smtp-proxy"
+  group_name: "workers"
+  consumer_id: "worker-1"
+  workers: 10
+  block_timeout: "5s"

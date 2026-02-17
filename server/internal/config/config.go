@@ -15,6 +15,8 @@ type Config struct {
 	Database DatabaseConfig `mapstructure:"database"`
 	Logging  LoggingConfig  `mapstructure:"logging"`
 	TLS      TLSConfig      `mapstructure:"tls"`
+	Delivery DeliveryConfig `mapstructure:"delivery"`
+	Queue    QueueConfig    `mapstructure:"queue"`
 }
 
 // SMTPConfig holds SMTP server configuration.
@@ -55,6 +57,26 @@ type TLSConfig struct {
 	KeyFile  string `mapstructure:"key_file"`
 }
 
+// DeliveryConfig holds message delivery configuration.
+type DeliveryConfig struct {
+	// Mode selects the delivery strategy: "sync" or "async".
+	// Sync delivers via ESP provider inline after DB insert (no Redis needed).
+	// Async enqueues to Redis Streams for background worker delivery.
+	Mode string `mapstructure:"mode"`
+}
+
+// QueueConfig holds Redis-based queue configuration for async delivery mode.
+type QueueConfig struct {
+	RedisAddr     string        `mapstructure:"redis_addr"`
+	RedisPassword string        `mapstructure:"redis_password"`
+	RedisDB       int           `mapstructure:"redis_db"`
+	StreamName    string        `mapstructure:"stream_name"`
+	GroupName     string        `mapstructure:"group_name"`
+	ConsumerID    string        `mapstructure:"consumer_id"`
+	Workers       int           `mapstructure:"workers"`
+	BlockTimeout  time.Duration `mapstructure:"block_timeout"`
+}
+
 // Load reads configuration from the given config directory path.
 // It looks for a file named "config.yaml" in that directory.
 // Environment variables with prefix SMTP_PROXY_ override file values.
@@ -65,6 +87,16 @@ func Load(configPath string) (*Config, error) {
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 	v.AddConfigPath(configPath)
+
+	// Set defaults for delivery and queue configuration.
+	v.SetDefault("delivery.mode", "sync")
+	v.SetDefault("queue.redis_addr", "localhost:6379")
+	v.SetDefault("queue.redis_db", 0)
+	v.SetDefault("queue.stream_name", "smtp-proxy")
+	v.SetDefault("queue.group_name", "workers")
+	v.SetDefault("queue.consumer_id", "worker-1")
+	v.SetDefault("queue.workers", 10)
+	v.SetDefault("queue.block_timeout", "5s")
 
 	v.SetEnvPrefix("SMTP_PROXY")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

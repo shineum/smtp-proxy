@@ -11,9 +11,14 @@ import (
 	"time"
 
 	gosmtp "github.com/emersion/go-smtp"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/sungwon/smtp-proxy/server/internal/config"
+	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
+	"github.com/sungwon/smtp-proxy/server/internal/provider"
+	"github.com/sungwon/smtp-proxy/server/internal/queue"
+	"github.com/sungwon/smtp-proxy/server/internal/routing"
 	smtpserver "github.com/sungwon/smtp-proxy/server/internal/smtp"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -40,8 +45,39 @@ func main() {
 
 	queries := storage.New(db.Pool)
 
-	// Create SMTP backend with connection limit.
-	backend := smtpserver.NewBackend(queries, log, cfg.SMTP.MaxConnections)
+	// Initialize provider registry and routing engine.
+	registry := provider.NewRegistry()
+	healthChecker := provider.NewHealthChecker(registry)
+	healthChecker.Start()
+	defer healthChecker.Stop()
+
+	router := routing.NewEngine(healthChecker)
+
+	// Create delivery service based on configured mode.
+	var deliverySvc delivery.Service
+	switch cfg.Delivery.Mode {
+	case "async":
+		redisClient := redis.NewClient(&redis.Options{
+			Addr:     cfg.Queue.RedisAddr,
+			Password: cfg.Queue.RedisPassword,
+			DB:       cfg.Queue.RedisDB,
+		})
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			log.Fatal().Err(err).Msg("failed to connect to Redis (required for async delivery mode)")
+		}
+		defer redisClient.Close()
+
+		producer := queue.NewProducer(redisClient)
+		deliverySvc = delivery.NewAsyncService(producer, log)
+		log.Info().Msg("delivery mode: async (Redis Streams)")
+
+	default:
+		deliverySvc = delivery.NewSyncService(registry, router, queries, log)
+		log.Info().Msg("delivery mode: sync (direct ESP delivery)")
+	}
+
+	// Create SMTP backend with delivery service.
+	backend := smtpserver.NewBackend(queries, deliverySvc, log, cfg.SMTP.MaxConnections)
 
 	// Configure SMTP server.
 	s := gosmtp.NewServer(backend)

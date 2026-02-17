@@ -14,6 +14,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
+	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
@@ -196,8 +197,8 @@ func (s *Session) Data(r io.Reader) error {
 	recipientsJSON, _ := json.Marshal(s.recipients)
 	headersJSON, _ := json.Marshal(headers)
 
-	// Enqueue message for later delivery.
-	_, err = s.queries.EnqueueMessage(s.ctx, storage.EnqueueMessageParams{
+	// Persist message to database.
+	dbMsg, err := s.queries.EnqueueMessage(s.ctx, storage.EnqueueMessageParams{
 		AccountID:  s.accountID,
 		Sender:     s.sender,
 		Recipients: recipientsJSON,
@@ -217,7 +218,36 @@ func (s *Session) Data(r io.Reader) error {
 	s.log.Info().
 		Str("from", s.sender).
 		Int("recipient_count", len(s.recipients)).
-		Msg("message enqueued")
+		Stringer("message_id", dbMsg.ID).
+		Msg("message persisted")
+
+	// Deliver message via configured delivery service (sync or async).
+	// Convert multi-valued headers to single-valued for delivery.
+	flatHeaders := make(map[string]string, len(headers))
+	for k, vals := range headers {
+		if len(vals) > 0 {
+			flatHeaders[k] = vals[0]
+		}
+	}
+
+	req := &delivery.Request{
+		MessageID:  dbMsg.ID,
+		AccountID:  s.accountID,
+		TenantID:   s.accountID.String(),
+		Sender:     s.sender,
+		Recipients: s.recipients,
+		Subject:    subject,
+		Headers:    flatHeaders,
+		Body:       buf.Bytes(),
+	}
+
+	if err := s.backend.delivery.DeliverMessage(s.ctx, req); err != nil {
+		// Delivery failure is logged but does not fail the SMTP transaction.
+		// The message is persisted in DB and can be retried.
+		s.log.Warn().Err(err).
+			Stringer("message_id", dbMsg.ID).
+			Msg("delivery failed (message persisted for retry)")
+	}
 
 	return nil
 }

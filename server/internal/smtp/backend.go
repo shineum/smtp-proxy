@@ -7,6 +7,7 @@ import (
 	gosmtp "github.com/emersion/go-smtp"
 	"github.com/rs/zerolog"
 
+	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -15,16 +16,18 @@ import (
 // It manages session creation and enforces connection limits.
 type Backend struct {
 	queries  storage.Querier
+	delivery delivery.Service
 	log      zerolog.Logger
 	maxConns int
 	active   atomic.Int64
 }
 
-// NewBackend creates a new SMTP backend with the given Querier, logger, and
-// maximum concurrent connection limit.
-func NewBackend(queries storage.Querier, log zerolog.Logger, maxConns int) *Backend {
+// NewBackend creates a new SMTP backend with the given Querier, delivery service,
+// logger, and maximum concurrent connection limit.
+func NewBackend(queries storage.Querier, delivery delivery.Service, log zerolog.Logger, maxConns int) *Backend {
 	return &Backend{
 		queries:  queries,
+		delivery: delivery,
 		log:      log,
 		maxConns: maxConns,
 	}

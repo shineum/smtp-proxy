@@ -14,8 +14,21 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
+	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
+
+// mockDeliveryService implements delivery.Service for testing.
+type mockDeliveryService struct {
+	deliverFn func(ctx context.Context, req *delivery.Request) error
+}
+
+func (m *mockDeliveryService) DeliverMessage(ctx context.Context, req *delivery.Request) error {
+	if m.deliverFn != nil {
+		return m.deliverFn(ctx, req)
+	}
+	return nil
+}
 
 // errNotFound is a sentinel error for simulating "not found" database results.
 var errNotFound = errors.New("no rows")
@@ -136,10 +149,30 @@ func (m *mockQuerier) UpdateRoutingRule(_ context.Context, _ storage.UpdateRouti
 	return storage.RoutingRule{}, nil
 }
 
+func (m *mockQuerier) GetDeliveryLogByMessageID(_ context.Context, _ uuid.UUID) (storage.DeliveryLog, error) {
+	return storage.DeliveryLog{}, nil
+}
+
+func (m *mockQuerier) GetDeliveryLogByProviderMessageID(_ context.Context, _ sql.NullString) (storage.DeliveryLog, error) {
+	return storage.DeliveryLog{}, nil
+}
+
+func (m *mockQuerier) IncrementRetryCount(_ context.Context, _ storage.IncrementRetryCountParams) error {
+	return nil
+}
+
+func (m *mockQuerier) ListDeliveryLogsByTenantAndStatus(_ context.Context, _ storage.ListDeliveryLogsByTenantAndStatusParams) ([]storage.DeliveryLog, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) UpdateDeliveryLogStatus(_ context.Context, _ storage.UpdateDeliveryLogStatusParams) error {
+	return nil
+}
+
 // newTestSession creates a Session with a mock backend for testing.
 func newTestSession(mock *mockQuerier) *Session {
 	log := zerolog.Nop()
-	b := NewBackend(mock, log, 100)
+	b := NewBackend(mock, &mockDeliveryService{}, log, 100)
 	b.active.Add(1) // Simulate that the session was counted on creation.
 	return &Session{
 		ctx:     context.Background(),
@@ -575,7 +608,7 @@ func TestSession_Reset(t *testing.T) {
 func TestSession_Logout_DecrementsCounter(t *testing.T) {
 	mock := &mockQuerier{}
 	log := zerolog.Nop()
-	b := NewBackend(mock, log, 100)
+	b := NewBackend(mock, &mockDeliveryService{}, log, 100)
 	b.active.Add(3) // Simulate 3 active sessions.
 
 	s := &Session{

@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: smtp_proxy
       POSTGRES_PASSWORD: smtp_proxy_dev

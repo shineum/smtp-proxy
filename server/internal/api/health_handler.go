@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/sungwon/smtp-proxy/internal/storage"
+	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 // HealthzHandler handles GET /healthz.

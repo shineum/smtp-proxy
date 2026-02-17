@@ -13,8 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
-	"github.com/sungwon/smtp-proxy/internal/auth"
-	"github.com/sungwon/smtp-proxy/internal/storage"
+	"github.com/sungwon/smtp-proxy/server/internal/auth"
+	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 // errNotFound is a sentinel error for simulating "not found" database results.

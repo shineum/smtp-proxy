@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
-	"github.com/sungwon/smtp-proxy/internal/logger"
+	"github.com/sungwon/smtp-proxy/server/internal/logger"
 )
 
 // LoggingMiddleware logs each HTTP request with method, path, status code, and duration.

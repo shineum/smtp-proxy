@@ -7,8 +7,8 @@ import (
 	gosmtp "github.com/emersion/go-smtp"
 	"github.com/rs/zerolog"
 
-	"github.com/sungwon/smtp-proxy/internal/logger"
-	"github.com/sungwon/smtp-proxy/internal/storage"
+	"github.com/sungwon/smtp-proxy/server/internal/logger"
+	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 // Backend implements the go-smtp Backend interface.

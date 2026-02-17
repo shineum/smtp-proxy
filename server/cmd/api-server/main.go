@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sungwon/smtp-proxy/internal/api"
-	"github.com/sungwon/smtp-proxy/internal/config"
-	"github.com/sungwon/smtp-proxy/internal/logger"
-	"github.com/sungwon/smtp-proxy/internal/storage"
+	"github.com/sungwon/smtp-proxy/server/internal/api"
+	"github.com/sungwon/smtp-proxy/server/internal/config"
+	"github.com/sungwon/smtp-proxy/server/internal/logger"
+	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 func main() {

@@ -8,8 +8,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/sungwon/smtp-proxy/internal/auth"
-	"github.com/sungwon/smtp-proxy/internal/storage"
+	"github.com/sungwon/smtp-proxy/server/internal/auth"
+	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 // accountRequest is the JSON body for creating or updating an account.

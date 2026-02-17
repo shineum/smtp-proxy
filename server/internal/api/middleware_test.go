@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/rs/zerolog"
-	"github.com/sungwon/smtp-proxy/internal/logger"
+	"github.com/sungwon/smtp-proxy/server/internal/logger"
 )
 
 func TestCorrelationIDMiddleware_GeneratesID(t *testing.T) {

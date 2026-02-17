@@ -1,4 +1,4 @@
-module github.com/sungwon/smtp-proxy
+module github.com/sungwon/smtp-proxy/server
 
 go 1.24.0
 

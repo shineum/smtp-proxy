@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sungwon/smtp-proxy/internal/storage"
+	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 func TestNewDB_ConnectAndPing(t *testing.T) {

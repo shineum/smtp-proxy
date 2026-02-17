@@ -6,8 +6,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
-	"github.com/sungwon/smtp-proxy/internal/auth"
-	"github.com/sungwon/smtp-proxy/internal/storage"
+	"github.com/sungwon/smtp-proxy/server/internal/auth"
+	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 // NewRouter creates a chi.Mux with all routes, middleware, and handlers configured.

@@ -12,10 +12,10 @@ import (
 
 	gosmtp "github.com/emersion/go-smtp"
 
-	"github.com/sungwon/smtp-proxy/internal/config"
-	"github.com/sungwon/smtp-proxy/internal/logger"
-	smtpserver "github.com/sungwon/smtp-proxy/internal/smtp"
-	"github.com/sungwon/smtp-proxy/internal/storage"
+	"github.com/sungwon/smtp-proxy/server/internal/config"
+	"github.com/sungwon/smtp-proxy/server/internal/logger"
+	smtpserver "github.com/sungwon/smtp-proxy/server/internal/smtp"
+	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 func main() {

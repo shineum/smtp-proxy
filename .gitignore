@@ -200,9 +200,10 @@ dist-ssr/
 # SMTP Proxy Specific
 # ===========================================
 # Binaries
-/smtp-server
-/api-server
-/queue-worker
+server/bin/
+
+# Go workspace
+go.work.sum
 
 # Test
 *.test

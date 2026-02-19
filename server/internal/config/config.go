@@ -10,13 +10,40 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	SMTP     SMTPConfig     `mapstructure:"smtp"`
-	API      APIConfig      `mapstructure:"api"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Logging  LoggingConfig  `mapstructure:"logging"`
-	TLS      TLSConfig      `mapstructure:"tls"`
-	Delivery DeliveryConfig `mapstructure:"delivery"`
-	Queue    QueueConfig    `mapstructure:"queue"`
+	SMTP      SMTPConfig      `mapstructure:"smtp"`
+	API       APIConfig       `mapstructure:"api"`
+	Database  DatabaseConfig  `mapstructure:"database"`
+	Logging   LoggingConfig   `mapstructure:"logging"`
+	TLS       TLSConfig       `mapstructure:"tls"`
+	Delivery  DeliveryConfig  `mapstructure:"delivery"`
+	Queue     QueueConfig     `mapstructure:"queue"`
+	Auth      AuthConfig      `mapstructure:"auth"`
+	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
+}
+
+// AuthConfig holds JWT authentication configuration.
+type AuthConfig struct {
+	// SigningKey is the HMAC secret key for signing JWT tokens.
+	// MUST be set via environment variable SMTP_PROXY_AUTH_SIGNING_KEY in production.
+	SigningKey string `mapstructure:"signing_key"`
+	// AccessTokenExpiry is the duration an access token remains valid.
+	AccessTokenExpiry time.Duration `mapstructure:"access_token_expiry"`
+	// RefreshTokenExpiry is the duration a refresh token remains valid.
+	RefreshTokenExpiry time.Duration `mapstructure:"refresh_token_expiry"`
+	// Issuer is the JWT issuer claim.
+	Issuer string `mapstructure:"issuer"`
+	// Audience is the JWT audience claim.
+	Audience string `mapstructure:"audience"`
+}
+
+// RateLimitConfig holds rate limiting configuration.
+type RateLimitConfig struct {
+	// DefaultMonthlyLimit is the default monthly email limit per tenant.
+	DefaultMonthlyLimit int `mapstructure:"default_monthly_limit"`
+	// LoginAttemptsLimit is the max failed login attempts before lockout.
+	LoginAttemptsLimit int `mapstructure:"login_attempts_limit"`
+	// LoginLockoutDuration is how long a user is locked out after exceeding attempts.
+	LoginLockoutDuration time.Duration `mapstructure:"login_lockout_duration"`
 }
 
 // SMTPConfig holds SMTP server configuration.
@@ -97,6 +124,18 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("queue.consumer_id", "worker-1")
 	v.SetDefault("queue.workers", 10)
 	v.SetDefault("queue.block_timeout", "5s")
+
+	// Set defaults for auth configuration.
+	v.SetDefault("auth.signing_key", "")
+	v.SetDefault("auth.access_token_expiry", "15m")
+	v.SetDefault("auth.refresh_token_expiry", "168h") // 7 days
+	v.SetDefault("auth.issuer", "smtp-proxy")
+	v.SetDefault("auth.audience", "smtp-proxy-api")
+
+	// Set defaults for rate limiting configuration.
+	v.SetDefault("rate_limit.default_monthly_limit", 10000)
+	v.SetDefault("rate_limit.login_attempts_limit", 5)
+	v.SetDefault("rate_limit.login_lockout_duration", "15m")
 
 	v.SetEnvPrefix("SMTP_PROXY")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

@@ -38,3 +38,16 @@ queue:
   consumer_id: "worker-1"
   workers: 10
   block_timeout: "5s"
+
+auth:
+  # HMAC signing key for JWT tokens. Override via SMTP_PROXY_AUTH_SIGNING_KEY env var.
+  signing_key: "change-me-in-production-use-a-strong-secret"
+  access_token_expiry: "15m"
+  refresh_token_expiry: "168h"  # 7 days
+  issuer: "smtp-proxy"
+  audience: "smtp-proxy-api"
+
+rate_limit:
+  default_monthly_limit: 10000
+  login_attempts_limit: 5
+  login_lockout_duration: "15m"

@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/emersion/go-smtp v0.24.0
 	github.com/go-chi/chi/v5 v5.2.5
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/prometheus/client_golang v1.23.2

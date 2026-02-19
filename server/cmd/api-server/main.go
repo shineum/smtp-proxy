@@ -9,7 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/api"
+	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/config"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -46,8 +49,56 @@ func main() {
 	// Create sqlc queries instance
 	queries := storage.New(db.Pool)
 
-	// Build router
-	router := api.NewRouter(queries, db, log, nil)
+	// Initialize JWT service
+	jwtService := auth.NewJWTService(auth.JWTConfig{
+		SigningKey:         cfg.Auth.SigningKey,
+		AccessTokenExpiry:  cfg.Auth.AccessTokenExpiry,
+		RefreshTokenExpiry: cfg.Auth.RefreshTokenExpiry,
+		Issuer:             cfg.Auth.Issuer,
+		Audience:           cfg.Auth.Audience,
+	})
+
+	if cfg.Auth.SigningKey == "" || cfg.Auth.SigningKey == "change-me-in-production-use-a-strong-secret" {
+		log.Warn().Msg("JWT signing key is not set or using default value; set SMTP_PROXY_AUTH_SIGNING_KEY in production")
+	}
+
+	// Initialize audit store (bridges auth.AuditStore to storage.Querier)
+	auditStore := auth.NewFuncAuditStore(func(ctx context.Context, entry auth.AuditEntry) error {
+		_, err := queries.CreateAuditLog(ctx, storage.CreateAuditLogParams{
+			TenantID:     entry.TenantID,
+			UserID:       pgtype.UUID{Bytes: entry.UserID, Valid: entry.UserID != uuid.Nil},
+			Action:       entry.Action,
+			ResourceType: entry.ResourceType,
+			ResourceID:   pgtype.Text{String: entry.ResourceID, Valid: entry.ResourceID != ""},
+			Result:       entry.Result,
+			Metadata:     auth.MetadataToJSON(entry.Metadata),
+			IPAddress:    auth.IPToInet(entry.IPAddress),
+		})
+		return err
+	})
+	auditLogger := auth.NewAuditLogger(auditStore, log)
+
+	// Initialize rate limiter (nil Redis client for sync mode, will skip rate limiting)
+	var rateLimiter *auth.RateLimiter
+	if cfg.Delivery.Mode == "async" {
+		rateLimiter = auth.NewRateLimiter(nil, auth.RateLimitConfig{
+			DefaultMonthlyLimit:  cfg.RateLimit.DefaultMonthlyLimit,
+			LoginAttemptsLimit:   cfg.RateLimit.LoginAttemptsLimit,
+			LoginLockoutDuration: cfg.RateLimit.LoginLockoutDuration,
+		})
+		log.Info().Msg("rate limiter initialized (Redis will be configured with queue)")
+	}
+
+	// Build router with full config
+	router := api.NewRouterWithConfig(api.RouterConfig{
+		Queries:     queries,
+		DB:          db,
+		Log:         log,
+		DLQ:         nil,
+		JWTService:  jwtService,
+		AuditLogger: auditLogger,
+		RateLimiter: rateLimiter,
+	})
 
 	// Configure HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.API.Host, cfg.API.Port)

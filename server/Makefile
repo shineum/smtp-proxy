@@ -1,10 +1,12 @@
-.PHONY: build test lint clean migrate-up migrate-down sqlc docker-up docker-down
+.PHONY: build test lint clean migrate-up migrate-down sqlc \
+       dev-certs docker-build docker-up docker-down docker-logs test-email
 
 # Build
 build:
 	go build -o bin/smtp-server ./cmd/smtp-server
 	go build -o bin/api-server ./cmd/api-server
 	go build -o bin/queue-worker ./cmd/queue-worker
+	go build -o bin/test-client ./cmd/test-client
 
 # Test
 test:
@@ -29,12 +31,34 @@ migrate-down:
 sqlc:
 	sqlc generate
 
+# TLS Certificates
+dev-certs:
+	../scripts/generate-dev-certs.sh
+
 # Docker
+docker-build:
+	docker compose -f ../docker-compose.yml build
+
 docker-up:
-	docker-compose up -d
+	docker compose -f ../docker-compose.yml up -d
 
 docker-down:
-	docker-compose down
+	docker compose -f ../docker-compose.yml down
+
+docker-logs:
+	docker compose -f ../docker-compose.yml logs -f
+
+# Test email via test-client
+test-email:
+	go run ./cmd/test-client \
+		--host localhost \
+		--port 587 \
+		--tls starttls \
+		--insecure \
+		--from test@example.com \
+		--to recipient@example.com \
+		--subject "Test Email" \
+		--body "Hello from smtp-proxy test client."
 
 # Clean
 clean:

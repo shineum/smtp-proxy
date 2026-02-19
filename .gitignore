@@ -214,3 +214,6 @@ coverage.html
 # Docker volumes
 postgres-data/
 redis-data/
+
+# TLS certificates (generated, not committed)
+certs/

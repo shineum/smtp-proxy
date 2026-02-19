@@ -1,19 +1,163 @@
+# =============================================================================
+# Docker Compose - smtp-proxy local development stack
+#
+# Usage:
+#   docker compose up -d              # Start all services
+#   docker compose up -d --build      # Rebuild and start
+#   docker compose logs -f            # Follow logs
+#   docker compose down               # Stop all services
+#   docker compose down -v            # Stop and remove volumes
+#
+# Prerequisites:
+#   1. Copy .env.example to .env and adjust values
+#   2. Generate TLS certificates: ./scripts/generate-dev-certs.sh
+# =============================================================================
+
 services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 17
+  # ---------------------------------------------------------------------------
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: smtp_proxy
-      POSTGRES_PASSWORD: smtp_proxy_dev
-      POSTGRES_DB: smtp_proxy
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-smtp_proxy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smtp_proxy_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-smtp_proxy}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U smtp_proxy"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smtp_proxy}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - backend
+
+  # ---------------------------------------------------------------------------
+  # Redis 7.4
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  # ---------------------------------------------------------------------------
+  # Database migrations (runs once and exits)
+  # ---------------------------------------------------------------------------
+  migrate:
+    image: migrate/migrate:v4.18.1
+    command:
+      - "-path=/migrations"
+      - "-database"
+      - "${SMTP_PROXY_DATABASE_URL:-postgres://smtp_proxy:smtp_proxy_dev@postgres:5432/smtp_proxy?sslmode=disable}"
+      - "up"
+    volumes:
+      - ./server/migrations:/migrations:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+
+  # ---------------------------------------------------------------------------
+  # SMTP Server
+  # ---------------------------------------------------------------------------
+  smtp-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      target: smtp-server
+    ports:
+      - "587:587"
+      - "465:465"
+    environment:
+      SMTP_PROXY_DATABASE_URL: ${SMTP_PROXY_DATABASE_URL:-postgres://smtp_proxy:smtp_proxy_dev@postgres:5432/smtp_proxy?sslmode=disable}
+      SMTP_PROXY_QUEUE_REDIS_ADDR: ${SMTP_PROXY_QUEUE_REDIS_ADDR:-redis:6379}
+      SMTP_PROXY_DELIVERY_MODE: ${SMTP_PROXY_DELIVERY_MODE:-sync}
+      SMTP_PROXY_TLS_CERT_FILE: ${SMTP_PROXY_TLS_CERT_FILE:-/certs/server.crt}
+      SMTP_PROXY_TLS_KEY_FILE: ${SMTP_PROXY_TLS_KEY_FILE:-/certs/server.key}
+      SMTP_PROXY_AUTH_SIGNING_KEY: ${SMTP_PROXY_AUTH_SIGNING_KEY:-dev-signing-key-change-in-production}
+      SMTP_PROXY_LOGGING_LEVEL: ${SMTP_PROXY_LOGGING_LEVEL:-debug}
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - backend
+
+  # ---------------------------------------------------------------------------
+  # API Server
+  # ---------------------------------------------------------------------------
+  api-server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      target: api-server
+    ports:
+      - "8080:8080"
+    environment:
+      SMTP_PROXY_DATABASE_URL: ${SMTP_PROXY_DATABASE_URL:-postgres://smtp_proxy:smtp_proxy_dev@postgres:5432/smtp_proxy?sslmode=disable}
+      SMTP_PROXY_QUEUE_REDIS_ADDR: ${SMTP_PROXY_QUEUE_REDIS_ADDR:-redis:6379}
+      SMTP_PROXY_DELIVERY_MODE: ${SMTP_PROXY_DELIVERY_MODE:-sync}
+      SMTP_PROXY_AUTH_SIGNING_KEY: ${SMTP_PROXY_AUTH_SIGNING_KEY:-dev-signing-key-change-in-production}
+      SMTP_PROXY_LOGGING_LEVEL: ${SMTP_PROXY_LOGGING_LEVEL:-debug}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - backend
+
+  # ---------------------------------------------------------------------------
+  # Queue Worker
+  # ---------------------------------------------------------------------------
+  queue-worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      target: queue-worker
+    environment:
+      SMTP_PROXY_DATABASE_URL: ${SMTP_PROXY_DATABASE_URL:-postgres://smtp_proxy:smtp_proxy_dev@postgres:5432/smtp_proxy?sslmode=disable}
+      SMTP_PROXY_QUEUE_REDIS_ADDR: ${SMTP_PROXY_QUEUE_REDIS_ADDR:-redis:6379}
+      SMTP_PROXY_DELIVERY_MODE: ${SMTP_PROXY_DELIVERY_MODE:-sync}
+      SMTP_PROXY_AUTH_SIGNING_KEY: ${SMTP_PROXY_AUTH_SIGNING_KEY:-dev-signing-key-change-in-production}
+      SMTP_PROXY_LOGGING_LEVEL: ${SMTP_PROXY_LOGGING_LEVEL:-debug}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - backend
 
 volumes:
   postgres-data:
+  redis-data:
+
+networks:
+  backend:
+    driver: bridge

@@ -13,12 +13,21 @@ import (
 
 type Querier interface {
 	CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error)
+	CreateAuditLog(ctx context.Context, arg CreateAuditLogParams) (AuditLog, error)
 	CreateDeliveryLog(ctx context.Context, arg CreateDeliveryLogParams) (DeliveryLog, error)
 	CreateProvider(ctx context.Context, arg CreateProviderParams) (EspProvider, error)
 	CreateRoutingRule(ctx context.Context, arg CreateRoutingRuleParams) (RoutingRule, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateTenant(ctx context.Context, arg CreateTenantParams) (Tenant, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteAccount(ctx context.Context, id uuid.UUID) error
+	DeleteExpiredSessions(ctx context.Context) error
 	DeleteProvider(ctx context.Context, id uuid.UUID) error
 	DeleteRoutingRule(ctx context.Context, id uuid.UUID) error
+	DeleteSession(ctx context.Context, id uuid.UUID) error
+	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
+	DeleteTenant(ctx context.Context, id uuid.UUID) error
+	DeleteUser(ctx context.Context, id uuid.UUID) error
 	EnqueueMessage(ctx context.Context, arg EnqueueMessageParams) (Message, error)
 	GetAccountByAPIKey(ctx context.Context, apiKey string) (Account, error)
 	GetAccountByID(ctx context.Context, id uuid.UUID) (Account, error)
@@ -29,18 +38,35 @@ type Querier interface {
 	GetProviderByID(ctx context.Context, id uuid.UUID) (EspProvider, error)
 	GetQueuedMessages(ctx context.Context, limit int32) ([]Message, error)
 	GetRoutingRuleByID(ctx context.Context, id uuid.UUID) (RoutingRule, error)
+	GetSessionByID(ctx context.Context, id uuid.UUID) (Session, error)
+	GetTenantByID(ctx context.Context, id uuid.UUID) (Tenant, error)
+	GetTenantByName(ctx context.Context, name string) (Tenant, error)
+	GetUserByEmail(ctx context.Context, email string) (User, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	IncrementFailedAttempts(ctx context.Context, id uuid.UUID) error
+	IncrementMonthlySent(ctx context.Context, id uuid.UUID) error
 	IncrementRetryCount(ctx context.Context, arg IncrementRetryCountParams) error
 	ListAccounts(ctx context.Context) ([]Account, error)
+	ListAuditLogsByTenantID(ctx context.Context, arg ListAuditLogsByTenantIDParams) ([]AuditLog, error)
 	ListDeliveryLogsByMessageID(ctx context.Context, messageID uuid.UUID) ([]DeliveryLog, error)
 	ListDeliveryLogsByTenantAndStatus(ctx context.Context, arg ListDeliveryLogsByTenantAndStatusParams) ([]DeliveryLog, error)
 	ListMessagesByAccountID(ctx context.Context, arg ListMessagesByAccountIDParams) ([]Message, error)
 	ListProvidersByAccountID(ctx context.Context, accountID uuid.UUID) ([]EspProvider, error)
 	ListRoutingRulesByAccountID(ctx context.Context, accountID uuid.UUID) ([]RoutingRule, error)
+	ListSessionsByUserID(ctx context.Context, userID uuid.UUID) ([]Session, error)
+	ListTenants(ctx context.Context) ([]Tenant, error)
+	ListUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([]User, error)
+	ResetFailedAttempts(ctx context.Context, id uuid.UUID) error
+	ResetMonthlySent(ctx context.Context, id uuid.UUID) error
 	UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error)
 	UpdateDeliveryLogStatus(ctx context.Context, arg UpdateDeliveryLogStatusParams) error
 	UpdateMessageStatus(ctx context.Context, arg UpdateMessageStatusParams) error
 	UpdateProvider(ctx context.Context, arg UpdateProviderParams) (EspProvider, error)
 	UpdateRoutingRule(ctx context.Context, arg UpdateRoutingRuleParams) (RoutingRule, error)
+	UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Tenant, error)
+	UpdateUserLastLogin(ctx context.Context, id uuid.UUID) error
+	UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) (User, error)
+	UpdateUserStatus(ctx context.Context, arg UpdateUserStatusParams) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -2,15 +2,63 @@
 # Docker Compose - smtp-proxy local development stack
 #
 # Quick start:
-#   docker compose up -d --build            # Start everything + seed dev account
+#   docker compose up -d --build            # Start everything (zero prerequisites)
 #   docker compose run --rm test-client     # Send test email (zero flags)
 #   docker compose down                     # Stop all services
-#
-# Prerequisites:
-#   Generate TLS certificates: ./scripts/generate-dev-certs.sh
 # =============================================================================
 
 services:
+  # ---------------------------------------------------------------------------
+  # TLS certificate generator (runs once, skips if certs exist)
+  # ---------------------------------------------------------------------------
+  certs:
+    image: alpine:3.21
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        if [ -f /certs/server.crt ] && [ -f /certs/server.key ]; then
+          echo "Certificates already exist, skipping."
+          exit 0
+        fi
+        apk add --no-cache openssl > /dev/null 2>&1
+        echo "Generating dev TLS certificates..."
+        mkdir -p /certs
+        openssl genrsa -out /certs/ca.key 4096 2>/dev/null
+        openssl req -new -x509 -key /certs/ca.key -out /certs/ca.crt -days 365 \
+          -subj "/C=US/ST=Dev/L=Local/O=smtp-proxy/OU=Development/CN=smtp-proxy-dev-ca" 2>/dev/null
+        openssl genrsa -out /certs/server.key 2048 2>/dev/null
+        cat > /tmp/openssl.cnf <<'CONF'
+        [req]
+        default_bits       = 2048
+        prompt             = no
+        distinguished_name = dn
+        req_extensions     = v3_req
+        [dn]
+        C=US
+        ST=Dev
+        L=Local
+        O=smtp-proxy
+        OU=Development
+        CN=localhost
+        [v3_req]
+        subjectAltName = @alt_names
+        [alt_names]
+        DNS.1 = localhost
+        DNS.2 = smtp-server
+        DNS.3 = api-server
+        IP.1  = 127.0.0.1
+        CONF
+        openssl req -new -key /certs/server.key -out /tmp/server.csr -config /tmp/openssl.cnf 2>/dev/null
+        openssl x509 -req -in /tmp/server.csr -CA /certs/ca.crt -CAkey /certs/ca.key \
+          -CAcreateserial -out /certs/server.crt -days 365 \
+          -extfile /tmp/openssl.cnf -extensions v3_req 2>/dev/null
+        chmod 644 /certs/*.crt /certs/*.key
+        echo "Dev TLS certificates generated."
+    volumes:
+      - ./certs:/certs
+    networks:
+      - backend
+
   # ---------------------------------------------------------------------------
   # PostgreSQL 17
   # ---------------------------------------------------------------------------
@@ -86,6 +134,8 @@ services:
     volumes:
       - ./certs:/certs:ro
     depends_on:
+      certs:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:

@@ -5,10 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/mail"
 	"strings"
 
+	"github.com/emersion/go-sasl"
 	gosmtp "github.com/emersion/go-smtp"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -33,50 +35,59 @@ type Session struct {
 	recipients     []string
 }
 
-// AuthPlain handles SMTP AUTH PLAIN. It validates the username/password
-// against stored account credentials and populates the session with account
-// details on success.
-func (s *Session) AuthPlain(username, password string) error {
-	s.log.Info().Str("username", username).Msg("auth attempt")
+// AuthMechanisms returns the list of supported SASL authentication mechanisms.
+func (s *Session) AuthMechanisms() []string {
+	return []string{sasl.Plain}
+}
 
-	account, err := s.queries.GetAccountByName(s.ctx, username)
-	if err != nil {
-		s.log.Warn().Str("username", username).Msg("auth failed: account not found")
-		return &gosmtp.SMTPError{
-			Code:         535,
-			EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
-			Message:      "Authentication failed",
-		}
+// Auth handles SASL authentication for the given mechanism.
+func (s *Session) Auth(mech string) (sasl.Server, error) {
+	if mech != sasl.Plain {
+		return nil, fmt.Errorf("unsupported mechanism: %s", mech)
 	}
 
-	if err := auth.VerifyPassword(account.PasswordHash, password); err != nil {
-		s.log.Warn().Str("username", username).Msg("auth failed: invalid password")
-		return &gosmtp.SMTPError{
-			Code:         535,
-			EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
-			Message:      "Authentication failed",
+	return sasl.NewPlainServer(func(identity, username, password string) error {
+		s.log.Info().Str("username", username).Msg("auth attempt")
+
+		account, err := s.queries.GetAccountByName(s.ctx, username)
+		if err != nil {
+			s.log.Warn().Str("username", username).Msg("auth failed: account not found")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
 		}
-	}
 
-	s.accountID = account.ID
-	s.authenticated = true
-
-	// Parse allowed domains from JSONB column.
-	var domains []string
-	if len(account.AllowedDomains) > 0 {
-		if err := json.Unmarshal(account.AllowedDomains, &domains); err != nil {
-			s.log.Error().Err(err).Msg("failed to parse allowed domains")
-			domains = nil
+		if err := auth.VerifyPassword(account.PasswordHash, password); err != nil {
+			s.log.Warn().Str("username", username).Msg("auth failed: invalid password")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
 		}
-	}
-	s.allowedDomains = domains
 
-	s.log.Info().
-		Str("username", username).
-		Str("account_id", account.ID.String()).
-		Msg("auth successful")
+		s.accountID = account.ID
+		s.authenticated = true
 
-	return nil
+		// Parse allowed domains from JSONB column.
+		var domains []string
+		if len(account.AllowedDomains) > 0 {
+			if err := json.Unmarshal(account.AllowedDomains, &domains); err != nil {
+				s.log.Error().Err(err).Msg("failed to parse allowed domains")
+				domains = nil
+			}
+		}
+		s.allowedDomains = domains
+
+		s.log.Info().
+			Str("username", username).
+			Str("account_id", account.ID.String()).
+			Msg("auth successful")
+
+		return nil
+	}), nil
 }
 
 // Mail handles the MAIL FROM command. It validates that the session is

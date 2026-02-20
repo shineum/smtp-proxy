@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/emersion/go-sasl"
 	gosmtp "github.com/emersion/go-smtp"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -46,6 +47,10 @@ func (m *mockQuerier) CreateAccount(_ context.Context, _ storage.CreateAccountPa
 	return storage.Account{}, nil
 }
 
+func (m *mockQuerier) CreateAuditLog(_ context.Context, _ storage.CreateAuditLogParams) (storage.AuditLog, error) {
+	return storage.AuditLog{}, nil
+}
+
 func (m *mockQuerier) CreateDeliveryLog(_ context.Context, _ storage.CreateDeliveryLogParams) (storage.DeliveryLog, error) {
 	return storage.DeliveryLog{}, nil
 }
@@ -58,7 +63,23 @@ func (m *mockQuerier) CreateRoutingRule(_ context.Context, _ storage.CreateRouti
 	return storage.RoutingRule{}, nil
 }
 
+func (m *mockQuerier) CreateSession(_ context.Context, _ storage.CreateSessionParams) (storage.Session, error) {
+	return storage.Session{}, nil
+}
+
+func (m *mockQuerier) CreateTenant(_ context.Context, _ storage.CreateTenantParams) (storage.Tenant, error) {
+	return storage.Tenant{}, nil
+}
+
+func (m *mockQuerier) CreateUser(_ context.Context, _ storage.CreateUserParams) (storage.User, error) {
+	return storage.User{}, nil
+}
+
 func (m *mockQuerier) DeleteAccount(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) DeleteExpiredSessions(_ context.Context) error {
 	return nil
 }
 
@@ -67,6 +88,22 @@ func (m *mockQuerier) DeleteProvider(_ context.Context, _ uuid.UUID) error {
 }
 
 func (m *mockQuerier) DeleteRoutingRule(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) DeleteSession(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) DeleteSessionsByUserID(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) DeleteTenant(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) DeleteUser(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
@@ -97,6 +134,14 @@ func (m *mockQuerier) GetAccountByName(ctx context.Context, name string) (storag
 	return storage.Account{}, errNotFound
 }
 
+func (m *mockQuerier) GetDeliveryLogByMessageID(_ context.Context, _ uuid.UUID) (storage.DeliveryLog, error) {
+	return storage.DeliveryLog{}, nil
+}
+
+func (m *mockQuerier) GetDeliveryLogByProviderMessageID(_ context.Context, _ sql.NullString) (storage.DeliveryLog, error) {
+	return storage.DeliveryLog{}, nil
+}
+
 func (m *mockQuerier) GetMessageByID(_ context.Context, _ uuid.UUID) (storage.Message, error) {
 	return storage.Message{}, nil
 }
@@ -113,11 +158,51 @@ func (m *mockQuerier) GetRoutingRuleByID(_ context.Context, _ uuid.UUID) (storag
 	return storage.RoutingRule{}, nil
 }
 
+func (m *mockQuerier) GetSessionByID(_ context.Context, _ uuid.UUID) (storage.Session, error) {
+	return storage.Session{}, nil
+}
+
+func (m *mockQuerier) GetTenantByID(_ context.Context, _ uuid.UUID) (storage.Tenant, error) {
+	return storage.Tenant{}, nil
+}
+
+func (m *mockQuerier) GetTenantByName(_ context.Context, _ string) (storage.Tenant, error) {
+	return storage.Tenant{}, nil
+}
+
+func (m *mockQuerier) GetUserByEmail(_ context.Context, _ string) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) GetUserByID(_ context.Context, _ uuid.UUID) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) IncrementFailedAttempts(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) IncrementMonthlySent(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) IncrementRetryCount(_ context.Context, _ storage.IncrementRetryCountParams) error {
+	return nil
+}
+
 func (m *mockQuerier) ListAccounts(_ context.Context) ([]storage.Account, error) {
 	return nil, nil
 }
 
+func (m *mockQuerier) ListAuditLogsByTenantID(_ context.Context, _ storage.ListAuditLogsByTenantIDParams) ([]storage.AuditLog, error) {
+	return nil, nil
+}
+
 func (m *mockQuerier) ListDeliveryLogsByMessageID(_ context.Context, _ uuid.UUID) ([]storage.DeliveryLog, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) ListDeliveryLogsByTenantAndStatus(_ context.Context, _ storage.ListDeliveryLogsByTenantAndStatusParams) ([]storage.DeliveryLog, error) {
 	return nil, nil
 }
 
@@ -133,8 +218,32 @@ func (m *mockQuerier) ListRoutingRulesByAccountID(_ context.Context, _ uuid.UUID
 	return nil, nil
 }
 
+func (m *mockQuerier) ListSessionsByUserID(_ context.Context, _ uuid.UUID) ([]storage.Session, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) ListTenants(_ context.Context) ([]storage.Tenant, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) ListUsersByTenantID(_ context.Context, _ uuid.UUID) ([]storage.User, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) ResetFailedAttempts(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) ResetMonthlySent(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
 func (m *mockQuerier) UpdateAccount(_ context.Context, _ storage.UpdateAccountParams) (storage.Account, error) {
 	return storage.Account{}, nil
+}
+
+func (m *mockQuerier) UpdateDeliveryLogStatus(_ context.Context, _ storage.UpdateDeliveryLogStatusParams) error {
+	return nil
 }
 
 func (m *mockQuerier) UpdateMessageStatus(_ context.Context, _ storage.UpdateMessageStatusParams) error {
@@ -149,24 +258,20 @@ func (m *mockQuerier) UpdateRoutingRule(_ context.Context, _ storage.UpdateRouti
 	return storage.RoutingRule{}, nil
 }
 
-func (m *mockQuerier) GetDeliveryLogByMessageID(_ context.Context, _ uuid.UUID) (storage.DeliveryLog, error) {
-	return storage.DeliveryLog{}, nil
+func (m *mockQuerier) UpdateTenant(_ context.Context, _ storage.UpdateTenantParams) (storage.Tenant, error) {
+	return storage.Tenant{}, nil
 }
 
-func (m *mockQuerier) GetDeliveryLogByProviderMessageID(_ context.Context, _ sql.NullString) (storage.DeliveryLog, error) {
-	return storage.DeliveryLog{}, nil
-}
-
-func (m *mockQuerier) IncrementRetryCount(_ context.Context, _ storage.IncrementRetryCountParams) error {
+func (m *mockQuerier) UpdateUserLastLogin(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockQuerier) ListDeliveryLogsByTenantAndStatus(_ context.Context, _ storage.ListDeliveryLogsByTenantAndStatusParams) ([]storage.DeliveryLog, error) {
-	return nil, nil
+func (m *mockQuerier) UpdateUserRole(_ context.Context, _ storage.UpdateUserRoleParams) (storage.User, error) {
+	return storage.User{}, nil
 }
 
-func (m *mockQuerier) UpdateDeliveryLogStatus(_ context.Context, _ storage.UpdateDeliveryLogStatusParams) error {
-	return nil
+func (m *mockQuerier) UpdateUserStatus(_ context.Context, _ storage.UpdateUserStatusParams) (storage.User, error) {
+	return storage.User{}, nil
 }
 
 // newTestSession creates a Session with a mock backend for testing.
@@ -201,9 +306,35 @@ func hashTestPassword(t *testing.T, password string) string {
 	return hash
 }
 
-// --- AuthPlain Tests ---
+// --- Auth Tests ---
 
-func TestSession_AuthPlain_Success(t *testing.T) {
+// authenticateSession exercises the full SASL PLAIN flow via AuthMechanisms + Auth.
+func authenticateSession(t *testing.T, s *Session, username, password string) error {
+	t.Helper()
+
+	mechs := s.AuthMechanisms()
+	if len(mechs) != 1 || mechs[0] != sasl.Plain {
+		t.Fatalf("expected [PLAIN], got %v", mechs)
+	}
+
+	server, err := s.Auth(sasl.Plain)
+	if err != nil {
+		t.Fatalf("Auth(PLAIN) returned error: %v", err)
+	}
+
+	// SASL PLAIN initial response: \x00username\x00password
+	response := []byte("\x00" + username + "\x00" + password)
+	_, done, err := server.Next(response)
+	if err != nil {
+		return err
+	}
+	if !done {
+		t.Fatal("expected SASL exchange to be done after one step")
+	}
+	return nil
+}
+
+func TestSession_Auth_Success(t *testing.T) {
 	accountID := uuid.New()
 	passwordHash := hashTestPassword(t, "correct-password")
 	domainsJSON, _ := json.Marshal([]string{"example.com"})
@@ -223,7 +354,7 @@ func TestSession_AuthPlain_Success(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := s.AuthPlain("testuser", "correct-password")
+	err := authenticateSession(t, s, "testuser", "correct-password")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -238,7 +369,7 @@ func TestSession_AuthPlain_Success(t *testing.T) {
 	}
 }
 
-func TestSession_AuthPlain_InvalidPassword(t *testing.T) {
+func TestSession_Auth_InvalidPassword(t *testing.T) {
 	passwordHash := hashTestPassword(t, "correct-password")
 
 	mock := &mockQuerier{
@@ -252,7 +383,7 @@ func TestSession_AuthPlain_InvalidPassword(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := s.AuthPlain("testuser", "wrong-password")
+	err := authenticateSession(t, s, "testuser", "wrong-password")
 	if err == nil {
 		t.Fatal("expected error for invalid password")
 	}
@@ -269,7 +400,7 @@ func TestSession_AuthPlain_InvalidPassword(t *testing.T) {
 	}
 }
 
-func TestSession_AuthPlain_UnknownUser(t *testing.T) {
+func TestSession_Auth_UnknownUser(t *testing.T) {
 	mock := &mockQuerier{
 		getAccountByNameFn: func(_ context.Context, _ string) (storage.Account, error) {
 			return storage.Account{}, errNotFound
@@ -277,7 +408,7 @@ func TestSession_AuthPlain_UnknownUser(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := s.AuthPlain("unknown", "any-password")
+	err := authenticateSession(t, s, "unknown", "any-password")
 	if err == nil {
 		t.Fatal("expected error for unknown user")
 	}
@@ -288,6 +419,15 @@ func TestSession_AuthPlain_UnknownUser(t *testing.T) {
 	}
 	if smtpErr.Code != 535 {
 		t.Errorf("expected code 535, got %d", smtpErr.Code)
+	}
+}
+
+func TestSession_Auth_UnsupportedMechanism(t *testing.T) {
+	s := newTestSession(&mockQuerier{})
+
+	_, err := s.Auth("LOGIN")
+	if err == nil {
+		t.Fatal("expected error for unsupported mechanism")
 	}
 }
 

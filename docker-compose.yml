@@ -1,16 +1,13 @@
 # =============================================================================
 # Docker Compose - smtp-proxy local development stack
 #
-# Usage:
-#   docker compose up -d              # Start all services
-#   docker compose up -d --build      # Rebuild and start
-#   docker compose logs -f            # Follow logs
-#   docker compose down               # Stop all services
-#   docker compose down -v            # Stop and remove volumes
+# Quick start:
+#   docker compose up -d --build            # Start everything + seed dev account
+#   docker compose run --rm test-client     # Send test email (zero flags)
+#   docker compose down                     # Stop all services
 #
 # Prerequisites:
-#   1. Copy .env.example to .env and adjust values
-#   2. Generate TLS certificates: ./scripts/generate-dev-certs.sh
+#   Generate TLS certificates: ./scripts/generate-dev-certs.sh
 # =============================================================================
 
 services:
@@ -131,6 +128,31 @@ services:
       - backend
 
   # ---------------------------------------------------------------------------
+  # Dev account seed (runs once and exits, like migrate)
+  # ---------------------------------------------------------------------------
+  seed:
+    image: curlimages/curl:8.11.1
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        STATUS=$$(curl -s -o /dev/null -w '%{http_code}' \
+          -X POST http://api-server:8080/api/v1/accounts \
+          -H 'Content-Type: application/json' \
+          -d '{"name":"dev","email":"dev@example.com","password":"dev","allowed_domains":["example.com"]}')
+        if [ "$$STATUS" = "201" ]; then
+          echo "Dev account created (dev / dev)"
+        elif [ "$$STATUS" = "500" ]; then
+          echo "Dev account already exists"
+        else
+          echo "WARNING: account creation returned HTTP $$STATUS"
+        fi
+    depends_on:
+      api-server:
+        condition: service_healthy
+    networks:
+      - backend
+
+  # ---------------------------------------------------------------------------
   # Queue Worker
   # ---------------------------------------------------------------------------
   queue-worker:
@@ -151,6 +173,30 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+    networks:
+      - backend
+
+  # ---------------------------------------------------------------------------
+  # Test Client (on-demand: docker compose run --rm test-client)
+  # ---------------------------------------------------------------------------
+  test-client:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      target: test-client
+    command:
+      - "--host=smtp-server"
+      - "--port=587"
+      - "--tls=starttls"
+      - "--insecure"
+      - "--user=dev"
+      - "--password=dev"
+      - "--from=dev@example.com"
+      - "--to=recipient@example.com"
+      - "--subject=Test Email"
+      - "--body=Hello from smtp-proxy test client."
+    profiles:
+      - tools
     networks:
       - backend
 

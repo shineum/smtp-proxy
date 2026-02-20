@@ -48,14 +48,16 @@ docker-down:
 docker-logs:
 	docker compose -f ../docker-compose.yml logs -f
 
-# Test email via test-client
+# Test email via test-client (local Go run, requires dev account)
 test-email:
 	go run ./cmd/test-client \
 		--host localhost \
 		--port 587 \
 		--tls starttls \
 		--insecure \
-		--from test@example.com \
+		--user dev \
+		--password dev \
+		--from dev@example.com \
 		--to recipient@example.com \
 		--subject "Test Email" \
 		--body "Hello from smtp-proxy test client."

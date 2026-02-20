@@ -21,6 +21,7 @@ import (
 	"github.com/sungwon/smtp-proxy/server/internal/routing"
 	smtpserver "github.com/sungwon/smtp-proxy/server/internal/smtp"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
+	"github.com/sungwon/smtp-proxy/server/internal/tlsutil"
 )
 
 func main() {
@@ -88,18 +89,26 @@ func main() {
 	s.MaxMessageBytes = cfg.SMTP.MaxMessageSize
 	s.AllowInsecureAuth = false
 
-	// Configure TLS if certificates are provided.
+	// Configure TLS: load from files if provided, otherwise auto-generate.
+	var cert tls.Certificate
 	if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+		cert, err = tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to load TLS certificate")
 		}
-		s.TLSConfig = &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
+		log.Info().Msg("TLS: loaded certificate from files")
+	} else {
+		cert, err = tlsutil.GenerateSelfSigned()
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to generate self-signed TLS certificate")
 		}
-		s.EnableSMTPUTF8 = true
+		log.Info().Msg("TLS: using auto-generated self-signed certificate")
 	}
+	s.TLSConfig = &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+	s.EnableSMTPUTF8 = true
 
 	// Start listening on the configured address.
 	ln, err := net.Listen("tcp", s.Addr)

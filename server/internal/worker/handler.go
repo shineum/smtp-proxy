@@ -11,29 +11,25 @@ import (
 
 	"github.com/sungwon/smtp-proxy/server/internal/provider"
 	"github.com/sungwon/smtp-proxy/server/internal/queue"
-	"github.com/sungwon/smtp-proxy/server/internal/routing"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 // Handler implements queue.MessageHandler. It delivers messages via ESP
 // providers and records delivery results in the database.
 type Handler struct {
-	registry *provider.Registry
-	router   *routing.Engine
+	resolver *provider.ProviderResolver
 	queries  storage.Querier
 	log      zerolog.Logger
 }
 
 // NewHandler creates a Handler that delivers queue messages via ESP providers.
 func NewHandler(
-	registry *provider.Registry,
-	router *routing.Engine,
+	resolver *provider.ProviderResolver,
 	queries storage.Querier,
 	log zerolog.Logger,
 ) *Handler {
 	return &Handler{
-		registry: registry,
-		router:   router,
+		resolver: resolver,
 		queries:  queries,
 		log:      log,
 	}
@@ -55,26 +51,26 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		h.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to set processing status")
 	}
 
-	// Resolve provider for this tenant.
-	providerName, err := h.router.ResolveProvider(ctx, msg.TenantID)
+	// Look up the message in DB to get the account ID.
+	dbMsg, err := h.queries.GetMessageByID(ctx, messageID)
+	if err != nil {
+		h.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to get message from database")
+		h.recordFailure(ctx, messageID, "", fmt.Errorf("get message: %w", err))
+		return fmt.Errorf("get message %s: %w", msg.ID, err)
+	}
+
+	// Resolve provider for this account.
+	p, err := h.resolver.Resolve(ctx, dbMsg.AccountID)
 	if err != nil {
 		h.log.Error().Err(err).
-			Str("tenant_id", msg.TenantID).
+			Stringer("account_id", dbMsg.AccountID).
 			Str("message_id", msg.ID).
 			Msg("failed to resolve provider")
 		h.recordFailure(ctx, messageID, "", err)
 		return fmt.Errorf("resolve provider: %w", err)
 	}
 
-	p, err := h.registry.Get(providerName)
-	if err != nil {
-		h.log.Error().Err(err).
-			Str("provider", providerName).
-			Str("message_id", msg.ID).
-			Msg("provider not found in registry")
-		h.recordFailure(ctx, messageID, providerName, err)
-		return fmt.Errorf("get provider %s: %w", providerName, err)
-	}
+	providerName := p.GetName()
 
 	// Build provider message.
 	providerMsg := &provider.Message{

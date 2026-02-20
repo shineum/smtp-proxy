@@ -14,7 +14,6 @@ import (
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
 	"github.com/sungwon/smtp-proxy/server/internal/provider"
 	"github.com/sungwon/smtp-proxy/server/internal/queue"
-	"github.com/sungwon/smtp-proxy/server/internal/routing"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 	"github.com/sungwon/smtp-proxy/server/internal/worker"
 )
@@ -39,13 +38,9 @@ func main() {
 
 	queries := storage.New(db.Pool)
 
-	// Initialize provider registry and routing engine.
-	registry := provider.NewRegistry()
-	healthChecker := provider.NewHealthChecker(registry)
-	healthChecker.Start()
-	defer healthChecker.Stop()
-
-	router := routing.NewEngine(healthChecker)
+	// Initialize provider resolver with HTTP client and stdout fallback.
+	httpClient := provider.NewHTTPClient(30 * time.Second)
+	resolver := provider.NewResolver(queries, httpClient, log)
 
 	// Connect to Redis.
 	redisClient := redis.NewClient(&redis.Options{
@@ -65,7 +60,7 @@ func main() {
 	}
 
 	// Create message handler with delivery logic.
-	handler := worker.NewHandler(registry, router, queries, log)
+	handler := worker.NewHandler(resolver, queries, log)
 
 	// Build worker pool configuration.
 	workerCount := cfg.Queue.Workers

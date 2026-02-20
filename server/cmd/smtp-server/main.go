@@ -18,7 +18,6 @@ import (
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
 	"github.com/sungwon/smtp-proxy/server/internal/provider"
 	"github.com/sungwon/smtp-proxy/server/internal/queue"
-	"github.com/sungwon/smtp-proxy/server/internal/routing"
 	smtpserver "github.com/sungwon/smtp-proxy/server/internal/smtp"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 	"github.com/sungwon/smtp-proxy/server/internal/tlsutil"
@@ -46,13 +45,9 @@ func main() {
 
 	queries := storage.New(db.Pool)
 
-	// Initialize provider registry and routing engine.
-	registry := provider.NewRegistry()
-	healthChecker := provider.NewHealthChecker(registry)
-	healthChecker.Start()
-	defer healthChecker.Stop()
-
-	router := routing.NewEngine(healthChecker)
+	// Initialize provider resolver with HTTP client and stdout fallback.
+	httpClient := provider.NewHTTPClient(30 * time.Second)
+	resolver := provider.NewResolver(queries, httpClient, log)
 
 	// Create delivery service based on configured mode.
 	var deliverySvc delivery.Service
@@ -73,7 +68,7 @@ func main() {
 		log.Info().Msg("delivery mode: async (Redis Streams)")
 
 	default:
-		deliverySvc = delivery.NewSyncService(registry, router, queries, log)
+		deliverySvc = delivery.NewSyncService(resolver, queries, log)
 		log.Info().Msg("delivery mode: sync (direct ESP delivery)")
 	}
 

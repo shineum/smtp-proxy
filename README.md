@@ -1,6 +1,6 @@
 # smtp-proxy
 
-SMTP proxy server that accepts email via SMTP and delivers through configurable ESP providers (SendGrid, SES, Mailgun, Microsoft Graph). Supports multi-tenant accounts, sync/async delivery modes, and a REST API for management.
+Multi-tenant SMTP proxy server that accepts email via SMTP and delivers asynchronously through configurable ESP providers (SendGrid, SES, Mailgun, Microsoft Graph). Features pluggable message body storage, Redis Streams queue with retry and dead-letter support, JWT/API-key authentication, and a REST API for management.
 
 ## Quick Start
 
@@ -22,39 +22,115 @@ The seed service automatically creates a dev account (`dev@example.com` / `dev`)
 
 ## Architecture
 
+### System Overview
+
 ```
-                    ┌─────────────┐
-  SMTP :587/465 ──▶ │ smtp-server  │──▶ ProviderResolver ──▶ ESP (SendGrid, SES, ...)
-                    └──────┬──────┘          │
-                           │            (no provider?)
-                           │                ▼
-                    ┌──────┴──────┐     stdout default
-                    │  PostgreSQL │
-                    └──────┬──────┘
-                           │
-  REST :8080 ──────▶ │  api-server  │
-                    └─────────────┘
+                      ┌──────────────────────────────────────────────────┐
+                      │                  smtp-proxy                      │
+                      │                                                  │
+  SMTP :587/465 ────▶ │  ┌─────────────┐     ┌─────────────────────┐    │
+                      │  │ smtp-server  │────▶│  Message Storage    │    │
+                      │  │  (go-smtp)   │     │  (local / S3)       │    │
+                      │  └──────┬───────┘     └─────────────────────┘    │
+                      │         │ enqueue ID                   ▲ fetch   │
+                      │         ▼                              │         │
+                      │  ┌─────────────┐     ┌────────────────┴────┐    │
+                      │  │    Redis     │────▶│   queue-worker      │───▶│──▶ ESP
+                      │  │   Streams    │     │ (10 concurrent)     │    │   (SendGrid,
+                      │  └─────────────┘     └─────────────────────┘    │    SES, ...)
+                      │                                                  │
+                      │  ┌─────────────┐     ┌─────────────────────┐    │
+  REST :8080 ────────▶│  │ api-server  │────▶│    PostgreSQL 17    │    │
+                      │  │   (chi)     │     │  (RLS, multi-tenant) │    │
+                      │  └─────────────┘     └─────────────────────┘    │
+                      └──────────────────────────────────────────────────┘
 ```
 
-**Delivery Modes:**
+### Data Flow
 
-| Mode | Description | Redis Required |
-|------|-------------|----------------|
-| `sync` (default) | Delivers inline during SMTP session | No |
-| `async` | Queues to Redis Streams, processed by worker | Yes |
+**SMTP Ingestion** (smtp-server):
+
+```
+Client → SMTP AUTH (SASL PLAIN) → domain validation → read message
+       → store body in MessageStore (local file / S3)
+       → persist metadata in PostgreSQL (sender, recipients, headers, storage_ref)
+       → enqueue ID-only reference to Redis Streams
+       → retry enqueue up to 3x (500ms, 1s, 2s backoff)
+       → return SMTP 250 OK
+```
+
+**Async Delivery** (queue-worker):
+
+```
+Redis XREADGROUP → fetch message metadata from PostgreSQL
+                 → fetch body from MessageStore (3x retry: 1s, 2s, 4s)
+                 → resolve ESP provider for account (5-min cache)
+                 → deliver via provider
+                 → record delivery log (duration, status, attempt)
+                 → on failure: retry up to 5x (30s, 1m, 2m, 5m, 15m + jitter)
+                 → on exhaustion: move to dead-letter queue
+```
+
+**Message Status Lifecycle:**
+
+```
+queued → processing → delivered
+                    → failed (ESP error)
+                    → enqueue_failed (Redis unreachable)
+                    → storage_error (body not found)
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| ID-only queue messages | Keeps Redis payload small; body stored externally |
+| Pluggable MessageStore | Swap local filesystem for S3 without code changes |
+| Per-account provider resolution | Each tenant configures their own ESP independently |
+| Enqueue retry with backoff | Tolerates transient Redis failures without losing mail |
+| Row-Level Security | PostgreSQL RLS enforces tenant isolation at the database layer |
+| Self-signed TLS auto-generation | Zero-config STARTTLS for development |
 
 ## Services
 
 | Service | Port | Description |
 |---------|------|-------------|
 | `smtp-server` | 587, 465 | SMTP listener with STARTTLS and implicit TLS |
-| `api-server` | 8080 | REST API for accounts, providers, routing |
-| `queue-worker` | - | Async delivery worker (when `DELIVERY_MODE=async`) |
-| `postgres` | - | PostgreSQL 17 |
-| `redis` | - | Redis 7.4 (queue backend) |
-| `migrate` | - | Database migrations (runs once) |
+| `api-server` | 8080 | REST API for accounts, providers, routing, auth |
+| `queue-worker` | - | Async delivery worker (Redis Streams consumer) |
+| `postgres` | - | PostgreSQL 17 with Row-Level Security |
+| `redis` | - | Redis 7.4 (queue + rate limiting) |
+| `migrate` | - | Database migrations (runs once on startup) |
 | `seed` | - | Creates dev account (runs once) |
 | `test-client` | - | CLI tool for sending test emails |
+
+## Project Structure
+
+```
+server/
+├── cmd/
+│   ├── smtp-server/       # SMTP ingestion service
+│   ├── api-server/        # REST API service
+│   ├── queue-worker/      # Async delivery worker
+│   └── test-client/       # CLI email sender
+├── internal/
+│   ├── api/               # HTTP handlers, middleware, router (chi)
+│   ├── auth/              # JWT, API key, RBAC, rate limiting, audit
+│   ├── config/            # Viper config loading with env override
+│   ├── delivery/          # Delivery service interface + async implementation
+│   ├── logger/            # zerolog wrapper (stdout / file / cloudwatch)
+│   ├── metrics/           # Prometheus metrics (SMTP, API, DB, queue)
+│   ├── msgstore/          # Message body storage (local filesystem, S3)
+│   ├── provider/          # ESP provider interface + implementations
+│   ├── queue/             # Redis Streams producer, consumer, DLQ, retry
+│   ├── routing/           # Routing engine (primary + fallback providers)
+│   ├── smtp/              # SMTP backend + session (go-smtp)
+│   ├── storage/           # sqlc-generated PostgreSQL queries
+│   ├── tlsutil/           # Self-signed TLS certificate generator
+│   └── worker/            # Queue message handler (delivery orchestration)
+├── migrations/            # 9 up/down SQL migration pairs
+└── config/config.yaml     # Default application config
+```
 
 ## Configuration
 
@@ -70,17 +146,21 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SMTP_PROXY_DATABASE_URL` | `postgres://smtp_proxy:smtp_proxy_dev@postgres:5432/smtp_proxy?sslmode=disable` | PostgreSQL connection string |
-| `SMTP_PROXY_DELIVERY_MODE` | `sync` | `sync` or `async` |
-| `SMTP_PROXY_QUEUE_REDIS_ADDR` | `redis:6379` | Redis address (async mode) |
-| `SMTP_PROXY_AUTH_SIGNING_KEY` | `dev-signing-key-change-in-production` | JWT signing key |
+| `SMTP_PROXY_DATABASE_URL` | `postgres://...@postgres:5432/smtp_proxy` | PostgreSQL connection string |
+| `SMTP_PROXY_QUEUE_REDIS_ADDR` | `redis:6379` | Redis address |
+| `SMTP_PROXY_AUTH_SIGNING_KEY` | `change-me-in-production...` | JWT HMAC signing key |
+| `SMTP_PROXY_STORAGE_TYPE` | `local` | Message body storage: `local` or `s3` |
+| `SMTP_PROXY_STORAGE_PATH` | `/data/messages` | Local storage directory |
+| `SMTP_PROXY_STORAGE_S3_BUCKET` | *(empty)* | S3 bucket name (when type=s3) |
+| `SMTP_PROXY_STORAGE_S3_ENDPOINT` | *(empty)* | S3 endpoint (MinIO-compatible) |
 | `SMTP_PROXY_TLS_CERT_FILE` | *(auto-generate)* | Path to TLS certificate |
 | `SMTP_PROXY_TLS_KEY_FILE` | *(auto-generate)* | Path to TLS private key |
-| `SMTP_PROXY_LOGGING_LEVEL` | `debug` | `debug`, `info`, `warn`, `error` |
+| `SMTP_PROXY_LOGGING_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `SMTP_PROXY_LOGGING_OUTPUT` | `stdout` | `stdout`, `file`, `cloudwatch` |
 
 ### Application Config
 
-Full configuration is in `server/config/config.yaml`:
+Full configuration in `server/config/config.yaml`:
 
 ```yaml
 smtp:
@@ -89,8 +169,18 @@ smtp:
   max_connections: 1000
   max_message_size: 26214400  # 25MB
 
-delivery:
-  mode: sync                  # sync | async
+queue:
+  redis_addr: "localhost:6379"
+  stream_name: "smtp-proxy"
+  workers: 10
+  block_timeout: "5s"
+
+storage:
+  type: "local"               # local | s3
+  path: "/data/messages"
+  s3_bucket: ""
+  s3_endpoint: ""             # MinIO-compatible endpoint
+  s3_region: "us-east-1"
 
 auth:
   signing_key: "..."
@@ -131,7 +221,16 @@ rate_limit:
 | PUT | `/api/v1/providers/{id}` | Update provider |
 | DELETE | `/api/v1/providers/{id}` | Delete provider |
 
-Supported provider types: `sendgrid`, `ses`, `mailgun`, `smtp`, `msgraph`
+Supported provider types: `sendgrid`, `ses`, `mailgun`, `smtp`, `msgraph`, `stdout`, `file`
+
+### Routing Rules (API Key Auth)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/routing-rules` | Create routing rule |
+| GET | `/api/v1/routing-rules` | List routing rules |
+| PUT | `/api/v1/routing-rules/{id}` | Update routing rule |
+| DELETE | `/api/v1/routing-rules/{id}` | Delete routing rule |
 
 ### Authentication (JWT)
 
@@ -141,6 +240,16 @@ Supported provider types: `sendgrid`, `ses`, `mailgun`, `smtp`, `msgraph`
 | POST | `/api/v1/auth/refresh` | Refresh access token |
 | POST | `/api/v1/auth/logout` | Invalidate refresh token |
 
+### Multi-Tenant Management (JWT Auth)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/v1/tenants` | None | Create tenant |
+| GET | `/api/v1/mt/tenants/{id}` | owner/admin | Get tenant |
+| GET | `/api/v1/mt/users` | Any JWT | List users |
+| POST | `/api/v1/mt/users` | owner/admin | Create user |
+| PUT | `/api/v1/mt/users/{id}/role` | owner/admin | Update user role |
+
 ### Webhooks (No Auth)
 
 | Method | Path | Description |
@@ -149,17 +258,23 @@ Supported provider types: `sendgrid`, `ses`, `mailgun`, `smtp`, `msgraph`
 | POST | `/api/v1/webhooks/ses` | AWS SES delivery events |
 | POST | `/api/v1/webhooks/mailgun` | Mailgun delivery events |
 
+### Dead-Letter Queue (API Key Auth)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/dlq/reprocess` | Reprocess failed messages from DLQ |
+
 ## Provider Resolution
 
-When the SMTP server receives a message, it resolves the ESP provider for the account:
+When a message is dequeued for delivery, the worker resolves the ESP provider:
 
-1. Look up the account's providers from the database (cached for 5 minutes)
-2. Select the first enabled provider (ordered by creation date)
-3. If no provider is configured, fall back to `stdout` (prints to server logs)
-
-To configure a provider for an account, use the REST API:
+1. Check in-memory cache (5-minute TTL per account)
+2. Query the account's providers from PostgreSQL (ordered by creation date)
+3. Select the first enabled provider
+4. If no provider configured, fall back to `stdout` (prints to server logs)
 
 ```bash
+# Configure a SendGrid provider for an account
 curl -X POST http://localhost:8080/api/v1/providers \
   -H "Authorization: Bearer <api-key>" \
   -H "Content-Type: application/json" \
@@ -171,6 +286,67 @@ curl -X POST http://localhost:8080/api/v1/providers \
     "enabled": true
   }'
 ```
+
+## Message Storage
+
+Message bodies are stored externally (not in the database) for scalability.
+
+| Backend | Config | Description |
+|---------|--------|-------------|
+| `local` | `type: local`, `path: /data/messages` | Local filesystem with atomic writes |
+| `s3` | `type: s3`, `s3_bucket: ...` | AWS S3 or MinIO-compatible storage |
+
+The SMTP server stores the body via `MessageStore.Put()` and persists only metadata + a `storage_ref` in PostgreSQL. The worker fetches the body via `MessageStore.Get()` at delivery time.
+
+If the MessageStore write fails during SMTP ingestion, the system falls back to inline body storage in PostgreSQL for reliability.
+
+## Retry and Error Handling
+
+| Stage | Retries | Backoff Schedule | On Exhaustion |
+|-------|---------|------------------|---------------|
+| SMTP enqueue (session to Redis) | 3 | 500ms, 1s, 2s | Status: `enqueue_failed`, SMTP 451 |
+| Worker storage read | 3 | 1s, 2s, 4s | Status: `storage_error`, delivery log |
+| Worker ESP delivery | 5 | 30s, 1m, 2m, 5m, 15m (+jitter) | Move to DLQ |
+
+Failed messages in the dead-letter queue can be reprocessed via `POST /api/v1/dlq/reprocess`.
+
+## Database
+
+PostgreSQL 17 with 9 migrations applied automatically on startup.
+
+**Tables:** `accounts`, `esp_providers`, `routing_rules`, `messages`, `delivery_logs`, `tenants`, `users`, `sessions`, `audit_logs`
+
+**Multi-tenant isolation:** Row-Level Security (RLS) policies enforce tenant boundaries using the `app.current_tenant_id` PostgreSQL session variable, set automatically by API middleware.
+
+Data is persisted in a Docker volume (`postgres-data`). To reset:
+
+```bash
+docker compose down -v   # removes volumes
+docker compose up -d --build
+```
+
+## Observability
+
+### Logging
+
+Structured JSON logging via zerolog with per-session correlation IDs.
+
+| Output | Description |
+|--------|-------------|
+| `stdout` | Default, writes to standard output |
+| `file` | Rotating log files via lumberjack |
+| `cloudwatch` | CloudWatch Logs integration (placeholder) |
+
+### Metrics
+
+Prometheus metrics exposed by the API server:
+
+| Namespace | Examples |
+|-----------|---------|
+| SMTP | `smtp_connections_total`, `smtp_active_sessions`, `smtp_message_enqueued_total` |
+| API | `api_requests_total`, `api_request_duration_seconds` |
+| Database | `db_connections_active`, `db_query_duration_seconds` |
+| Queue | `queue_depth` |
 
 ## Test Client
 
@@ -201,19 +377,6 @@ docker compose run --rm test-client \
 | `--count` | `1` | Number of emails to send |
 | `--rate` | `1` | Emails per second |
 
-## Database
-
-PostgreSQL 17 with 7 migrations applied automatically on startup.
-
-**Tables:** `accounts`, `esp_providers`, `routing_rules`, `messages`, `delivery_logs`, `tenants`, `users`, `sessions`, `audit_logs`
-
-Data is persisted in a Docker volume (`postgres-data`). To reset:
-
-```bash
-docker compose down -v   # removes volumes
-docker compose up -d --build
-```
-
 ## Development
 
 ```bash
@@ -229,3 +392,19 @@ docker build --target builder -f server/Dockerfile server/
 # Rebuild a single service
 docker compose up -d --build smtp-server
 ```
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Language | Go 1.24 |
+| SMTP Server | go-smtp + go-sasl |
+| HTTP Router | chi v5 |
+| Database | PostgreSQL 17 (pgx v5, sqlc) |
+| Queue | Redis 7.4 Streams |
+| Auth | JWT (HS256) + bcrypt + API keys |
+| Metrics | Prometheus client_golang |
+| Logging | zerolog |
+| Config | Viper |
+| Object Storage | AWS SDK v2 (S3-compatible) |
+| Container | Docker multi-stage builds |

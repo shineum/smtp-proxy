@@ -3,38 +3,11 @@ package delivery
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"testing"
 
 	"github.com/google/uuid"
-	"github.com/rs/zerolog"
 
-	"github.com/sungwon/smtp-proxy/server/internal/provider"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
-
-// mockProvider implements provider.Provider for testing.
-type mockProvider struct {
-	name     string
-	sendFn   func(ctx context.Context, msg *provider.Message) (*provider.DeliveryResult, error)
-	healthFn func(ctx context.Context) error
-}
-
-func (m *mockProvider) Send(ctx context.Context, msg *provider.Message) (*provider.DeliveryResult, error) {
-	if m.sendFn != nil {
-		return m.sendFn(ctx, msg)
-	}
-	return &provider.DeliveryResult{ProviderMessageID: "mock-id-123", Status: provider.StatusSent}, nil
-}
-
-func (m *mockProvider) GetName() string { return m.name }
-
-func (m *mockProvider) HealthCheck(ctx context.Context) error {
-	if m.healthFn != nil {
-		return m.healthFn(ctx)
-	}
-	return nil
-}
 
 // mockQuerier implements storage.Querier for testing.
 type mockQuerier struct {
@@ -95,9 +68,24 @@ func (m *mockQuerier) ListDeliveryLogsByTenantAndStatus(_ context.Context, _ sto
 func (m *mockQuerier) UpdateDeliveryLogStatus(_ context.Context, _ storage.UpdateDeliveryLogStatusParams) error {
 	return nil
 }
+func (m *mockQuerier) CountDeliveryLogsByStatus(_ context.Context, _ storage.CountDeliveryLogsByStatusParams) ([]storage.CountDeliveryLogsByStatusRow, error) {
+	return nil, nil
+}
+func (m *mockQuerier) CountDeliveryLogsByProvider(_ context.Context, _ storage.CountDeliveryLogsByProviderParams) ([]storage.CountDeliveryLogsByProviderRow, error) {
+	return nil, nil
+}
+func (m *mockQuerier) CountDeliveryLogsByAccount(_ context.Context, _ storage.CountDeliveryLogsByAccountParams) ([]storage.CountDeliveryLogsByAccountRow, error) {
+	return nil, nil
+}
+func (m *mockQuerier) AverageDeliveryDuration(_ context.Context, _ storage.AverageDeliveryDurationParams) ([]storage.AverageDeliveryDurationRow, error) {
+	return nil, nil
+}
 
 // Message methods.
 func (m *mockQuerier) EnqueueMessage(_ context.Context, _ storage.EnqueueMessageParams) (storage.Message, error) {
+	return storage.Message{}, nil
+}
+func (m *mockQuerier) EnqueueMessageMetadata(_ context.Context, _ storage.EnqueueMessageMetadataParams) (storage.Message, error) {
 	return storage.Message{}, nil
 }
 func (m *mockQuerier) GetMessageByID(_ context.Context, _ uuid.UUID) (storage.Message, error) {
@@ -209,117 +197,4 @@ func (m *mockQuerier) UpdateUserRole(_ context.Context, _ storage.UpdateUserRole
 }
 func (m *mockQuerier) UpdateUserStatus(_ context.Context, _ storage.UpdateUserStatusParams) (storage.User, error) {
 	return storage.User{}, nil
-}
-
-func TestSyncService_DeliverMessage_StdoutFallback(t *testing.T) {
-	accountID := uuid.New()
-
-	// No providers configured -> resolver returns stdout.
-	mq := &mockQuerier{}
-	log := zerolog.Nop()
-
-	httpClient := provider.NewHTTPClient(0)
-	resolver := provider.NewResolver(mq, httpClient, log)
-	svc := NewSyncService(resolver, mq, log)
-
-	req := &Request{
-		MessageID:  uuid.New(),
-		AccountID:  accountID,
-		TenantID:   "tenant-1",
-		Sender:     "sender@example.com",
-		Recipients: []string{"recipient@example.com"},
-		Subject:    "Test",
-		Body:       []byte("Hello"),
-	}
-
-	err := svc.DeliverMessage(context.Background(), req)
-	if err != nil {
-		t.Fatalf("expected no error with stdout fallback, got %v", err)
-	}
-
-	if mq.capturedStatus != storage.MessageStatusDelivered {
-		t.Errorf("expected status delivered, got %s", mq.capturedStatus)
-	}
-
-	if mq.capturedLogParams.Provider.String != "stdout" {
-		t.Errorf("expected provider stdout, got %s", mq.capturedLogParams.Provider.String)
-	}
-}
-
-func TestSyncService_DeliverMessage_ResolverError(t *testing.T) {
-	accountID := uuid.New()
-
-	mq := &mockQuerier{
-		listProvidersFn: func(_ context.Context, _ uuid.UUID) ([]storage.EspProvider, error) {
-			return nil, errors.New("database error")
-		},
-	}
-	log := zerolog.Nop()
-
-	httpClient := provider.NewHTTPClient(0)
-	resolver := provider.NewResolver(mq, httpClient, log)
-	svc := NewSyncService(resolver, mq, log)
-
-	req := &Request{
-		MessageID:  uuid.New(),
-		AccountID:  accountID,
-		TenantID:   "tenant-1",
-		Sender:     "sender@example.com",
-		Recipients: []string{"recipient@example.com"},
-		Subject:    "Test",
-		Body:       []byte("Hello"),
-	}
-
-	err := svc.DeliverMessage(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected error from resolver failure")
-	}
-
-	if mq.capturedStatus != storage.MessageStatusFailed {
-		t.Errorf("expected status failed, got %s", mq.capturedStatus)
-	}
-}
-
-func TestSyncService_DeliverMessage_DisabledProviders(t *testing.T) {
-	accountID := uuid.New()
-
-	// All providers disabled -> should fall back to stdout.
-	mq := &mockQuerier{
-		listProvidersFn: func(_ context.Context, _ uuid.UUID) ([]storage.EspProvider, error) {
-			return []storage.EspProvider{
-				{
-					ID:           uuid.New(),
-					AccountID:    accountID,
-					Name:         "disabled-sendgrid",
-					ProviderType: storage.ProviderTypeSendgrid,
-					ApiKey:       sql.NullString{String: "test-key", Valid: true},
-					Enabled:      false,
-				},
-			}, nil
-		},
-	}
-	log := zerolog.Nop()
-
-	httpClient := provider.NewHTTPClient(0)
-	resolver := provider.NewResolver(mq, httpClient, log)
-	svc := NewSyncService(resolver, mq, log)
-
-	req := &Request{
-		MessageID:  uuid.New(),
-		AccountID:  accountID,
-		TenantID:   "tenant-1",
-		Sender:     "sender@example.com",
-		Recipients: []string{"recipient@example.com"},
-		Subject:    "Test",
-		Body:       []byte("Hello"),
-	}
-
-	err := svc.DeliverMessage(context.Background(), req)
-	if err != nil {
-		t.Fatalf("expected no error with stdout fallback, got %v", err)
-	}
-
-	if mq.capturedLogParams.Provider.String != "stdout" {
-		t.Errorf("expected provider stdout (fallback), got %s", mq.capturedLogParams.Provider.String)
-	}
 }

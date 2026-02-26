@@ -24,18 +24,11 @@ func NewAsyncService(producer *queue.Producer, log zerolog.Logger) *AsyncService
 	}
 }
 
-// DeliverMessage enqueues the message to Redis Streams. The actual ESP delivery
-// is handled asynchronously by the queue-worker process.
+// DeliverMessage enqueues an ID-only message reference to Redis Streams.
+// The actual ESP delivery is handled asynchronously by the queue-worker process,
+// which fetches the full message body from the message store.
 func (a *AsyncService) DeliverMessage(ctx context.Context, req *Request) error {
-	msg := queue.NewMessage(
-		req.TenantID,
-		req.Sender,
-		req.Recipients,
-		req.Subject,
-		req.Body,
-	)
-	msg.ID = req.MessageID.String()
-	msg.Headers = req.Headers
+	msg := queue.NewIDOnlyMessage(req.MessageID.String(), req.AccountID.String(), req.TenantID)
 
 	entryID, err := a.producer.EnqueueMessage(ctx, msg)
 	if err != nil {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
@@ -69,25 +70,22 @@ func main() {
 			UserID:       pgtype.UUID{Bytes: entry.UserID, Valid: entry.UserID != uuid.Nil},
 			Action:       entry.Action,
 			ResourceType: entry.ResourceType,
-			ResourceID:   pgtype.Text{String: entry.ResourceID, Valid: entry.ResourceID != ""},
+			ResourceID:   sql.NullString{String: entry.ResourceID, Valid: entry.ResourceID != ""},
 			Result:       entry.Result,
 			Metadata:     auth.MetadataToJSON(entry.Metadata),
-			IPAddress:    auth.IPToInet(entry.IPAddress),
+			IpAddress:    auth.IPToInet(entry.IPAddress),
 		})
 		return err
 	})
 	auditLogger := auth.NewAuditLogger(auditStore, log)
 
-	// Initialize rate limiter (nil Redis client for sync mode, will skip rate limiting)
-	var rateLimiter *auth.RateLimiter
-	if cfg.Delivery.Mode == "async" {
-		rateLimiter = auth.NewRateLimiter(nil, auth.RateLimitConfig{
-			DefaultMonthlyLimit:  cfg.RateLimit.DefaultMonthlyLimit,
-			LoginAttemptsLimit:   cfg.RateLimit.LoginAttemptsLimit,
-			LoginLockoutDuration: cfg.RateLimit.LoginLockoutDuration,
-		})
-		log.Info().Msg("rate limiter initialized (Redis will be configured with queue)")
-	}
+	// Initialize rate limiter.
+	rateLimiter := auth.NewRateLimiter(nil, auth.RateLimitConfig{
+		DefaultMonthlyLimit:  cfg.RateLimit.DefaultMonthlyLimit,
+		LoginAttemptsLimit:   cfg.RateLimit.LoginAttemptsLimit,
+		LoginLockoutDuration: cfg.RateLimit.LoginLockoutDuration,
+	})
+	log.Info().Msg("rate limiter initialized")
 
 	// Build router with full config
 	router := api.NewRouterWithConfig(api.RouterConfig{

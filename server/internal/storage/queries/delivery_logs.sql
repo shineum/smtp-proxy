@@ -2,9 +2,10 @@
 INSERT INTO delivery_logs (
     message_id, provider_id, tenant_id, status, provider,
     provider_message_id, response_code, response_body,
-    retry_count, last_error, metadata
+    retry_count, last_error, metadata,
+    account_id, duration_ms, attempt_number
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING *;
 
 -- name: GetDeliveryLogByMessageID :one
@@ -39,3 +40,24 @@ SET retry_count = retry_count + 1,
     last_error = $2,
     updated_at = NOW()
 WHERE message_id = $1;
+
+-- name: CountDeliveryLogsByStatus :many
+SELECT status, COUNT(*) as count FROM delivery_logs
+WHERE created_at >= $1 AND created_at <= $2
+GROUP BY status;
+
+-- name: CountDeliveryLogsByProvider :many
+SELECT provider, status, COUNT(*) as count FROM delivery_logs
+WHERE created_at >= $1 AND created_at <= $2
+GROUP BY provider, status;
+
+-- name: CountDeliveryLogsByAccount :many
+SELECT account_id, status, COUNT(*) as count FROM delivery_logs
+WHERE account_id IS NOT NULL AND created_at >= $1 AND created_at <= $2
+GROUP BY account_id, status;
+
+-- name: AverageDeliveryDuration :many
+SELECT provider, AVG(duration_ms)::integer as avg_duration_ms, COUNT(*) as count
+FROM delivery_logs
+WHERE duration_ms IS NOT NULL AND created_at >= $1 AND created_at <= $2
+GROUP BY provider;

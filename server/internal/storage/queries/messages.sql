@@ -14,3 +14,8 @@ UPDATE messages SET status = $2, processed_at = NOW() WHERE id = $1;
 
 -- name: GetQueuedMessages :many
 SELECT * FROM messages WHERE status = 'queued' ORDER BY enqueued_at ASC LIMIT $1;
+
+-- name: EnqueueMessageMetadata :one
+INSERT INTO messages (account_id, sender, recipients, subject, headers, storage_ref, status)
+VALUES ($1, $2, $3, $4, $5, $6, 'queued')
+RETURNING *;

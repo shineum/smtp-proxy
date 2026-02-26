@@ -16,7 +16,7 @@ import (
 func TestNewBackend_NewSession(t *testing.T) {
 	mock := &mockQuerier{}
 	log := zerolog.Nop()
-	b := NewBackend(mock, &mockDeliveryService{}, log, 10)
+	b := NewBackend(mock, &mockDeliveryService{}, nil, log, 10)
 
 	// NewSession requires a *gosmtp.Conn. Since we cannot construct one
 	// directly (it is created by the go-smtp server), we test the backend
@@ -35,7 +35,7 @@ func TestNewBackend_NewSession(t *testing.T) {
 func TestNewBackend_ActiveSessionCounter(t *testing.T) {
 	mock := &mockQuerier{}
 	log := zerolog.Nop()
-	b := NewBackend(mock, &mockDeliveryService{}, log, 100)
+	b := NewBackend(mock, &mockDeliveryService{}, nil, log, 100)
 
 	// Simulate session creation by incrementing the counter directly.
 	b.active.Add(1)
@@ -58,7 +58,7 @@ func TestNewBackend_ActiveSessionCounter(t *testing.T) {
 func TestNewBackend_ConnectionLimitCheck(t *testing.T) {
 	mock := &mockQuerier{}
 	log := zerolog.Nop()
-	b := NewBackend(mock, &mockDeliveryService{}, log, 2)
+	b := NewBackend(mock, &mockDeliveryService{}, nil, log, 2)
 
 	// Simulate filling up to the limit.
 	b.active.Add(2)

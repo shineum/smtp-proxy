@@ -15,7 +15,6 @@ type Config struct {
 	Database  DatabaseConfig  `mapstructure:"database"`
 	Logging   LoggingConfig   `mapstructure:"logging"`
 	TLS       TLSConfig       `mapstructure:"tls"`
-	Delivery  DeliveryConfig  `mapstructure:"delivery"`
 	Queue     QueueConfig     `mapstructure:"queue"`
 	Auth      AuthConfig      `mapstructure:"auth"`
 	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
@@ -75,22 +74,21 @@ type DatabaseConfig struct {
 
 // LoggingConfig holds logging configuration.
 type LoggingConfig struct {
-	Level  string `mapstructure:"level"`
-	Format string `mapstructure:"format"`
+	Level     string `mapstructure:"level"`
+	Format    string `mapstructure:"format"`
+	Output    string `mapstructure:"output"`       // stdout, file, cloudwatch
+	FilePath  string `mapstructure:"file_path"`     // for file output
+	MaxSizeMB int    `mapstructure:"max_size_mb"`   // for file rotation (MB)
+	MaxFiles  int    `mapstructure:"max_files"`      // rotated files to retain
+	CWGroup   string `mapstructure:"cw_group"`       // CloudWatch log group
+	CWStream  string `mapstructure:"cw_stream"`      // CloudWatch log stream
+	CWRegion  string `mapstructure:"cw_region"`      // AWS region for CloudWatch
 }
 
 // TLSConfig holds TLS certificate configuration.
 type TLSConfig struct {
 	CertFile string `mapstructure:"cert_file"`
 	KeyFile  string `mapstructure:"key_file"`
-}
-
-// DeliveryConfig holds message delivery configuration.
-type DeliveryConfig struct {
-	// Mode selects the delivery strategy: "sync" or "async".
-	// Sync delivers via ESP provider inline after DB insert (no Redis needed).
-	// Async enqueues to Redis Streams for background worker delivery.
-	Mode string `mapstructure:"mode"`
 }
 
 // QueueConfig holds Redis-based queue configuration for async delivery mode.
@@ -132,8 +130,7 @@ func Load(configPath string) (*Config, error) {
 	v.SetConfigType("yaml")
 	v.AddConfigPath(configPath)
 
-	// Set defaults for delivery and queue configuration.
-	v.SetDefault("delivery.mode", "sync")
+	// Set defaults for queue configuration.
 	v.SetDefault("queue.redis_addr", "localhost:6379")
 	v.SetDefault("queue.redis_db", 0)
 	v.SetDefault("queue.stream_name", "smtp-proxy")
@@ -153,6 +150,12 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("rate_limit.default_monthly_limit", 10000)
 	v.SetDefault("rate_limit.login_attempts_limit", 5)
 	v.SetDefault("rate_limit.login_lockout_duration", "15m")
+
+	// Set defaults for logging configuration.
+	v.SetDefault("logging.output", "stdout")
+	v.SetDefault("logging.file_path", "/var/log/smtp-proxy.log")
+	v.SetDefault("logging.max_size_mb", 100)
+	v.SetDefault("logging.max_files", 10)
 
 	// Set defaults for storage configuration.
 	v.SetDefault("storage.type", "local")

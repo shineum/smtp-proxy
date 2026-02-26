@@ -2,11 +2,25 @@ package logger
 
 import (
 	"context"
+	"io"
 	"os"
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
+
+// LoggingConfig mirrors config.LoggingConfig to avoid a circular import.
+// Callers should populate this from config.LoggingConfig fields.
+type LoggingConfig struct {
+	Level     string
+	Output    string // stdout (default), file, cloudwatch
+	FilePath  string
+	MaxSizeMB int
+	MaxFiles  int
+	CWGroup   string
+	CWStream  string
+	CWRegion  string
+}
 
 type contextKey string
 
@@ -24,6 +38,44 @@ func New(level string) zerolog.Logger {
 	}
 
 	return zerolog.New(os.Stdout).
+		Level(lvl).
+		With().
+		Timestamp().
+		Logger()
+}
+
+// NewFromConfig creates a zerolog.Logger from a LoggingConfig, selecting the
+// appropriate output writer based on cfg.Output:
+//   - "file": rotating file via lumberjack
+//   - "cloudwatch": CloudWatch Logs (currently a stub writing to stdout)
+//   - "stdout" or any other value: os.Stdout (default)
+//
+// The existing New() function is preserved for backward compatibility.
+func NewFromConfig(cfg LoggingConfig) zerolog.Logger {
+	lvl, err := zerolog.ParseLevel(cfg.Level)
+	if err != nil {
+		lvl = zerolog.InfoLevel
+	}
+
+	var writer io.Writer
+	switch cfg.Output {
+	case "file":
+		writer = NewFileWriter(FileConfig{
+			Path:      cfg.FilePath,
+			MaxSizeMB: cfg.MaxSizeMB,
+			MaxFiles:  cfg.MaxFiles,
+		})
+	case "cloudwatch":
+		writer = NewCloudWatchWriter(CloudWatchConfig{
+			Group:  cfg.CWGroup,
+			Stream: cfg.CWStream,
+			Region: cfg.CWRegion,
+		})
+	default:
+		writer = os.Stdout
+	}
+
+	return zerolog.New(writer).
 		Level(lvl).
 		With().
 		Timestamp().

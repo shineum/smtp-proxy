@@ -226,6 +226,142 @@ func (m *mockQuerier) UpdateDeliveryLogStatus(ctx context.Context, arg storage.U
 	return nil
 }
 
+// --- Aggregate query methods (implement interface, return zero values) ---
+
+func (m *mockQuerier) AverageDeliveryDuration(_ context.Context, _ storage.AverageDeliveryDurationParams) ([]storage.AverageDeliveryDurationRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) CountDeliveryLogsByAccount(_ context.Context, _ storage.CountDeliveryLogsByAccountParams) ([]storage.CountDeliveryLogsByAccountRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) CountDeliveryLogsByProvider(_ context.Context, _ storage.CountDeliveryLogsByProviderParams) ([]storage.CountDeliveryLogsByProviderRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) CountDeliveryLogsByStatus(_ context.Context, _ storage.CountDeliveryLogsByStatusParams) ([]storage.CountDeliveryLogsByStatusRow, error) {
+	return nil, nil
+}
+
+// --- Message metadata method (implement interface, return zero values) ---
+
+func (m *mockQuerier) EnqueueMessageMetadata(_ context.Context, _ storage.EnqueueMessageMetadataParams) (storage.Message, error) {
+	return storage.Message{}, nil
+}
+
+// --- Audit Log methods (implement interface, return zero values) ---
+
+func (m *mockQuerier) CreateAuditLog(_ context.Context, _ storage.CreateAuditLogParams) (storage.AuditLog, error) {
+	return storage.AuditLog{}, nil
+}
+
+func (m *mockQuerier) ListAuditLogsByTenantID(_ context.Context, _ storage.ListAuditLogsByTenantIDParams) ([]storage.AuditLog, error) {
+	return nil, nil
+}
+
+// --- Session methods (implement interface, return zero values) ---
+
+func (m *mockQuerier) CreateSession(_ context.Context, _ storage.CreateSessionParams) (storage.Session, error) {
+	return storage.Session{}, nil
+}
+
+func (m *mockQuerier) DeleteSession(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) DeleteExpiredSessions(_ context.Context) error {
+	return nil
+}
+
+func (m *mockQuerier) DeleteSessionsByUserID(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) GetSessionByID(_ context.Context, _ uuid.UUID) (storage.Session, error) {
+	return storage.Session{}, nil
+}
+
+func (m *mockQuerier) ListSessionsByUserID(_ context.Context, _ uuid.UUID) ([]storage.Session, error) {
+	return nil, nil
+}
+
+// --- Tenant methods (implement interface, return zero values) ---
+
+func (m *mockQuerier) CreateTenant(_ context.Context, _ storage.CreateTenantParams) (storage.Tenant, error) {
+	return storage.Tenant{}, nil
+}
+
+func (m *mockQuerier) DeleteTenant(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) GetTenantByID(_ context.Context, _ uuid.UUID) (storage.Tenant, error) {
+	return storage.Tenant{}, nil
+}
+
+func (m *mockQuerier) GetTenantByName(_ context.Context, _ string) (storage.Tenant, error) {
+	return storage.Tenant{}, nil
+}
+
+func (m *mockQuerier) ListTenants(_ context.Context) ([]storage.Tenant, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) UpdateTenant(_ context.Context, _ storage.UpdateTenantParams) (storage.Tenant, error) {
+	return storage.Tenant{}, nil
+}
+
+// --- User methods (implement interface, return zero values) ---
+
+func (m *mockQuerier) CreateUser(_ context.Context, _ storage.CreateUserParams) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) DeleteUser(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) GetUserByEmail(_ context.Context, _ string) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) GetUserByID(_ context.Context, _ uuid.UUID) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) IncrementFailedAttempts(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) IncrementMonthlySent(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) ListUsersByTenantID(_ context.Context, _ uuid.UUID) ([]storage.User, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) ResetFailedAttempts(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) ResetMonthlySent(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) UpdateUserLastLogin(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) UpdateUserRole(_ context.Context, _ storage.UpdateUserRoleParams) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) UpdateUserStatus(_ context.Context, _ storage.UpdateUserStatusParams) (storage.User, error) {
+	return storage.User{}, nil
+}
+
 // --- Test helpers ---
 
 // testAccount returns a sample Account for testing.

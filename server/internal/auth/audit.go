@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"net/netip"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 )
 
@@ -187,11 +187,14 @@ func MetadataToJSON(metadata map[string]interface{}) []byte {
 	return data
 }
 
-// IPToInet converts an IP address string to a pgtype.Text for storage in an INET column.
-// PostgreSQL will implicitly cast the text value to INET.
-func IPToInet(ipStr string) pgtype.Text {
+// IPToInet converts an IP address string to a *netip.Addr for storage in an INET column.
+func IPToInet(ipStr string) *netip.Addr {
 	if ipStr == "" {
-		return pgtype.Text{}
+		return nil
 	}
-	return pgtype.Text{String: ipStr, Valid: true}
+	addr, err := netip.ParseAddr(ipStr)
+	if err != nil {
+		return nil
+	}
+	return &addr
 }

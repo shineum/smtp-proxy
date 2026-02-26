@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-sasl"
 	gosmtp "github.com/emersion/go-smtp"
@@ -41,6 +42,12 @@ type mockQuerier struct {
 
 	// EnqueueMessage behavior
 	enqueueMessageFn func(ctx context.Context, arg storage.EnqueueMessageParams) (storage.Message, error)
+
+	// EnqueueMessageMetadata behavior
+	enqueueMessageMetadataFn func(ctx context.Context, arg storage.EnqueueMessageMetadataParams) (storage.Message, error)
+
+	// UpdateMessageStatus behavior
+	updateMessageStatusFn func(ctx context.Context, arg storage.UpdateMessageStatusParams) error
 }
 
 func (m *mockQuerier) CreateAccount(_ context.Context, _ storage.CreateAccountParams) (storage.Account, error) {
@@ -246,7 +253,10 @@ func (m *mockQuerier) UpdateDeliveryLogStatus(_ context.Context, _ storage.Updat
 	return nil
 }
 
-func (m *mockQuerier) UpdateMessageStatus(_ context.Context, _ storage.UpdateMessageStatusParams) error {
+func (m *mockQuerier) UpdateMessageStatus(ctx context.Context, arg storage.UpdateMessageStatusParams) error {
+	if m.updateMessageStatusFn != nil {
+		return m.updateMessageStatusFn(ctx, arg)
+	}
 	return nil
 }
 
@@ -274,10 +284,37 @@ func (m *mockQuerier) UpdateUserStatus(_ context.Context, _ storage.UpdateUserSt
 	return storage.User{}, nil
 }
 
+func (m *mockQuerier) EnqueueMessageMetadata(ctx context.Context, arg storage.EnqueueMessageMetadataParams) (storage.Message, error) {
+	if m.enqueueMessageMetadataFn != nil {
+		return m.enqueueMessageMetadataFn(ctx, arg)
+	}
+	return storage.Message{
+		ID:        uuid.New(),
+		AccountID: arg.AccountID,
+		Status:    storage.MessageStatusQueued,
+	}, nil
+}
+
+func (m *mockQuerier) AverageDeliveryDuration(_ context.Context, _ storage.AverageDeliveryDurationParams) ([]storage.AverageDeliveryDurationRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) CountDeliveryLogsByStatus(_ context.Context, _ storage.CountDeliveryLogsByStatusParams) ([]storage.CountDeliveryLogsByStatusRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) CountDeliveryLogsByProvider(_ context.Context, _ storage.CountDeliveryLogsByProviderParams) ([]storage.CountDeliveryLogsByProviderRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) CountDeliveryLogsByAccount(_ context.Context, _ storage.CountDeliveryLogsByAccountParams) ([]storage.CountDeliveryLogsByAccountRow, error) {
+	return nil, nil
+}
+
 // newTestSession creates a Session with a mock backend for testing.
 func newTestSession(mock *mockQuerier) *Session {
 	log := zerolog.Nop()
-	b := NewBackend(mock, &mockDeliveryService{}, log, 100)
+	b := NewBackend(mock, &mockDeliveryService{}, nil, log, 100)
 	b.active.Add(1) // Simulate that the session was counted on creation.
 	return &Session{
 		ctx:     context.Background(),
@@ -624,7 +661,7 @@ func TestSession_Data_EnqueuesMessage(t *testing.T) {
 		t.Errorf("expected subject=Test, got %v", capturedParams.Subject)
 	}
 
-	if capturedParams.Body != messageContent {
+	if capturedParams.Body.String != messageContent || !capturedParams.Body.Valid {
 		t.Errorf("expected body to match message content")
 	}
 }
@@ -748,7 +785,7 @@ func TestSession_Reset(t *testing.T) {
 func TestSession_Logout_DecrementsCounter(t *testing.T) {
 	mock := &mockQuerier{}
 	log := zerolog.Nop()
-	b := NewBackend(mock, &mockDeliveryService{}, log, 100)
+	b := NewBackend(mock, &mockDeliveryService{}, nil, log, 100)
 	b.active.Add(3) // Simulate 3 active sessions.
 
 	s := &Session{
@@ -771,6 +808,257 @@ func TestSession_Logout_DecrementsCounter(t *testing.T) {
 	after := b.ActiveSessions()
 	if after != 2 {
 		t.Errorf("expected 2 active sessions after logout, got %d", after)
+	}
+}
+
+// --- MessageStore Tests ---
+
+// mockMessageStore implements msgstore.MessageStore for testing.
+type mockMessageStore struct {
+	putFn    func(ctx context.Context, messageID string, data []byte) error
+	getFn    func(ctx context.Context, messageID string) ([]byte, error)
+	deleteFn func(ctx context.Context, messageID string) error
+}
+
+func (m *mockMessageStore) Put(ctx context.Context, messageID string, data []byte) error {
+	if m.putFn != nil {
+		return m.putFn(ctx, messageID, data)
+	}
+	return nil
+}
+
+func (m *mockMessageStore) Get(ctx context.Context, messageID string) ([]byte, error) {
+	if m.getFn != nil {
+		return m.getFn(ctx, messageID)
+	}
+	return nil, nil
+}
+
+func (m *mockMessageStore) Delete(ctx context.Context, messageID string) error {
+	if m.deleteFn != nil {
+		return m.deleteFn(ctx, messageID)
+	}
+	return nil
+}
+
+func TestSession_Data_WithMessageStore(t *testing.T) {
+	accountID := uuid.New()
+	var putCalled bool
+	var capturedPutData []byte
+	var capturedMetadataParams storage.EnqueueMessageMetadataParams
+
+	mockStore := &mockMessageStore{
+		putFn: func(_ context.Context, _ string, data []byte) error {
+			putCalled = true
+			capturedPutData = data
+			return nil
+		},
+	}
+
+	mock := &mockQuerier{
+		enqueueMessageMetadataFn: func(_ context.Context, arg storage.EnqueueMessageMetadataParams) (storage.Message, error) {
+			capturedMetadataParams = arg
+			return storage.Message{
+				ID:        uuid.New(),
+				AccountID: arg.AccountID,
+				Status:    storage.MessageStatusQueued,
+			}, nil
+		},
+	}
+
+	log := zerolog.Nop()
+	b := NewBackend(mock, &mockDeliveryService{}, mockStore, log, 100)
+	b.active.Add(1)
+	s := &Session{
+		ctx:           context.Background(),
+		queries:       mock,
+		log:           log,
+		backend:       b,
+		accountID:     accountID,
+		authenticated: true,
+		sender:        "sender@example.com",
+		recipients:    []string{"recipient@example.com"},
+	}
+
+	messageContent := "Subject: Test\r\n\r\nHello, World!"
+	err := s.Data(strings.NewReader(messageContent))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if !putCalled {
+		t.Error("expected MessageStore.Put to be called")
+	}
+	if string(capturedPutData) != messageContent {
+		t.Errorf("expected Put data to match message content")
+	}
+
+	// Verify EnqueueMessageMetadata was called (not EnqueueMessage).
+	if capturedMetadataParams.AccountID != accountID {
+		t.Errorf("expected accountID=%s, got %s", accountID, capturedMetadataParams.AccountID)
+	}
+	if capturedMetadataParams.Sender != "sender@example.com" {
+		t.Errorf("expected sender=sender@example.com, got %s", capturedMetadataParams.Sender)
+	}
+	if !capturedMetadataParams.StorageRef.Valid {
+		t.Error("expected StorageRef to be valid")
+	}
+	if capturedMetadataParams.StorageRef.String == "" {
+		t.Error("expected StorageRef to be non-empty")
+	}
+}
+
+func TestSession_Data_MessageStoreWriteFails_FallsBack(t *testing.T) {
+	accountID := uuid.New()
+	var enqueueMessageCalled bool
+	var capturedParams storage.EnqueueMessageParams
+
+	mockStore := &mockMessageStore{
+		putFn: func(_ context.Context, _ string, _ []byte) error {
+			return errors.New("disk full")
+		},
+	}
+
+	mock := &mockQuerier{
+		enqueueMessageFn: func(_ context.Context, arg storage.EnqueueMessageParams) (storage.Message, error) {
+			enqueueMessageCalled = true
+			capturedParams = arg
+			return storage.Message{
+				ID:        uuid.New(),
+				AccountID: arg.AccountID,
+				Status:    storage.MessageStatusQueued,
+			}, nil
+		},
+	}
+
+	log := zerolog.Nop()
+	b := NewBackend(mock, &mockDeliveryService{}, mockStore, log, 100)
+	b.active.Add(1)
+	s := &Session{
+		ctx:           context.Background(),
+		queries:       mock,
+		log:           log,
+		backend:       b,
+		accountID:     accountID,
+		authenticated: true,
+		sender:        "sender@example.com",
+		recipients:    []string{"recipient@example.com"},
+	}
+
+	messageContent := "Subject: Fallback\r\n\r\nBody text"
+	err := s.Data(strings.NewReader(messageContent))
+	if err != nil {
+		t.Fatalf("expected no error (fallback should succeed), got %v", err)
+	}
+
+	if !enqueueMessageCalled {
+		t.Error("expected EnqueueMessage (inline fallback) to be called")
+	}
+	if capturedParams.Body.String != messageContent || !capturedParams.Body.Valid {
+		t.Error("expected inline body to match message content")
+	}
+}
+
+// --- Enqueue Retry Tests ---
+
+func TestSession_Data_EnqueueRetrySucceeds(t *testing.T) {
+	origBackoff := enqueueRetryBackoff
+	enqueueRetryBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
+	defer func() { enqueueRetryBackoff = origBackoff }()
+
+	accountID := uuid.New()
+	mock := &mockQuerier{
+		enqueueMessageFn: func(_ context.Context, arg storage.EnqueueMessageParams) (storage.Message, error) {
+			return storage.Message{ID: uuid.New(), AccountID: arg.AccountID, Status: storage.MessageStatusQueued}, nil
+		},
+	}
+
+	callCount := 0
+	deliverySvc := &mockDeliveryService{
+		deliverFn: func(_ context.Context, _ *delivery.Request) error {
+			callCount++
+			if callCount == 1 {
+				return errors.New("redis connection refused")
+			}
+			return nil
+		},
+	}
+
+	log := zerolog.Nop()
+	b := NewBackend(mock, deliverySvc, nil, log, 100)
+	b.active.Add(1)
+	s := &Session{
+		ctx:           context.Background(),
+		queries:       mock,
+		log:           log,
+		backend:       b,
+		accountID:     accountID,
+		authenticated: true,
+		sender:        "sender@example.com",
+		recipients:    []string{"recipient@example.com"},
+	}
+
+	err := s.Data(strings.NewReader("Subject: Test\r\n\r\nHello"))
+	if err != nil {
+		t.Fatalf("expected no error after retry success, got %v", err)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 delivery attempts, got %d", callCount)
+	}
+}
+
+func TestSession_Data_EnqueueRetryExhausted(t *testing.T) {
+	origBackoff := enqueueRetryBackoff
+	enqueueRetryBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
+	defer func() { enqueueRetryBackoff = origBackoff }()
+
+	accountID := uuid.New()
+	var capturedStatus storage.MessageStatus
+	mock := &mockQuerier{
+		enqueueMessageFn: func(_ context.Context, arg storage.EnqueueMessageParams) (storage.Message, error) {
+			return storage.Message{ID: uuid.New(), AccountID: arg.AccountID, Status: storage.MessageStatusQueued}, nil
+		},
+		updateMessageStatusFn: func(_ context.Context, arg storage.UpdateMessageStatusParams) error {
+			capturedStatus = arg.Status
+			return nil
+		},
+	}
+
+	deliverySvc := &mockDeliveryService{
+		deliverFn: func(_ context.Context, _ *delivery.Request) error {
+			return errors.New("redis connection refused")
+		},
+	}
+
+	log := zerolog.Nop()
+	b := NewBackend(mock, deliverySvc, nil, log, 100)
+	b.active.Add(1)
+	s := &Session{
+		ctx:           context.Background(),
+		queries:       mock,
+		log:           log,
+		backend:       b,
+		accountID:     accountID,
+		authenticated: true,
+		sender:        "sender@example.com",
+		recipients:    []string{"recipient@example.com"},
+	}
+
+	err := s.Data(strings.NewReader("Subject: Test\r\n\r\nHello"))
+	if err == nil {
+		t.Fatal("expected SMTP error after retry exhaustion")
+	}
+
+	var smtpErr *gosmtp.SMTPError
+	if !errors.As(err, &smtpErr) {
+		t.Fatalf("expected SMTPError, got %T", err)
+	}
+	if smtpErr.Code != 451 {
+		t.Errorf("expected code 451, got %d", smtpErr.Code)
+	}
+
+	if capturedStatus != storage.MessageStatusEnqueueFailed {
+		t.Errorf("expected status enqueue_failed, got %s", capturedStatus)
 	}
 }
 

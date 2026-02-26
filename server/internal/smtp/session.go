@@ -9,16 +9,25 @@ import (
 	"io"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/emersion/go-sasl"
 	gosmtp "github.com/emersion/go-smtp"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
+
+// enqueueRetryBackoff defines the backoff durations for Redis enqueue retries (REQ-SMTP-005).
+var enqueueRetryBackoff = []time.Duration{
+	500 * time.Millisecond,
+	1 * time.Second,
+	2 * time.Second,
+}
 
 // Session handles a single SMTP connection and implements the go-smtp Session
 // interface. It enforces authentication, domain validation, and message
@@ -204,25 +213,74 @@ func (s *Session) Data(r io.Reader) error {
 		headers = map[string][]string(msg.Header)
 	}
 
+	// Generate message ID for storage reference.
+	messageID := uuid.New()
+
 	// Marshal recipients and headers to JSON for storage.
 	recipientsJSON, _ := json.Marshal(s.recipients)
 	headersJSON, _ := json.Marshal(headers)
 
-	// Persist message to database.
-	dbMsg, err := s.queries.EnqueueMessage(s.ctx, storage.EnqueueMessageParams{
-		AccountID:  s.accountID,
-		Sender:     s.sender,
-		Recipients: recipientsJSON,
-		Subject:    sql.NullString{String: subject, Valid: subject != ""},
-		Headers:    headersJSON,
-		Body:       body,
-	})
-	if err != nil {
-		s.log.Error().Err(err).Msg("failed to enqueue message")
-		return &gosmtp.SMTPError{
-			Code:         451,
-			EnhancedCode: gosmtp.EnhancedCode{4, 3, 0},
-			Message:      "Error queuing message",
+	bodyBytes := buf.Bytes()
+
+	// Try to store body in MessageStore and persist metadata.
+	var dbMsg storage.Message
+	if s.backend.store != nil {
+		if err := s.backend.store.Put(s.ctx, messageID.String(), bodyBytes); err != nil {
+			s.log.Warn().Err(err).Str("message_id", messageID.String()).
+				Msg("MessageStore write failed, falling back to inline body")
+			// Fall back to inline body storage.
+			dbMsg, err = s.queries.EnqueueMessage(s.ctx, storage.EnqueueMessageParams{
+				AccountID:  s.accountID,
+				Sender:     s.sender,
+				Recipients: recipientsJSON,
+				Subject:    sql.NullString{String: subject, Valid: subject != ""},
+				Headers:    headersJSON,
+				Body:       pgtype.Text{String: body, Valid: true},
+			})
+			if err != nil {
+				s.log.Error().Err(err).Msg("failed to enqueue message (fallback)")
+				return &gosmtp.SMTPError{
+					Code:         451,
+					EnhancedCode: gosmtp.EnhancedCode{4, 3, 0},
+					Message:      "Error queuing message",
+				}
+			}
+		} else {
+			// Body stored successfully -- persist metadata only.
+			dbMsg, err = s.queries.EnqueueMessageMetadata(s.ctx, storage.EnqueueMessageMetadataParams{
+				AccountID:  s.accountID,
+				Sender:     s.sender,
+				Recipients: recipientsJSON,
+				Subject:    sql.NullString{String: subject, Valid: subject != ""},
+				Headers:    headersJSON,
+				StorageRef: pgtype.Text{String: messageID.String(), Valid: true},
+			})
+			if err != nil {
+				s.log.Error().Err(err).Msg("failed to enqueue message metadata")
+				return &gosmtp.SMTPError{
+					Code:         451,
+					EnhancedCode: gosmtp.EnhancedCode{4, 3, 0},
+					Message:      "Error queuing message",
+				}
+			}
+		}
+	} else {
+		// No MessageStore configured -- use inline body (backward compat).
+		dbMsg, err = s.queries.EnqueueMessage(s.ctx, storage.EnqueueMessageParams{
+			AccountID:  s.accountID,
+			Sender:     s.sender,
+			Recipients: recipientsJSON,
+			Subject:    sql.NullString{String: subject, Valid: subject != ""},
+			Headers:    headersJSON,
+			Body:       pgtype.Text{String: body, Valid: true},
+		})
+		if err != nil {
+			s.log.Error().Err(err).Msg("failed to enqueue message")
+			return &gosmtp.SMTPError{
+				Code:         451,
+				EnhancedCode: gosmtp.EnhancedCode{4, 3, 0},
+				Message:      "Error queuing message",
+			}
 		}
 	}
 
@@ -232,35 +290,67 @@ func (s *Session) Data(r io.Reader) error {
 		Stringer("message_id", dbMsg.ID).
 		Msg("message persisted")
 
-	// Deliver message via configured delivery service (sync or async).
-	// Convert multi-valued headers to single-valued for delivery.
-	flatHeaders := make(map[string]string, len(headers))
-	for k, vals := range headers {
-		if len(vals) > 0 {
-			flatHeaders[k] = vals[0]
-		}
-	}
-
+	// Enqueue ID-only reference for async delivery by the worker process.
+	// Retry with exponential backoff per REQ-SMTP-005.
 	req := &delivery.Request{
-		MessageID:  dbMsg.ID,
-		AccountID:  s.accountID,
-		TenantID:   s.accountID.String(),
-		Sender:     s.sender,
-		Recipients: s.recipients,
-		Subject:    subject,
-		Headers:    flatHeaders,
-		Body:       buf.Bytes(),
+		MessageID: dbMsg.ID,
+		AccountID: s.accountID,
+		TenantID:  s.accountID.String(),
 	}
 
-	if err := s.backend.delivery.DeliverMessage(s.ctx, req); err != nil {
-		// Delivery failure is logged but does not fail the SMTP transaction.
-		// The message is persisted in DB and can be retried.
-		s.log.Warn().Err(err).
+	enqueueStart := time.Now()
+	var lastErr error
+	for attempt, delay := range enqueueRetryBackoff {
+		if err := s.backend.delivery.DeliverMessage(s.ctx, req); err != nil {
+			lastErr = err
+			s.log.Warn().Err(err).
+				Stringer("message_id", dbMsg.ID).
+				Int("attempt", attempt+1).
+				Int("max_attempts", len(enqueueRetryBackoff)).
+				Dur("elapsed", time.Since(enqueueStart)).
+				Msg("enqueue failed, retrying")
+
+			select {
+			case <-s.ctx.Done():
+				lastErr = s.ctx.Err()
+				goto exhausted
+			case <-time.After(delay):
+			}
+			continue
+		}
+		// Enqueue succeeded.
+		if attempt > 0 {
+			s.log.Info().
+				Stringer("message_id", dbMsg.ID).
+				Int("attempt", attempt+1).
+				Dur("elapsed", time.Since(enqueueStart)).
+				Msg("enqueue succeeded on retry")
+		}
+		return nil
+	}
+
+exhausted:
+	// All retries exhausted -- mark as enqueue_failed (REQ-SMTP-005).
+	s.log.Error().Err(lastErr).
+		Stringer("message_id", dbMsg.ID).
+		Int("attempts", len(enqueueRetryBackoff)).
+		Dur("elapsed", time.Since(enqueueStart)).
+		Msg("enqueue failed after all retries")
+
+	if err := s.queries.UpdateMessageStatus(s.ctx, storage.UpdateMessageStatusParams{
+		ID:     dbMsg.ID,
+		Status: storage.MessageStatusEnqueueFailed,
+	}); err != nil {
+		s.log.Error().Err(err).
 			Stringer("message_id", dbMsg.ID).
-			Msg("delivery failed (message persisted for retry)")
+			Msg("failed to update enqueue_failed status")
 	}
 
-	return nil
+	return &gosmtp.SMTPError{
+		Code:         451,
+		EnhancedCode: gosmtp.EnhancedCode{4, 3, 0},
+		Message:      "Error queuing message for delivery",
+	}
 }
 
 // Reset is called between messages in the same session. It clears the sender

@@ -9,6 +9,7 @@ import (
 
 	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
+	"github.com/sungwon/smtp-proxy/server/internal/msgstore"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
@@ -17,6 +18,7 @@ import (
 type Backend struct {
 	queries  storage.Querier
 	delivery delivery.Service
+	store    msgstore.MessageStore
 	log      zerolog.Logger
 	maxConns int
 	active   atomic.Int64
@@ -24,10 +26,11 @@ type Backend struct {
 
 // NewBackend creates a new SMTP backend with the given Querier, delivery service,
 // logger, and maximum concurrent connection limit.
-func NewBackend(queries storage.Querier, delivery delivery.Service, log zerolog.Logger, maxConns int) *Backend {
+func NewBackend(queries storage.Querier, delivery delivery.Service, store msgstore.MessageStore, log zerolog.Logger, maxConns int) *Backend {
 	return &Backend{
 		queries:  queries,
 		delivery: delivery,
+		store:    store,
 		log:      log,
 		maxConns: maxConns,
 	}

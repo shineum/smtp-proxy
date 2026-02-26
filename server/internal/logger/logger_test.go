@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -128,6 +129,101 @@ func TestFromContext_WithoutLogger(t *testing.T) {
 
 	if buf.Len() == 0 {
 		t.Error("expected fallback logger to produce output")
+	}
+}
+
+func TestNewFromConfig_StdoutDefault(t *testing.T) {
+	var buf bytes.Buffer
+	log := NewFromConfig(LoggingConfig{
+		Level:  "info",
+		Output: "stdout",
+	})
+	log = log.Output(&buf)
+
+	log.Info().Msg("stdout message")
+
+	var entry map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("expected valid JSON output, got error: %v, output: %s", err, buf.String())
+	}
+	if entry["message"] != "stdout message" {
+		t.Errorf("expected message 'stdout message', got %v", entry["message"])
+	}
+}
+
+func TestNewFromConfig_EmptyOutputDefaultsToStdout(t *testing.T) {
+	var buf bytes.Buffer
+	log := NewFromConfig(LoggingConfig{
+		Level:  "debug",
+		Output: "",
+	})
+	log = log.Output(&buf)
+
+	log.Debug().Msg("default output")
+	if buf.Len() == 0 {
+		t.Error("expected output from default stdout writer")
+	}
+}
+
+func TestNewFromConfig_UnknownOutputDefaultsToStdout(t *testing.T) {
+	var buf bytes.Buffer
+	log := NewFromConfig(LoggingConfig{
+		Level:  "info",
+		Output: "unknown_output",
+	})
+	log = log.Output(&buf)
+
+	log.Info().Msg("fallback")
+	if buf.Len() == 0 {
+		t.Error("expected output from stdout fallback for unknown output type")
+	}
+}
+
+func TestNewFromConfig_FileOutput(t *testing.T) {
+	dir := t.TempDir()
+	logPath := dir + "/test.log"
+
+	log := NewFromConfig(LoggingConfig{
+		Level:     "info",
+		Output:    "file",
+		FilePath:  logPath,
+		MaxSizeMB: 10,
+		MaxFiles:  3,
+	})
+
+	log.Info().Msg("file message")
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	var entry map[string]interface{}
+	if err := json.Unmarshal(data, &entry); err != nil {
+		t.Fatalf("expected valid JSON in log file, got error: %v, output: %s", err, data)
+	}
+	if entry["message"] != "file message" {
+		t.Errorf("expected message 'file message', got %v", entry["message"])
+	}
+}
+
+func TestNewFromConfig_InvalidLevel(t *testing.T) {
+	var buf bytes.Buffer
+	log := NewFromConfig(LoggingConfig{
+		Level:  "bad_level",
+		Output: "stdout",
+	})
+	log = log.Output(&buf)
+
+	// Should default to info; debug should be filtered
+	log.Debug().Msg("debug")
+	if buf.Len() > 0 {
+		t.Error("expected debug to be filtered at default info level")
+	}
+
+	log.Info().Msg("info")
+	if buf.Len() == 0 {
+		t.Error("expected info message to appear")
 	}
 }
 

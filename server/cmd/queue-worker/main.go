@@ -12,6 +12,7 @@ import (
 
 	"github.com/sungwon/smtp-proxy/server/internal/config"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
+	"github.com/sungwon/smtp-proxy/server/internal/msgstore"
 	"github.com/sungwon/smtp-proxy/server/internal/provider"
 	"github.com/sungwon/smtp-proxy/server/internal/queue"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -59,8 +60,21 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to create consumer group")
 	}
 
+	// Initialize message body store (REQ-QW-004).
+	store, err := msgstore.New(msgstore.Config{
+		Type:       cfg.Storage.Type,
+		Path:       cfg.Storage.Path,
+		S3Bucket:   cfg.Storage.S3Bucket,
+		S3Prefix:   cfg.Storage.S3Prefix,
+		S3Endpoint: cfg.Storage.S3Endpoint,
+		S3Region:   cfg.Storage.S3Region,
+	}, log)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize message store")
+	}
+
 	// Create message handler with delivery logic.
-	handler := worker.NewHandler(resolver, queries, log)
+	handler := worker.NewHandler(resolver, queries, store, log)
 
 	// Build worker pool configuration.
 	workerCount := cfg.Queue.Workers

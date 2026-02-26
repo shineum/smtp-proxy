@@ -16,7 +16,7 @@ import (
 	"github.com/sungwon/smtp-proxy/server/internal/config"
 	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
-	"github.com/sungwon/smtp-proxy/server/internal/provider"
+	"github.com/sungwon/smtp-proxy/server/internal/msgstore"
 	"github.com/sungwon/smtp-proxy/server/internal/queue"
 	smtpserver "github.com/sungwon/smtp-proxy/server/internal/smtp"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -45,35 +45,37 @@ func main() {
 
 	queries := storage.New(db.Pool)
 
-	// Initialize provider resolver with HTTP client and stdout fallback.
-	httpClient := provider.NewHTTPClient(30 * time.Second)
-	resolver := provider.NewResolver(queries, httpClient, log)
-
-	// Create delivery service based on configured mode.
-	var deliverySvc delivery.Service
-	switch cfg.Delivery.Mode {
-	case "async":
-		redisClient := redis.NewClient(&redis.Options{
-			Addr:     cfg.Queue.RedisAddr,
-			Password: cfg.Queue.RedisPassword,
-			DB:       cfg.Queue.RedisDB,
-		})
-		if err := redisClient.Ping(ctx).Err(); err != nil {
-			log.Fatal().Err(err).Msg("failed to connect to Redis (required for async delivery mode)")
-		}
-		defer redisClient.Close()
-
-		producer := queue.NewProducer(redisClient)
-		deliverySvc = delivery.NewAsyncService(producer, log)
-		log.Info().Msg("delivery mode: async (Redis Streams)")
-
-	default:
-		deliverySvc = delivery.NewSyncService(resolver, queries, log)
-		log.Info().Msg("delivery mode: sync (direct ESP delivery)")
+	// Create async delivery service (Redis is required).
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     cfg.Queue.RedisAddr,
+		Password: cfg.Queue.RedisPassword,
+		DB:       cfg.Queue.RedisDB,
+	})
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		log.Fatal().Err(err).Msg("failed to connect to Redis")
 	}
+	defer redisClient.Close()
+
+	producer := queue.NewProducer(redisClient)
+	deliverySvc := delivery.NewAsyncService(producer, log)
+	log.Info().Msg("delivery mode: async (Redis Streams)")
+
+	// Initialize message body storage.
+	store, err := msgstore.New(msgstore.Config{
+		Type:       cfg.Storage.Type,
+		Path:       cfg.Storage.Path,
+		S3Bucket:   cfg.Storage.S3Bucket,
+		S3Prefix:   cfg.Storage.S3Prefix,
+		S3Endpoint: cfg.Storage.S3Endpoint,
+		S3Region:   cfg.Storage.S3Region,
+	}, log)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize message store")
+	}
+	log.Info().Str("type", cfg.Storage.Type).Msg("message store initialized")
 
 	// Create SMTP backend with delivery service.
-	backend := smtpserver.NewBackend(queries, deliverySvc, log, cfg.SMTP.MaxConnections)
+	backend := smtpserver.NewBackend(queries, deliverySvc, store, log, cfg.SMTP.MaxConnections)
 
 	// Configure SMTP server.
 	s := gosmtp.NewServer(backend)

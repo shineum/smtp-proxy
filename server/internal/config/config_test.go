@@ -139,6 +139,49 @@ func TestLoad_MissingConfigFile(t *testing.T) {
 	}
 }
 
+func TestLoad_StorageDefaults(t *testing.T) {
+	cfg, err := Load("../../config")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if cfg.Storage.Type != "local" {
+		t.Errorf("expected storage type local, got %s", cfg.Storage.Type)
+	}
+	if cfg.Storage.Path != "/data/messages" {
+		t.Errorf("expected storage path /data/messages, got %s", cfg.Storage.Path)
+	}
+	if cfg.Storage.S3Region != "us-east-1" {
+		t.Errorf("expected storage s3_region us-east-1, got %s", cfg.Storage.S3Region)
+	}
+	if cfg.Storage.S3Bucket != "" {
+		t.Errorf("expected empty storage s3_bucket, got %s", cfg.Storage.S3Bucket)
+	}
+	if cfg.Storage.S3Prefix != "" {
+		t.Errorf("expected empty storage s3_prefix, got %s", cfg.Storage.S3Prefix)
+	}
+	if cfg.Storage.S3Endpoint != "" {
+		t.Errorf("expected empty storage s3_endpoint, got %s", cfg.Storage.S3Endpoint)
+	}
+}
+
+func TestLoad_StorageEnvironmentVariableOverride(t *testing.T) {
+	t.Setenv("SMTP_PROXY_STORAGE_TYPE", "s3")
+	t.Setenv("SMTP_PROXY_STORAGE_PATH", "/custom/path")
+
+	cfg, err := Load("../../config")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if cfg.Storage.Type != "s3" {
+		t.Errorf("expected storage type s3 from env override, got %s", cfg.Storage.Type)
+	}
+	if cfg.Storage.Path != "/custom/path" {
+		t.Errorf("expected storage path /custom/path from env override, got %s", cfg.Storage.Path)
+	}
+}
+
 func TestLoad_EnvironmentVariableOverrideSMTPPort(t *testing.T) {
 	t.Setenv("SMTP_PROXY_SMTP_PORT", "2525")
 

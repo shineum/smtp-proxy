@@ -51,3 +51,11 @@ rate_limit:
   default_monthly_limit: 10000
   login_attempts_limit: 5
   login_lockout_duration: "15m"
+
+storage:
+  type: "local"
+  path: "/data/messages"
+  s3_bucket: ""
+  s3_prefix: ""
+  s3_endpoint: ""
+  s3_region: "us-east-1"

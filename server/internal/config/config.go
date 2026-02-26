@@ -19,6 +19,7 @@ type Config struct {
 	Queue     QueueConfig     `mapstructure:"queue"`
 	Auth      AuthConfig      `mapstructure:"auth"`
 	RateLimit RateLimitConfig `mapstructure:"rate_limit"`
+	Storage   StorageConfig   `mapstructure:"storage"`
 }
 
 // AuthConfig holds JWT authentication configuration.
@@ -104,6 +105,22 @@ type QueueConfig struct {
 	BlockTimeout  time.Duration `mapstructure:"block_timeout"`
 }
 
+// StorageConfig holds message body storage configuration.
+type StorageConfig struct {
+	// Type selects the storage backend: "local" or "s3".
+	Type string `mapstructure:"type"`
+	// Path is the base directory for local file storage.
+	Path string `mapstructure:"path"`
+	// S3Bucket is the S3 bucket name for S3 storage.
+	S3Bucket string `mapstructure:"s3_bucket"`
+	// S3Prefix is the object key prefix for S3 storage.
+	S3Prefix string `mapstructure:"s3_prefix"`
+	// S3Endpoint is the S3 endpoint URL (for MinIO compatibility).
+	S3Endpoint string `mapstructure:"s3_endpoint"`
+	// S3Region is the AWS region for S3 storage.
+	S3Region string `mapstructure:"s3_region"`
+}
+
 // Load reads configuration from the given config directory path.
 // It looks for a file named "config.yaml" in that directory.
 // Environment variables with prefix SMTP_PROXY_ override file values.
@@ -136,6 +153,11 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("rate_limit.default_monthly_limit", 10000)
 	v.SetDefault("rate_limit.login_attempts_limit", 5)
 	v.SetDefault("rate_limit.login_lockout_duration", "15m")
+
+	// Set defaults for storage configuration.
+	v.SetDefault("storage.type", "local")
+	v.SetDefault("storage.path", "/data/messages")
+	v.SetDefault("storage.s3_region", "us-east-1")
 
 	v.SetEnvPrefix("SMTP_PROXY")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))

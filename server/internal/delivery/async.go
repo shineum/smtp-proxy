@@ -9,17 +9,17 @@ import (
 	"github.com/sungwon/smtp-proxy/server/internal/queue"
 )
 
-// AsyncService enqueues messages to Redis Streams for background delivery
+// AsyncService enqueues messages for background delivery
 // by the queue-worker process.
 type AsyncService struct {
-	producer *queue.Producer
+	enqueuer queue.Enqueuer
 	log      zerolog.Logger
 }
 
-// NewAsyncService creates an AsyncService backed by the given Redis producer.
-func NewAsyncService(producer *queue.Producer, log zerolog.Logger) *AsyncService {
+// NewAsyncService creates an AsyncService backed by the given Enqueuer.
+func NewAsyncService(enqueuer queue.Enqueuer, log zerolog.Logger) *AsyncService {
 	return &AsyncService{
-		producer: producer,
+		enqueuer: enqueuer,
 		log:      log,
 	}
 }
@@ -30,7 +30,7 @@ func NewAsyncService(producer *queue.Producer, log zerolog.Logger) *AsyncService
 func (a *AsyncService) DeliverMessage(ctx context.Context, req *Request) error {
 	msg := queue.NewIDOnlyMessage(req.MessageID.String(), req.AccountID.String(), req.TenantID)
 
-	entryID, err := a.producer.EnqueueMessage(ctx, msg)
+	entryID, err := a.enqueuer.Enqueue(ctx, msg)
 	if err != nil {
 		a.log.Error().Err(err).
 			Stringer("message_id", req.MessageID).

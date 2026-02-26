@@ -24,7 +24,7 @@ type dlqReprocessResponse struct {
 
 // DLQReprocessHandler handles POST /api/v1/dlq/reprocess.
 // It re-enqueues messages from the dead letter queue back to the primary queue.
-func DLQReprocessHandler(dlq *queue.DLQ) http.HandlerFunc {
+func DLQReprocessHandler(dlq queue.DeadLetterQueue) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log := logger.FromContext(r.Context())
 
@@ -48,7 +48,7 @@ func DLQReprocessHandler(dlq *queue.DLQ) http.HandlerFunc {
 		// Use the account ID as tenant ID for DLQ lookup.
 		tenantID := accountID.String()
 
-		reprocessed, err := dlq.ReprocessFromDLQ(r.Context(), tenantID, req.MessageIDs)
+		reprocessed, err := dlq.Reprocess(r.Context(), tenantID, req.MessageIDs)
 		if err != nil {
 			log.Error().Err(err).
 				Str("tenant_id", tenantID).

@@ -51,6 +51,12 @@ func (f *File) Send(_ context.Context, msg *Message) (*DeliveryResult, error) {
 		fmt.Fprintf(&b, "%s: %s\n", k, v)
 	}
 	fmt.Fprintf(&b, "X-Provider-Message-ID: file-%s\n", msg.ID)
+	if len(msg.Attachments) > 0 {
+		fmt.Fprintf(&b, "X-Attachment-Count: %d\n", len(msg.Attachments))
+		for _, att := range msg.Attachments {
+			fmt.Fprintf(&b, "X-Attachment: %s (%s, %d bytes)\n", att.Filename, att.ContentType, len(att.Content))
+		}
+	}
 	b.WriteString("\n")
 	b.Write(msg.Body)
 

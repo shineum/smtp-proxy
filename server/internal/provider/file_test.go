@@ -101,6 +101,57 @@ func TestFile_HealthCheck(t *testing.T) {
 	}
 }
 
+func TestFile_Send_WithAttachments(t *testing.T) {
+	dir := t.TempDir()
+	p := NewFile(ProviderConfig{Type: "file", Endpoint: dir})
+
+	msg := &Message{
+		ID:      "msg-attach-789",
+		From:    "sender@example.com",
+		To:      []string{"recipient@example.com"},
+		Subject: "Attachment Test",
+		Body:    []byte("body with attachments"),
+		Attachments: []Attachment{
+			{
+				Filename:    "report.pdf",
+				ContentType: "application/pdf",
+				Content:     []byte("PDF content"),
+			},
+			{
+				Filename:    "photo.jpg",
+				ContentType: "image/jpeg",
+				Content:     []byte("JPEG data"),
+				IsInline:    true,
+			},
+		},
+	}
+
+	result, err := p.Send(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	path := result.Metadata["path"]
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read output file: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "X-Attachment-Count: 2") {
+		t.Error("expected file to contain X-Attachment-Count: 2")
+	}
+	if !strings.Contains(content, "report.pdf") {
+		t.Error("expected file to contain attachment info for report.pdf")
+	}
+	if !strings.Contains(content, "photo.jpg") {
+		t.Error("expected file to contain attachment info for photo.jpg")
+	}
+	if !strings.Contains(content, "body with attachments") {
+		t.Error("expected file to contain body")
+	}
+}
+
 func TestFile_Send_SlashInID(t *testing.T) {
 	dir := t.TempDir()
 	p := NewFile(ProviderConfig{Type: "file", Endpoint: dir})

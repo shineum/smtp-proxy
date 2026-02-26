@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -134,10 +135,11 @@ type graphSendMailPayload struct {
 }
 
 type graphMessage struct {
-	Subject      string              `json:"subject"`
-	Body         graphBody           `json:"body"`
-	ToRecipients []graphRecipient    `json:"toRecipients"`
-	From         *graphRecipient     `json:"from,omitempty"`
+	Subject      string             `json:"subject"`
+	Body         graphBody          `json:"body"`
+	ToRecipients []graphRecipient   `json:"toRecipients"`
+	From         *graphRecipient    `json:"from,omitempty"`
+	Attachments  []graphAttachment  `json:"attachments,omitempty"`
 }
 
 type graphBody struct {
@@ -153,6 +155,15 @@ type graphEmailAddress struct {
 	Address string `json:"address"`
 }
 
+type graphAttachment struct {
+	OdataType    string `json:"@odata.type"`
+	Name         string `json:"name"`
+	ContentType  string `json:"contentType"`
+	ContentBytes string `json:"contentBytes"` // base64 encoded
+	IsInline     bool   `json:"isInline,omitempty"`
+	ContentID    string `json:"contentId,omitempty"`
+}
+
 func (m *MSGraph) buildPayload(msg *Message) graphSendMailPayload {
 	recipients := make([]graphRecipient, len(msg.To))
 	for i, addr := range msg.To {
@@ -161,17 +172,40 @@ func (m *MSGraph) buildPayload(msg *Message) graphSendMailPayload {
 		}
 	}
 
-	return graphSendMailPayload{
-		Message: graphMessage{
-			Subject: msg.Subject,
-			Body: graphBody{
-				ContentType: "Text",
-				Content:     string(msg.Body),
-			},
-			ToRecipients: recipients,
-			From: &graphRecipient{
-				EmailAddress: graphEmailAddress{Address: msg.From},
-			},
+	// Determine body content type and content.
+	contentType := "Text"
+	content := string(msg.Body)
+	if msg.HTMLBody != "" {
+		contentType = "HTML"
+		content = msg.HTMLBody
+	} else if msg.TextBody != "" {
+		contentType = "Text"
+		content = msg.TextBody
+	}
+
+	gMsg := graphMessage{
+		Subject: msg.Subject,
+		Body: graphBody{
+			ContentType: contentType,
+			Content:     content,
+		},
+		ToRecipients: recipients,
+		From: &graphRecipient{
+			EmailAddress: graphEmailAddress{Address: msg.From},
 		},
 	}
+
+	// Attach files if present.
+	for _, att := range msg.Attachments {
+		gMsg.Attachments = append(gMsg.Attachments, graphAttachment{
+			OdataType:    "#microsoft.graph.fileAttachment",
+			Name:         att.Filename,
+			ContentType:  att.ContentType,
+			ContentBytes: base64.StdEncoding.EncodeToString(att.Content),
+			IsInline:     att.IsInline,
+			ContentID:    att.ContentID,
+		})
+	}
+
+	return graphSendMailPayload{Message: gMsg}
 }

@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.10
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.1
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.22
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/emersion/go-smtp v0.24.0
 	github.com/go-chi/chi/v5 v5.2.5
@@ -17,6 +18,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/testcontainers/testcontainers-go v0.40.0
 	golang.org/x/crypto v0.43.0
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (
@@ -114,6 +116,5 @@ require (
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

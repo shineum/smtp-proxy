@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -100,6 +101,7 @@ type sendgridPayload struct {
 	Subject          string                    `json:"subject"`
 	Content          []sendgridContent         `json:"content"`
 	Headers          map[string]string         `json:"headers,omitempty"`
+	Attachments      []sendgridAttachment      `json:"attachments,omitempty"`
 }
 
 type sendgridPersonalization struct {
@@ -115,21 +117,58 @@ type sendgridContent struct {
 	Value string `json:"value"`
 }
 
+type sendgridAttachment struct {
+	Content     string `json:"content"`                // base64 encoded
+	Type        string `json:"type"`                   // MIME type
+	Filename    string `json:"filename"`
+	Disposition string `json:"disposition"`             // "attachment" or "inline"
+	ContentID   string `json:"content_id,omitempty"`
+}
+
 func (s *SendGrid) buildPayload(msg *Message) sendgridPayload {
 	tos := make([]sendgridEmail, len(msg.To))
 	for i, addr := range msg.To {
 		tos[i] = sendgridEmail{Email: addr}
 	}
 
-	return sendgridPayload{
+	// Build content parts: prefer parsed bodies, fall back to raw Body.
+	var content []sendgridContent
+	if msg.TextBody != "" {
+		content = append(content, sendgridContent{Type: "text/plain", Value: msg.TextBody})
+	}
+	if msg.HTMLBody != "" {
+		content = append(content, sendgridContent{Type: "text/html", Value: msg.HTMLBody})
+	}
+	if len(content) == 0 {
+		content = []sendgridContent{
+			{Type: "text/plain", Value: string(msg.Body)},
+		}
+	}
+
+	payload := sendgridPayload{
 		Personalizations: []sendgridPersonalization{
 			{To: tos},
 		},
 		From:    sendgridEmail{Email: msg.From},
 		Subject: msg.Subject,
-		Content: []sendgridContent{
-			{Type: "text/plain", Value: string(msg.Body)},
-		},
+		Content: content,
 		Headers: msg.Headers,
 	}
+
+	// Attach files if present.
+	for _, att := range msg.Attachments {
+		disposition := "attachment"
+		if att.IsInline {
+			disposition = "inline"
+		}
+		payload.Attachments = append(payload.Attachments, sendgridAttachment{
+			Content:     base64.StdEncoding.EncodeToString(att.Content),
+			Type:        att.ContentType,
+			Filename:    att.Filename,
+			Disposition: disposition,
+			ContentID:   att.ContentID,
+		})
+	}
+
+	return payload
 }

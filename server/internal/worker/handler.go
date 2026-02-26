@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
+	"github.com/sungwon/smtp-proxy/server/internal/mimeparse"
 	"github.com/sungwon/smtp-proxy/server/internal/msgstore"
 	"github.com/sungwon/smtp-proxy/server/internal/provider"
 	"github.com/sungwon/smtp-proxy/server/internal/queue"
@@ -27,10 +28,15 @@ var storageRetryBackoff = []time.Duration{
 	4 * time.Second,
 }
 
+// providerResolver resolves the ESP provider for a given account ID.
+type providerResolver interface {
+	Resolve(ctx context.Context, accountID uuid.UUID) (provider.Provider, error)
+}
+
 // Handler implements queue.MessageHandler. It delivers messages via ESP
 // providers and records delivery results in the database.
 type Handler struct {
-	resolver *provider.ProviderResolver
+	resolver providerResolver
 	queries  storage.Querier
 	store    msgstore.MessageStore
 	log      zerolog.Logger
@@ -40,7 +46,7 @@ type Handler struct {
 // The store parameter may be nil for backward compatibility with inline-body
 // queue messages.
 func NewHandler(
-	resolver *provider.ProviderResolver,
+	resolver providerResolver,
 	queries storage.Querier,
 	store msgstore.MessageStore,
 	log zerolog.Logger,
@@ -126,6 +132,29 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		Subject:  nullStringValue(dbMsg.Subject),
 		Headers:  parseHeaders(dbMsg.Headers),
 		Body:     body,
+	}
+
+	// Parse MIME structure to extract HTML body and attachments.
+	parsed, parseErr := mimeparse.Parse(body)
+	if parseErr == nil {
+		providerMsg.TextBody = parsed.TextBody
+		providerMsg.HTMLBody = parsed.HTMLBody
+		if parsed.Subject != "" {
+			providerMsg.Subject = parsed.Subject
+		}
+		for _, att := range parsed.Attachments {
+			providerMsg.Attachments = append(providerMsg.Attachments, provider.Attachment{
+				Filename:    att.Filename,
+				ContentType: att.ContentType,
+				Content:     att.Content,
+				ContentID:   att.ContentID,
+				IsInline:    att.IsInline,
+			})
+		}
+	} else {
+		// MIME parse failed -- fall back to raw body as text.
+		providerMsg.TextBody = string(body)
+		h.log.Debug().Err(parseErr).Str("message_id", msg.ID).Msg("MIME parse failed, using raw body as text")
 	}
 
 	// Send via ESP provider.

@@ -37,13 +37,25 @@ type HTTPResponse struct {
 
 // Message represents an email message to be delivered.
 type Message struct {
-	ID       string
-	TenantID string
-	From     string
-	To       []string
-	Subject  string
-	Headers  map[string]string
-	Body     []byte
+	ID          string
+	TenantID    string
+	From        string
+	To          []string
+	Subject     string
+	Headers     map[string]string
+	Body        []byte       // raw body (kept for backward compat, used by stdout/file)
+	TextBody    string       // parsed plain text body
+	HTMLBody    string       // parsed HTML body
+	Attachments []Attachment // parsed attachments
+}
+
+// Attachment represents a single MIME attachment or inline part.
+type Attachment struct {
+	Filename    string
+	ContentType string
+	Content     []byte
+	ContentID   string // for inline images (cid:xxx)
+	IsInline    bool
 }
 
 // DeliveryResult contains the outcome of a delivery attempt.

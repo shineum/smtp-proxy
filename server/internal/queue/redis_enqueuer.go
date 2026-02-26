@@ -8,25 +8,25 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Producer enqueues messages into Redis Streams.
-type Producer struct {
+// RedisEnqueuer publishes messages to Redis Streams.
+type RedisEnqueuer struct {
 	client *redis.Client
 }
 
-// NewProducer creates a new Producer backed by the given Redis client.
-func NewProducer(client *redis.Client) *Producer {
-	return &Producer{client: client}
+// NewRedisEnqueuer creates a new RedisEnqueuer backed by the given Redis client.
+func NewRedisEnqueuer(client *redis.Client) *RedisEnqueuer {
+	return &RedisEnqueuer{client: client}
 }
 
-// EnqueueMessage adds a message to the tenant's Redis stream using XADD.
+// Enqueue adds a message to the tenant's Redis stream using XADD.
 // It returns the Redis stream entry ID.
-func (p *Producer) EnqueueMessage(ctx context.Context, msg *Message) (string, error) {
+func (e *RedisEnqueuer) Enqueue(ctx context.Context, msg *Message) (string, error) {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return "", fmt.Errorf("marshal message: %w", err)
 	}
 
-	entryID, err := p.client.XAdd(ctx, &redis.XAddArgs{
+	entryID, err := e.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: streamKey(msg.TenantID),
 		Values: map[string]interface{}{
 			"data": string(data),

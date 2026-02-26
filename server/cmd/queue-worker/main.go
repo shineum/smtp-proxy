@@ -54,12 +54,6 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// Create consumer group for the configured stream.
-	consumer := queue.NewConsumer(redisClient)
-	if err := consumer.CreateConsumerGroup(ctx, cfg.Queue.StreamName, cfg.Queue.GroupName); err != nil {
-		log.Fatal().Err(err).Msg("failed to create consumer group")
-	}
-
 	// Initialize message body store (REQ-QW-004).
 	store, err := msgstore.New(msgstore.Config{
 		Type:       cfg.Storage.Type,
@@ -94,13 +88,13 @@ func main() {
 		MaxRetries:      5,
 	}
 
-	// Create and start worker pool.
-	dlq := queue.NewDLQ(redisClient, queue.NewProducer(redisClient))
+	// Create queue components using Redis implementations.
+	enqueuer := queue.NewRedisEnqueuer(redisClient)
 	retryStrategy := queue.NewRetryStrategy(queueCfg.MaxRetries)
-
-	pool := queue.NewWorkerPool(
+	dlq := queue.NewRedisDLQ(redisClient, enqueuer)
+	dequeuer := queue.NewRedisDequeuer(
 		redisClient,
-		consumer,
+		enqueuer,
 		dlq,
 		handler,
 		retryStrategy,
@@ -110,7 +104,9 @@ func main() {
 		cfg.Queue.GroupName,
 	)
 
-	pool.Start(ctx)
+	if err := dequeuer.Start(ctx); err != nil {
+		log.Fatal().Err(err).Msg("failed to start dequeuer")
+	}
 	log.Info().
 		Int("workers", workerCount).
 		Str("stream", cfg.Queue.StreamName).
@@ -127,7 +123,9 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	pool.Stop(shutdownCtx)
+	if err := dequeuer.Stop(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("dequeuer shutdown error")
+	}
 
 	log.Info().Msg("queue worker stopped")
 }

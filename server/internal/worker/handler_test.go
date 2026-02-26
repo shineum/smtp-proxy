@@ -720,3 +720,184 @@ func mustJSON(v interface{}) []byte {
 	data, _ := json.Marshal(v)
 	return data
 }
+
+// ---------------------------------------------------------------------------
+// Tests: MIME parsing integration (multipart message with HTML + attachments)
+// ---------------------------------------------------------------------------
+
+// mockCaptureProvider captures the provider.Message it receives via Send.
+type mockCaptureProvider struct {
+	captured *provider.Message
+}
+
+func (m *mockCaptureProvider) GetName() string { return "capture" }
+func (m *mockCaptureProvider) Send(_ context.Context, msg *provider.Message) (*provider.DeliveryResult, error) {
+	m.captured = msg
+	return &provider.DeliveryResult{
+		ProviderMessageID: "capture-" + msg.ID,
+		Status:            provider.StatusSent,
+	}, nil
+}
+func (m *mockCaptureProvider) HealthCheck(_ context.Context) error { return nil }
+
+// mockCaptureResolver returns a fixed provider for any account.
+type mockCaptureResolver struct {
+	provider provider.Provider
+}
+
+func (r *mockCaptureResolver) Resolve(_ context.Context, _ uuid.UUID) (provider.Provider, error) {
+	return r.provider, nil
+}
+
+func TestHandler_HandleMessage_MIMEParsing(t *testing.T) {
+	// Reduce backoff for fast tests.
+	origBackoff := storageRetryBackoff
+	storageRetryBackoff = []time.Duration{time.Millisecond}
+	defer func() { storageRetryBackoff = origBackoff }()
+
+	accountID := uuid.New()
+	msgID := uuid.New()
+
+	// Build a real multipart MIME message with HTML body and an attachment.
+	boundary := "----TestBoundary123"
+	mimeMsg := "MIME-Version: 1.0\r\n" +
+		"Subject: MIME Parsed Subject\r\n" +
+		"Content-Type: multipart/mixed; boundary=\"" + boundary + "\"\r\n" +
+		"\r\n" +
+		"--" + boundary + "\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n" +
+		"\r\n" +
+		"Hello plain text\r\n" +
+		"--" + boundary + "\r\n" +
+		"Content-Type: text/html; charset=utf-8\r\n" +
+		"\r\n" +
+		"<h1>Hello HTML</h1>\r\n" +
+		"--" + boundary + "\r\n" +
+		"Content-Type: application/pdf; name=\"report.pdf\"\r\n" +
+		"Content-Disposition: attachment; filename=\"report.pdf\"\r\n" +
+		"\r\n" +
+		"PDF-CONTENT-HERE\r\n" +
+		"--" + boundary + "--\r\n"
+
+	mq := &mockQuerier{
+		getMessageFn: func(_ context.Context, _ uuid.UUID) (storage.Message, error) {
+			return newTestDBMessage(accountID), nil
+		},
+	}
+	store := &mockMessageStore{
+		data: map[string][]byte{msgID.String(): []byte(mimeMsg)},
+	}
+
+	capture := &mockCaptureProvider{}
+	log := zerolog.Nop()
+	resolver := &mockCaptureResolver{provider: capture}
+	h := &Handler{
+		resolver: resolver,
+		queries:  mq,
+		store:    store,
+		log:      log,
+	}
+
+	msg := &queue.Message{
+		ID:        msgID.String(),
+		AccountID: accountID.String(),
+		TenantID:  "tenant-1",
+	}
+
+	err := h.HandleMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Verify delivery succeeded.
+	if len(mq.statuses) < 2 {
+		t.Fatalf("expected at least 2 status updates, got %d", len(mq.statuses))
+	}
+	if mq.statuses[1] != storage.MessageStatusDelivered {
+		t.Errorf("expected delivered status, got %s", mq.statuses[1])
+	}
+
+	// Verify the provider received MIME-parsed fields.
+	if capture.captured == nil {
+		t.Fatal("expected provider to receive a message")
+	}
+	pm := capture.captured
+
+	// MIME-parsed subject should override the DB subject.
+	if pm.Subject != "MIME Parsed Subject" {
+		t.Errorf("expected subject 'MIME Parsed Subject', got %q", pm.Subject)
+	}
+	if pm.TextBody != "Hello plain text" {
+		t.Errorf("expected TextBody 'Hello plain text', got %q", pm.TextBody)
+	}
+	if pm.HTMLBody != "<h1>Hello HTML</h1>" {
+		t.Errorf("expected HTMLBody '<h1>Hello HTML</h1>', got %q", pm.HTMLBody)
+	}
+	if len(pm.Attachments) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(pm.Attachments))
+	}
+	if pm.Attachments[0].Filename != "report.pdf" {
+		t.Errorf("expected attachment filename 'report.pdf', got %q", pm.Attachments[0].Filename)
+	}
+	if pm.Attachments[0].ContentType != "application/pdf" {
+		t.Errorf("expected attachment content type 'application/pdf', got %q", pm.Attachments[0].ContentType)
+	}
+}
+
+func TestHandler_HandleMessage_MIMEParseFallback(t *testing.T) {
+	// When the body is not valid MIME, the handler should fall back
+	// to using the raw body as TextBody.
+	origBackoff := storageRetryBackoff
+	storageRetryBackoff = []time.Duration{time.Millisecond}
+	defer func() { storageRetryBackoff = origBackoff }()
+
+	accountID := uuid.New()
+	msgID := uuid.New()
+	plainBody := []byte("Just a plain string, not MIME at all")
+
+	mq := &mockQuerier{
+		getMessageFn: func(_ context.Context, _ uuid.UUID) (storage.Message, error) {
+			return newTestDBMessage(accountID), nil
+		},
+	}
+	store := &mockMessageStore{
+		data: map[string][]byte{msgID.String(): plainBody},
+	}
+
+	capture := &mockCaptureProvider{}
+	log := zerolog.Nop()
+	resolver := &mockCaptureResolver{provider: capture}
+	h := &Handler{
+		resolver: resolver,
+		queries:  mq,
+		store:    store,
+		log:      log,
+	}
+
+	msg := &queue.Message{
+		ID:        msgID.String(),
+		AccountID: accountID.String(),
+		TenantID:  "tenant-1",
+	}
+
+	err := h.HandleMessage(context.Background(), msg)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if capture.captured == nil {
+		t.Fatal("expected provider to receive a message")
+	}
+	pm := capture.captured
+
+	// Fallback: raw body should be used as TextBody.
+	if pm.TextBody != string(plainBody) {
+		t.Errorf("expected TextBody to be raw body, got %q", pm.TextBody)
+	}
+	if pm.HTMLBody != "" {
+		t.Errorf("expected no HTMLBody, got %q", pm.HTMLBody)
+	}
+	if len(pm.Attachments) != 0 {
+		t.Errorf("expected no attachments, got %d", len(pm.Attachments))
+	}
+}

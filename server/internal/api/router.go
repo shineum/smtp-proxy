@@ -16,7 +16,7 @@ type RouterConfig struct {
 	Queries     storage.Querier
 	DB          *storage.DB
 	Log         zerolog.Logger
-	DLQ         *queue.DLQ
+	DLQ         queue.DeadLetterQueue
 	JWTService  *auth.JWTService
 	AuditLogger *auth.AuditLogger
 	RateLimiter *auth.RateLimiter
@@ -24,7 +24,7 @@ type RouterConfig struct {
 
 // NewRouter creates a chi.Mux with all routes, middleware, and handlers configured.
 // The dlq parameter is optional; when nil, DLQ reprocess endpoints are not registered.
-func NewRouter(queries storage.Querier, db *storage.DB, log zerolog.Logger, dlq *queue.DLQ) *chi.Mux {
+func NewRouter(queries storage.Querier, db *storage.DB, log zerolog.Logger, dlq queue.DeadLetterQueue) *chi.Mux {
 	return NewRouterWithConfig(RouterConfig{
 		Queries: queries,
 		DB:      db,

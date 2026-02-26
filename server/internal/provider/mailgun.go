@@ -1,10 +1,13 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
+	"net/textproto"
 	"net/url"
 	"strings"
 	"time"
@@ -39,18 +42,33 @@ func NewMailgun(cfg ProviderConfig, client HTTPClient) *Mailgun {
 func (m *Mailgun) GetName() string { return "mailgun" }
 
 // Send delivers a message via the Mailgun messages API.
+// When attachments are present, it uses multipart/form-data encoding;
+// otherwise it uses the simpler application/x-www-form-urlencoded format.
 func (m *Mailgun) Send(ctx context.Context, msg *Message) (*DeliveryResult, error) {
-	form := m.buildForm(msg)
-	body := form.Encode()
+	var reqBody []byte
+	var contentType string
+
+	if len(msg.Attachments) > 0 {
+		body, ct, err := m.buildMultipartForm(msg)
+		if err != nil {
+			return nil, fmt.Errorf("mailgun: build multipart form: %w", err)
+		}
+		reqBody = body
+		contentType = ct
+	} else {
+		form := m.buildForm(msg)
+		reqBody = []byte(form.Encode())
+		contentType = "application/x-www-form-urlencoded"
+	}
 
 	resp, err := m.client.Do(&HTTPRequest{
 		Method: "POST",
 		URL:    fmt.Sprintf("%s/v3/%s/messages", m.endpoint, m.domain),
 		Headers: map[string]string{
 			"Authorization": "Basic " + basicAuth("api", m.apiKey),
-			"Content-Type":  "application/x-www-form-urlencoded",
+			"Content-Type":  contentType,
 		},
-		Body: []byte(body),
+		Body: reqBody,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mailgun: send request: %w", err)
@@ -104,12 +122,75 @@ func (m *Mailgun) buildForm(msg *Message) url.Values {
 	form.Set("from", msg.From)
 	form.Set("to", strings.Join(msg.To, ","))
 	form.Set("subject", msg.Subject)
-	form.Set("text", string(msg.Body))
+
+	// Prefer parsed text body; fall back to raw Body.
+	text := msg.TextBody
+	if text == "" {
+		text = string(msg.Body)
+	}
+	form.Set("text", text)
+
+	if msg.HTMLBody != "" {
+		form.Set("html", msg.HTMLBody)
+	}
 
 	for key, value := range msg.Headers {
 		form.Set("h:"+key, value)
 	}
 	return form
+}
+
+// buildMultipartForm creates a multipart/form-data request body that includes
+// form fields and file attachments.
+func (m *Mailgun) buildMultipartForm(msg *Message) ([]byte, string, error) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	// Add form fields.
+	writer.WriteField("from", msg.From)
+	writer.WriteField("to", strings.Join(msg.To, ","))
+	writer.WriteField("subject", msg.Subject)
+
+	text := msg.TextBody
+	if text == "" {
+		text = string(msg.Body)
+	}
+	writer.WriteField("text", text)
+
+	if msg.HTMLBody != "" {
+		writer.WriteField("html", msg.HTMLBody)
+	}
+
+	for key, value := range msg.Headers {
+		writer.WriteField("h:"+key, value)
+	}
+
+	// Add attachments.
+	for _, att := range msg.Attachments {
+		fieldName := "attachment"
+		if att.IsInline {
+			fieldName = "inline"
+		}
+
+		header := make(textproto.MIMEHeader)
+		header.Set("Content-Disposition",
+			fmt.Sprintf("form-data; name=%q; filename=%q", fieldName, att.Filename))
+		header.Set("Content-Type", att.ContentType)
+
+		part, err := writer.CreatePart(header)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := part.Write(att.Content); err != nil {
+			return nil, "", err
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, "", err
+	}
+
+	return buf.Bytes(), writer.FormDataContentType(), nil
 }
 
 // basicAuth encodes credentials as base64 for HTTP Basic Authentication.

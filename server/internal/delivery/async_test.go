@@ -6,9 +6,23 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
+
+	"github.com/sungwon/smtp-proxy/server/internal/queue"
 )
 
-// Since AsyncService depends on a real Redis client (queue.Producer),
+// mockEnqueuer implements queue.Enqueuer for testing.
+type mockEnqueuer struct {
+	enqueueFn func(ctx context.Context, msg *queue.Message) (string, error)
+}
+
+func (m *mockEnqueuer) Enqueue(ctx context.Context, msg *queue.Message) (string, error) {
+	if m.enqueueFn != nil {
+		return m.enqueueFn(ctx, msg)
+	}
+	return "mock-entry-id", nil
+}
+
+// Since AsyncService depends on a queue.Enqueuer interface,
 // we test the request conversion logic and verify the interface is satisfied.
 
 func TestAsyncService_ImplementsInterface(t *testing.T) {
@@ -40,22 +54,48 @@ func TestRequest_Fields(t *testing.T) {
 func TestNewAsyncService(t *testing.T) {
 	log := zerolog.Nop()
 
-	// NewAsyncService requires a real queue.Producer which needs Redis.
-	// We test that construction doesn't panic with nil (it shouldn't be called).
-	svc := NewAsyncService(nil, log)
+	// NewAsyncService accepts any queue.Enqueuer.
+	mock := &mockEnqueuer{}
+	svc := NewAsyncService(mock, log)
 	if svc == nil {
 		t.Fatal("expected non-nil AsyncService")
 	}
+}
 
-	// Calling DeliverMessage with nil producer should fail gracefully.
+func TestAsyncService_DeliverMessage(t *testing.T) {
+	log := zerolog.Nop()
+
+	var capturedMsg *queue.Message
+	mock := &mockEnqueuer{
+		enqueueFn: func(ctx context.Context, msg *queue.Message) (string, error) {
+			capturedMsg = msg
+			return "entry-123", nil
+		},
+	}
+
+	svc := NewAsyncService(mock, log)
+
 	req := &Request{
 		MessageID: uuid.New(),
 		AccountID: uuid.New(),
-		TenantID:  "test",
+		TenantID:  "test-tenant",
 	}
 
-	// This will panic due to nil producer -- verify we handle it.
-	// We skip the actual call since we can't mock the Redis producer without Redis.
-	_ = req
-	_ = context.Background()
+	err := svc.DeliverMessage(context.Background(), req)
+	if err != nil {
+		t.Fatalf("DeliverMessage() error: %v", err)
+	}
+
+	if capturedMsg == nil {
+		t.Fatal("expected Enqueue to be called")
+	}
+	if capturedMsg.ID != req.MessageID.String() {
+		t.Errorf("message ID = %q, want %q", capturedMsg.ID, req.MessageID.String())
+	}
+	if capturedMsg.AccountID != req.AccountID.String() {
+		t.Errorf("account ID = %q, want %q", capturedMsg.AccountID, req.AccountID.String())
+	}
+	if capturedMsg.TenantID != req.TenantID {
+		t.Errorf("tenant ID = %q, want %q", capturedMsg.TenantID, req.TenantID)
+	}
 }

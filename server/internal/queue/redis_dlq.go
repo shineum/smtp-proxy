@@ -18,19 +18,19 @@ type DLQMessage struct {
 	MovedAt         time.Time `json:"moved_at"`
 }
 
-// DLQ manages dead letter queue operations.
-type DLQ struct {
+// RedisDLQ manages dead letter queue operations backed by Redis Streams.
+type RedisDLQ struct {
 	client   *redis.Client
-	producer *Producer
+	enqueuer Enqueuer
 }
 
-// NewDLQ creates a new DLQ backed by the given Redis client and producer.
-func NewDLQ(client *redis.Client, producer *Producer) *DLQ {
-	return &DLQ{client: client, producer: producer}
+// NewRedisDLQ creates a new RedisDLQ backed by the given Redis client and enqueuer.
+func NewRedisDLQ(client *redis.Client, enqueuer Enqueuer) *RedisDLQ {
+	return &RedisDLQ{client: client, enqueuer: enqueuer}
 }
 
 // MoveToDLQ moves a failed message to the tenant's dead letter queue stream.
-func (d *DLQ) MoveToDLQ(ctx context.Context, msg *Message, reason string) error {
+func (d *RedisDLQ) MoveToDLQ(ctx context.Context, msg *Message, reason string) error {
 	dlqMsg := DLQMessage{
 		OriginalMessage: msg,
 		FailureReason:   reason,
@@ -59,10 +59,10 @@ func (d *DLQ) MoveToDLQ(ctx context.Context, msg *Message, reason string) error 
 	return nil
 }
 
-// ReprocessFromDLQ removes messages from the DLQ, resets their retry count,
+// Reprocess removes messages from the DLQ, resets their retry count,
 // and re-enqueues them to the primary queue. It returns the number of
 // messages successfully reprocessed.
-func (d *DLQ) ReprocessFromDLQ(ctx context.Context, tenantID string, messageIDs []string) (int, error) {
+func (d *RedisDLQ) Reprocess(ctx context.Context, tenantID string, messageIDs []string) (int, error) {
 	reprocessed := 0
 
 	for _, msgID := range messageIDs {
@@ -87,7 +87,7 @@ func (d *DLQ) ReprocessFromDLQ(ctx context.Context, tenantID string, messageIDs 
 
 		// Reset retry count and re-enqueue.
 		dlqMsg.OriginalMessage.RetryCount = 0
-		if _, err := d.producer.EnqueueMessage(ctx, dlqMsg.OriginalMessage); err != nil {
+		if _, err := d.enqueuer.Enqueue(ctx, dlqMsg.OriginalMessage); err != nil {
 			return reprocessed, fmt.Errorf("re-enqueue message %s: %w", dlqMsg.OriginalMessage.ID, err)
 		}
 

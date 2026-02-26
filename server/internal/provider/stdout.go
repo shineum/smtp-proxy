@@ -34,6 +34,24 @@ func (s *Stdout) Send(_ context.Context, msg *Message) (*DeliveryResult, error) 
 		fmt.Fprintf(&b, "Header:  %s: %s\n", k, v)
 	}
 	fmt.Fprintf(&b, "Body:    (%d bytes)\n", len(msg.Body))
+	if msg.TextBody != "" {
+		fmt.Fprintf(&b, "Text:    (%d chars)\n", len(msg.TextBody))
+	}
+	if msg.HTMLBody != "" {
+		fmt.Fprintf(&b, "HTML:    (%d chars)\n", len(msg.HTMLBody))
+	}
+	if len(msg.Attachments) > 0 {
+		fmt.Fprintf(&b, "Attach:  %d file(s)", len(msg.Attachments))
+		for i, att := range msg.Attachments {
+			if i == 0 {
+				b.WriteString(" [")
+			} else {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "%s (%s, %d bytes)", att.Filename, att.ContentType, len(att.Content))
+		}
+		b.WriteString("]\n")
+	}
 	b.WriteString("--- end ---\n")
 
 	if _, err := io.WriteString(s.writer, b.String()); err != nil {

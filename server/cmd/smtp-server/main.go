@@ -84,26 +84,30 @@ func main() {
 	s.ReadTimeout = cfg.SMTP.ReadTimeout
 	s.WriteTimeout = cfg.SMTP.WriteTimeout
 	s.MaxMessageBytes = cfg.SMTP.MaxMessageSize
-	s.AllowInsecureAuth = false
-
-	// Configure TLS: load from files if provided, otherwise auto-generate.
-	var cert tls.Certificate
-	if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
-		cert, err = tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to load TLS certificate")
-		}
-		log.Info().Msg("TLS: loaded certificate from files")
+	// Configure TLS based on mode.
+	if cfg.TLS.Mode == "none" {
+		s.AllowInsecureAuth = true
+		log.Warn().Msg("TLS disabled (mode=none); ensure TLS is terminated upstream (NLB/proxy)")
 	} else {
-		cert, err = tlsutil.GenerateSelfSigned()
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to generate self-signed TLS certificate")
+		s.AllowInsecureAuth = false
+		var cert tls.Certificate
+		if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
+			cert, err = tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+			if err != nil {
+				log.Fatal().Err(err).Msg("failed to load TLS certificate")
+			}
+			log.Info().Msg("TLS: loaded certificate from files")
+		} else {
+			cert, err = tlsutil.GenerateSelfSigned()
+			if err != nil {
+				log.Fatal().Err(err).Msg("failed to generate self-signed TLS certificate")
+			}
+			log.Info().Msg("TLS: using auto-generated self-signed certificate")
 		}
-		log.Info().Msg("TLS: using auto-generated self-signed certificate")
-	}
-	s.TLSConfig = &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
+		s.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		}
 	}
 	s.EnableSMTPUTF8 = true
 

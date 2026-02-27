@@ -23,6 +23,7 @@ logging:
   format: json
 
 tls:
+  mode: "starttls"  # "starttls" (default) or "none" (TLS terminated by NLB/proxy)
   cert_file: ""
   key_file: ""
 

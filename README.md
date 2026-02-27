@@ -89,7 +89,7 @@ queued → processing → delivered
 | Per-account provider resolution | Each tenant configures their own ESP independently |
 | Enqueue retry with backoff | Tolerates transient Redis failures without losing mail |
 | Row-Level Security | PostgreSQL RLS enforces tenant isolation at the database layer |
-| Self-signed TLS auto-generation | Zero-config STARTTLS for development |
+| Optional TLS with auto-generation | `tls.mode=none` for NLB termination; self-signed auto-generation for dev |
 
 ## Services
 
@@ -155,6 +155,7 @@ cp .env.example .env
 | `SMTP_PROXY_STORAGE_S3_ENDPOINT` | *(empty)* | S3 endpoint (MinIO-compatible) |
 | `SMTP_PROXY_TLS_CERT_FILE` | *(auto-generate)* | Path to TLS certificate |
 | `SMTP_PROXY_TLS_KEY_FILE` | *(auto-generate)* | Path to TLS private key |
+| `SMTP_PROXY_TLS_MODE` | `starttls` | TLS mode: `starttls` or `none` (for NLB/proxy) |
 | `SMTP_PROXY_LOGGING_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `SMTP_PROXY_LOGGING_OUTPUT` | `stdout` | `stdout`, `file`, `cloudwatch` |
 
@@ -181,6 +182,14 @@ storage:
   s3_bucket: ""
   s3_endpoint: ""             # MinIO-compatible endpoint
   s3_region: "us-east-1"
+
+tls:
+  mode: "starttls"              # starttls | none (for NLB/proxy)
+  cert_file: ""
+  key_file: ""
+
+delivery:
+  mode: "sync"                  # sync | async (requires Redis)
 
 auth:
   signing_key: "..."
@@ -348,11 +357,38 @@ Prometheus metrics exposed by the API server:
 | Database | `db_connections_active`, `db_query_duration_seconds` |
 | Queue | `queue_depth` |
 
+## TLS Modes
+
+The SMTP server supports two TLS modes, configured via `tls.mode` (or `SMTP_PROXY_TLS_MODE`):
+
+| Mode | Behavior |
+|------|----------|
+| `starttls` (default) | STARTTLS enabled. Loads certs from files, or auto-generates self-signed certs if none provided. |
+| `none` | TLS disabled entirely. Use when TLS is terminated by an upstream NLB or reverse proxy. |
+
+### Running behind an NLB (TLS disabled)
+
+```bash
+# Option 1: Environment variable
+SMTP_PROXY_TLS_MODE=none docker compose up -d --build
+
+# Option 2: Uncomment in docker-compose.yml (smtp-server service)
+#   SMTP_PROXY_TLS_MODE: "none"
+
+# Test against the non-TLS server
+docker compose run --rm test-client --tls=none
+```
+
+When `mode=none`, the server skips all certificate loading and allows plaintext authentication. A warning is logged on startup to confirm TLS is disabled.
+
 ## Test Client
 
 ```bash
 # Default: sends one test email via STARTTLS on port 587
 docker compose run --rm test-client
+
+# Plain text (no TLS) - for NLB-terminated deployments
+docker compose run --rm test-client --tls=none
 
 # Custom options
 docker compose run --rm test-client \
@@ -362,18 +398,29 @@ docker compose run --rm test-client \
   --body "Test message" \
   --count 10 \
   --rate 5
+
+# HTML email with attachment
+docker compose run --rm test-client \
+  --from sender@example.com \
+  --to recipient@example.com \
+  --html "<h1>Hello</h1>" \
+  --attach /test-data/sample.txt
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--host` | `smtp-server` | SMTP server hostname |
+| `--host` | `localhost` | SMTP server hostname |
 | `--port` | `587` | SMTP port |
 | `--tls` | `starttls` | `starttls`, `implicit`, or `none` |
-| `--insecure` | `true` | Skip TLS certificate verification |
-| `--user` | `dev@example.com` | SMTP AUTH username |
-| `--password` | `dev` | SMTP AUTH password |
-| `--from` | `dev@example.com` | Sender address |
-| `--to` | `test@example.com` | Recipient address |
+| `--insecure` | `false` | Skip TLS certificate verification |
+| `--user` | *(empty)* | SMTP AUTH username |
+| `--password` | *(empty)* | SMTP AUTH password |
+| `--from` | *(required)* | Sender email address |
+| `--to` | *(required)* | Recipient address (repeatable) |
+| `--subject` | `Test Email` | Email subject |
+| `--body` | `This is a test...` | Plain text body |
+| `--html` | *(empty)* | HTML body (sends multipart/alternative) |
+| `--attach` | *(empty)* | File attachment path (repeatable) |
 | `--count` | `1` | Number of emails to send |
 | `--rate` | `1` | Emails per second |
 

@@ -87,6 +87,8 @@ type LoggingConfig struct {
 
 // TLSConfig holds TLS certificate configuration.
 type TLSConfig struct {
+	// Mode controls TLS behavior: "starttls" (default) or "none" (TLS disabled, for NLB/proxy termination).
+	Mode     string `mapstructure:"mode"`
 	CertFile string `mapstructure:"cert_file"`
 	KeyFile  string `mapstructure:"key_file"`
 }
@@ -156,6 +158,9 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("logging.file_path", "/var/log/smtp-proxy.log")
 	v.SetDefault("logging.max_size_mb", 100)
 	v.SetDefault("logging.max_files", 10)
+
+	// Set defaults for TLS configuration.
+	v.SetDefault("tls.mode", "starttls")
 
 	// Set defaults for storage configuration.
 	v.SetDefault("storage.type", "local")

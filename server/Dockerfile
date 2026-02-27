@@ -35,6 +35,8 @@ RUN apk add --no-cache ca-certificates
 COPY --from=builder /bin/smtp-server /usr/local/bin/
 COPY config/ /app/config/
 
+RUN mkdir -p /data/messages && chown nobody:nobody /data/messages
+
 WORKDIR /app
 
 EXPOSE 587 465
@@ -73,6 +75,8 @@ RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /bin/queue-worker /usr/local/bin/
 COPY config/ /app/config/
+
+RUN mkdir -p /data/messages && chown nobody:nobody /data/messages
 
 WORKDIR /app
 

@@ -188,6 +188,11 @@ services:
       - "--to=recipient@example.com"
       - "--subject=Test Email"
       - "--body=Hello from smtp-proxy test client."
+      # Uncomment to test attachments:
+      # - "--attach=/test-data/sample.txt"
+      # - "--attach=/test-data/sample.html"
+    volumes:
+      - ./test-data:/test-data:ro
     profiles:
       - tools
     networks:

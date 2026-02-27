@@ -1,0 +1,6 @@
+This is a sample text file for testing SMTP attachments.
+It contains multiple lines to verify the attachment encoding works correctly.
+
+Line 1: Hello from smtp-proxy test data.
+Line 2: Attachments are base64-encoded in the MIME message.
+Line 3: The queue-worker should parse and log these correctly.

@@ -9,12 +9,18 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"flag"
 	"fmt"
+	"mime/multipart"
 	"net"
+	"net/http"
 	"net/smtp"
+	"net/textproto"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -30,6 +36,8 @@ type config struct {
 	to       stringSlice
 	subject  string
 	body     string
+	html     string
+	attach   stringSlice
 	count    int
 	rate     float64
 }
@@ -70,6 +78,15 @@ func main() {
 	fmt.Printf("  Count:    %d\n", cfg.count)
 	if cfg.count > 1 {
 		fmt.Printf("  Rate:     %.1f emails/sec\n", cfg.rate)
+	}
+	if cfg.html != "" {
+		fmt.Printf("  HTML:     yes\n")
+	}
+	if len(cfg.attach) > 0 {
+		fmt.Printf("  Attach:   %d file(s)\n", len(cfg.attach))
+		for _, f := range cfg.attach {
+			fmt.Printf("            - %s\n", f)
+		}
 	}
 	fmt.Println()
 
@@ -134,6 +151,8 @@ func parseFlags() config {
 	flag.StringVar(&cfg.body, "body", "This is a test email sent by smtp-proxy test-client.", "Email body")
 	flag.IntVar(&cfg.count, "count", 1, "Number of emails to send (for batch testing)")
 	flag.Float64Var(&cfg.rate, "rate", 1, "Emails per second for batch sending")
+	flag.StringVar(&cfg.html, "html", "", "HTML body content (sends multipart/alternative)")
+	flag.Var(&cfg.attach, "attach", "File path to attach (can be specified multiple times)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: test-client [options]\n\n")
@@ -145,6 +164,8 @@ func parseFlags() config {
 		fmt.Fprintf(os.Stderr, "  test-client --tls none --from test@example.com --to recipient@example.com\n")
 		fmt.Fprintf(os.Stderr, "  test-client --insecure --user admin --password secret --from test@example.com --to recipient@example.com\n")
 		fmt.Fprintf(os.Stderr, "  test-client --count 100 --rate 10 --from test@example.com --to recipient@example.com\n")
+		fmt.Fprintf(os.Stderr, "  test-client --from test@example.com --to recipient@example.com --html '<h1>Hello</h1>'\n")
+		fmt.Fprintf(os.Stderr, "  test-client --from test@example.com --to recipient@example.com --attach /path/to/file.pdf\n")
 	}
 
 	flag.Parse()
@@ -157,7 +178,10 @@ func sendEmail(cfg config, addr, subject, body string) error {
 		InsecureSkipVerify: cfg.insecure, //nolint:gosec // Intentional for dev self-signed certs.
 	}
 
-	msg := buildMessage(cfg.from, cfg.to, subject, body)
+	msg, err := buildMessage(cfg.from, cfg.to, subject, body, cfg.html, cfg.attach)
+	if err != nil {
+		return fmt.Errorf("build message: %w", err)
+	}
 
 	switch cfg.tlsMode {
 	case "none":
@@ -252,17 +276,147 @@ func smtpSend(c *smtp.Client, cfg config, msg []byte) error {
 	return c.Quit()
 }
 
-func buildMessage(from string, to []string, subject, body string) []byte {
-	var sb strings.Builder
+func buildMessage(from string, to []string, subject, body, html string, attachments []string) ([]byte, error) {
+	var buf bytes.Buffer
 
-	sb.WriteString(fmt.Sprintf("From: %s\r\n", from))
-	sb.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(to, ", ")))
-	sb.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
-	sb.WriteString(fmt.Sprintf("Date: %s\r\n", time.Now().Format(time.RFC1123Z)))
-	sb.WriteString("MIME-Version: 1.0\r\n")
-	sb.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
-	sb.WriteString("\r\n")
-	sb.WriteString(body)
+	fmt.Fprintf(&buf, "From: %s\r\n", from)
+	fmt.Fprintf(&buf, "To: %s\r\n", strings.Join(to, ", "))
+	fmt.Fprintf(&buf, "Subject: %s\r\n", subject)
+	fmt.Fprintf(&buf, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
+	buf.WriteString("MIME-Version: 1.0\r\n")
 
-	return []byte(sb.String())
+	hasHTML := html != ""
+	hasAttach := len(attachments) > 0
+
+	// Plain text only (backward compatible).
+	if !hasHTML && !hasAttach {
+		buf.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+		buf.WriteString("\r\n")
+		buf.WriteString(body)
+		return buf.Bytes(), nil
+	}
+
+	if hasAttach {
+		// multipart/mixed with attachments.
+		mixed := multipart.NewWriter(&buf)
+		fmt.Fprintf(&buf, "Content-Type: multipart/mixed; boundary=%s\r\n", mixed.Boundary())
+		buf.WriteString("\r\n")
+
+		if hasHTML {
+			if err := writeAlternativePart(mixed, body, html); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := writeTextPart(mixed, body); err != nil {
+				return nil, err
+			}
+		}
+
+		for _, path := range attachments {
+			if err := writeAttachmentPart(mixed, path); err != nil {
+				return nil, err
+			}
+		}
+
+		if err := mixed.Close(); err != nil {
+			return nil, fmt.Errorf("close mixed writer: %w", err)
+		}
+	} else {
+		// HTML without attachments: multipart/alternative.
+		alt := multipart.NewWriter(&buf)
+		fmt.Fprintf(&buf, "Content-Type: multipart/alternative; boundary=%s\r\n", alt.Boundary())
+		buf.WriteString("\r\n")
+
+		if err := writeTextPart(alt, body); err != nil {
+			return nil, err
+		}
+		if err := writeHTMLPart(alt, html); err != nil {
+			return nil, err
+		}
+
+		if err := alt.Close(); err != nil {
+			return nil, fmt.Errorf("close alternative writer: %w", err)
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
+func writeTextPart(w *multipart.Writer, text string) error {
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Type", "text/plain; charset=utf-8")
+	part, err := w.CreatePart(h)
+	if err != nil {
+		return fmt.Errorf("create text part: %w", err)
+	}
+	_, err = part.Write([]byte(text))
+	return err
+}
+
+func writeHTMLPart(w *multipart.Writer, html string) error {
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	part, err := w.CreatePart(h)
+	if err != nil {
+		return fmt.Errorf("create html part: %w", err)
+	}
+	_, err = part.Write([]byte(html))
+	return err
+}
+
+func writeAlternativePart(mixed *multipart.Writer, text, html string) error {
+	var altBuf bytes.Buffer
+	alt := multipart.NewWriter(&altBuf)
+
+	if err := writeTextPart(alt, text); err != nil {
+		return err
+	}
+	if err := writeHTMLPart(alt, html); err != nil {
+		return err
+	}
+	if err := alt.Close(); err != nil {
+		return fmt.Errorf("close alternative writer: %w", err)
+	}
+
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Type", fmt.Sprintf("multipart/alternative; boundary=%s", alt.Boundary()))
+	part, err := mixed.CreatePart(h)
+	if err != nil {
+		return fmt.Errorf("create alternative part: %w", err)
+	}
+	_, err = part.Write(altBuf.Bytes())
+	return err
+}
+
+func writeAttachmentPart(w *multipart.Writer, filePath string) error {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("read attachment %s: %w", filePath, err)
+	}
+
+	filename := filepath.Base(filePath)
+	contentType := http.DetectContentType(data)
+
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Type", fmt.Sprintf("%s; name=%q", contentType, filename))
+	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	h.Set("Content-Transfer-Encoding", "base64")
+
+	part, err := w.CreatePart(h)
+	if err != nil {
+		return fmt.Errorf("create attachment part: %w", err)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(data)
+	for i := 0; i < len(encoded); i += 76 {
+		end := i + 76
+		if end > len(encoded) {
+			end = len(encoded)
+		}
+		if _, err := part.Write([]byte(encoded[i:end] + "\r\n")); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

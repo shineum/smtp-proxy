@@ -1,6 +1,6 @@
 # smtp-proxy
 
-Multi-tenant SMTP proxy server that accepts email via SMTP and delivers asynchronously through configurable ESP providers (SendGrid, SES, Mailgun, Microsoft Graph). Features pluggable message body storage, Redis Streams queue with retry and dead-letter support, JWT/API-key authentication, and a REST API for management.
+Multi-tenant SMTP proxy server that accepts email via SMTP and delivers asynchronously through configurable ESP providers (SendGrid, SES, Mailgun, Microsoft Graph). Features pluggable message body storage, Redis Streams queue with retry and dead-letter support, unified JWT/API-key authentication with group-based access control, and a REST API for management.
 
 ## Quick Start
 
@@ -18,7 +18,8 @@ docker compose logs smtp-server
 docker compose down
 ```
 
-The seed service automatically creates a dev account (`dev@example.com` / `dev`).
+The API server auto-seeds a system admin on startup (`admin@localhost` / `admin`).
+The seed service then creates a dev company group with an SMTP account (`dev`) for testing.
 
 ## Architecture
 
@@ -40,7 +41,7 @@ The seed service automatically creates a dev account (`dev@example.com` / `dev`)
                       │  └─────────────┘     └─────────────────────┘    │    SES, ...)
                       │                                                  │
                       │  ┌─────────────┐     ┌─────────────────────┐    │
-  REST :8080 ────────▶│  │ api-server  │────▶│    PostgreSQL 17    │    │
+  REST :8080 ────────▶│  │ api-server  │────▶│    PostgreSQL 18    │    │
                       │  │   (chi)     │     │  (RLS, multi-tenant) │    │
                       │  └─────────────┘     └─────────────────────┘    │
                       └──────────────────────────────────────────────────┘
@@ -86,9 +87,10 @@ queued → processing → delivered
 |----------|-----------|
 | ID-only queue messages | Keeps Redis payload small; body stored externally |
 | Pluggable MessageStore | Swap local filesystem for S3 without code changes |
-| Per-account provider resolution | Each tenant configures their own ESP independently |
+| Per-group provider resolution | Each group configures their own ESP independently |
 | Enqueue retry with backoff | Tolerates transient Redis failures without losing mail |
-| Row-Level Security | PostgreSQL RLS enforces tenant isolation at the database layer |
+| Row-Level Security | PostgreSQL RLS enforces group-level isolation at the database layer |
+| Unified auth (JWT + API key) | Single middleware accepts both human (JWT) and SMTP (API key) users |
 | Optional TLS with auto-generation | `tls.mode=none` for NLB termination; self-signed auto-generation for dev |
 
 ## Services
@@ -96,12 +98,12 @@ queued → processing → delivered
 | Service | Port | Description |
 |---------|------|-------------|
 | `smtp-server` | 587, 465 | SMTP listener with STARTTLS and implicit TLS |
-| `api-server` | 8080 | REST API for accounts, providers, routing, auth |
+| `api-server` | 8080 | REST API for groups, users, providers, routing, auth |
 | `queue-worker` | - | Async delivery worker (Redis Streams consumer) |
-| `postgres` | - | PostgreSQL 17 with Row-Level Security |
+| `postgres` | - | PostgreSQL 18 with Row-Level Security |
 | `redis` | - | Redis 7.4 (queue + rate limiting) |
 | `migrate` | - | Database migrations (runs once on startup) |
-| `seed` | - | Creates dev account (runs once) |
+| `seed` | - | Creates dev company group + SMTP account (runs once) |
 | `test-client` | - | CLI tool for sending test emails |
 
 ## Project Structure
@@ -115,7 +117,8 @@ server/
 │   └── test-client/       # CLI email sender
 ├── internal/
 │   ├── api/               # HTTP handlers, middleware, router (chi)
-│   ├── auth/              # JWT, API key, RBAC, rate limiting, audit
+│   ├── auth/              # JWT, API key, unified auth, RBAC, rate limiting, audit
+│   ├── bootstrap/         # System admin auto-seed on startup
 │   ├── config/            # Viper config loading with env override
 │   ├── delivery/          # Delivery service interface + async implementation
 │   ├── logger/            # zerolog wrapper (stdout / file / cloudwatch)
@@ -128,7 +131,7 @@ server/
 │   ├── storage/           # sqlc-generated PostgreSQL queries
 │   ├── tlsutil/           # Self-signed TLS certificate generator
 │   └── worker/            # Queue message handler (delivery orchestration)
-├── migrations/            # 9 up/down SQL migration pairs
+├── migrations/            # 10 up/down SQL migration pairs
 └── config/config.yaml     # Default application config
 ```
 
@@ -156,6 +159,8 @@ cp .env.example .env
 | `SMTP_PROXY_TLS_CERT_FILE` | *(auto-generate)* | Path to TLS certificate |
 | `SMTP_PROXY_TLS_KEY_FILE` | *(auto-generate)* | Path to TLS private key |
 | `SMTP_PROXY_TLS_MODE` | `starttls` | TLS mode: `starttls` or `none` (for NLB/proxy) |
+| `SMTP_PROXY_ADMIN_EMAIL` | `admin@localhost` | System admin email (auto-seeded on startup) |
+| `SMTP_PROXY_ADMIN_PASSWORD` | `admin` | System admin password (auto-seeded on startup) |
 | `SMTP_PROXY_LOGGING_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `SMTP_PROXY_LOGGING_OUTPUT` | `stdout` | `stdout`, `file`, `cloudwatch` |
 
@@ -211,16 +216,44 @@ rate_limit:
 | GET | `/healthz` | Liveness check |
 | GET | `/readyz` | Readiness check (includes DB) |
 
-### Accounts (API Key Auth)
+### Authentication
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/v1/accounts` | Create account |
-| GET | `/api/v1/accounts/{id}` | Get account |
-| PUT | `/api/v1/accounts/{id}` | Update account |
-| DELETE | `/api/v1/accounts/{id}` | Delete account |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/v1/auth/login` | None | Login (returns access + refresh tokens) |
+| POST | `/api/v1/auth/refresh` | None | Refresh access token |
+| POST | `/api/v1/auth/logout` | None | Invalidate refresh token |
+| POST | `/api/v1/auth/switch-group` | JWT | Switch active group context |
 
-### ESP Providers (API Key Auth)
+### Groups (Unified Auth)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/v1/groups` | System admin | Create group |
+| GET | `/api/v1/groups` | System admin | List all groups |
+| GET | `/api/v1/groups/{id}` | Member | Get group details |
+| DELETE | `/api/v1/groups/{id}` | System admin | Delete group |
+| GET | `/api/v1/groups/{id}/members` | Member | List group members |
+| POST | `/api/v1/groups/{id}/members` | Member | Add member to group |
+| PATCH | `/api/v1/groups/{id}/members/{uid}` | Member | Update member role |
+| DELETE | `/api/v1/groups/{id}/members/{uid}` | Member | Remove member |
+| GET | `/api/v1/groups/{id}/activity` | Member | List activity logs |
+
+Group types: `system` (platform admin), `company` (tenant organization)
+
+### Users (Unified Auth)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v1/users` | Authenticated | List users |
+| POST | `/api/v1/users` | Authenticated | Create user |
+| GET | `/api/v1/users/{id}` | Authenticated | Get user |
+| PATCH | `/api/v1/users/{id}/status` | Authenticated | Update user status |
+| DELETE | `/api/v1/users/{id}` | Authenticated | Delete user |
+
+Account types: `human` (JWT login), `smtp` (API key auth for SMTP)
+
+### ESP Providers (Unified Auth)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -230,34 +263,17 @@ rate_limit:
 | PUT | `/api/v1/providers/{id}` | Update provider |
 | DELETE | `/api/v1/providers/{id}` | Delete provider |
 
-Supported provider types: `sendgrid`, `ses`, `mailgun`, `smtp`, `msgraph`, `stdout`, `file`
+Supported provider types: `sendgrid`, `ses`, `mailgun`, `smtp`, `msgraph`
 
-### Routing Rules (API Key Auth)
+### Routing Rules (Unified Auth)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/routing-rules` | Create routing rule |
 | GET | `/api/v1/routing-rules` | List routing rules |
+| GET | `/api/v1/routing-rules/{id}` | Get routing rule |
 | PUT | `/api/v1/routing-rules/{id}` | Update routing rule |
 | DELETE | `/api/v1/routing-rules/{id}` | Delete routing rule |
-
-### Authentication (JWT)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/v1/auth/login` | Login (returns access + refresh tokens) |
-| POST | `/api/v1/auth/refresh` | Refresh access token |
-| POST | `/api/v1/auth/logout` | Invalidate refresh token |
-
-### Multi-Tenant Management (JWT Auth)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/v1/tenants` | None | Create tenant |
-| GET | `/api/v1/mt/tenants/{id}` | owner/admin | Get tenant |
-| GET | `/api/v1/mt/users` | Any JWT | List users |
-| POST | `/api/v1/mt/users` | owner/admin | Create user |
-| PUT | `/api/v1/mt/users/{id}/role` | owner/admin | Update user role |
 
 ### Webhooks (No Auth)
 
@@ -277,24 +293,25 @@ Supported provider types: `sendgrid`, `ses`, `mailgun`, `smtp`, `msgraph`, `stdo
 
 When a message is dequeued for delivery, the worker resolves the ESP provider:
 
-1. Check in-memory cache (5-minute TTL per account)
-2. Query the account's providers from PostgreSQL (ordered by creation date)
+1. Check in-memory cache (5-minute TTL per group)
+2. Query the group's providers from PostgreSQL (ordered by creation date)
 3. Select the first enabled provider
 4. If no provider configured, fall back to `stdout` (prints to server logs)
 
 ```bash
-# Configure a SendGrid provider for an account
+# Configure a SendGrid provider for a group
 curl -X POST http://localhost:8080/api/v1/providers \
-  -H "Authorization: Bearer <api-key>" \
+  -H "Authorization: Bearer <jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "account_id": "<account-uuid>",
     "name": "my-sendgrid",
     "provider_type": "sendgrid",
     "api_key": "SG.xxx",
     "enabled": true
   }'
 ```
+
+The group is automatically resolved from the authenticated user's context.
 
 ## Message Storage
 
@@ -321,11 +338,11 @@ Failed messages in the dead-letter queue can be reprocessed via `POST /api/v1/dl
 
 ## Database
 
-PostgreSQL 17 with 9 migrations applied automatically on startup.
+PostgreSQL 18 with 10 migrations applied automatically on startup.
 
-**Tables:** `accounts`, `esp_providers`, `routing_rules`, `messages`, `delivery_logs`, `tenants`, `users`, `sessions`, `audit_logs`
+**Tables:** `groups`, `group_members`, `users`, `esp_providers`, `routing_rules`, `messages`, `delivery_logs`, `sessions`, `activity_logs`
 
-**Multi-tenant isolation:** Row-Level Security (RLS) policies enforce tenant boundaries using the `app.current_tenant_id` PostgreSQL session variable, set automatically by API middleware.
+**Multi-tenant isolation:** Row-Level Security (RLS) policies enforce group-level boundaries using the `app.current_group_id` PostgreSQL session variable, set automatically by API middleware.
 
 Data is persisted in a Docker volume (`postgres-data`). To reset:
 
@@ -447,9 +464,9 @@ docker compose up -d --build smtp-server
 | Language | Go 1.24 |
 | SMTP Server | go-smtp + go-sasl |
 | HTTP Router | chi v5 |
-| Database | PostgreSQL 17 (pgx v5, sqlc) |
+| Database | PostgreSQL 18 (pgx v5, sqlc) |
 | Queue | Redis 7.4 Streams |
-| Auth | JWT (HS256) + bcrypt + API keys |
+| Auth | JWT (HS256) + bcrypt + API keys (unified auth) |
 | Metrics | Prometheus client_golang |
 | Logging | zerolog |
 | Config | Viper |

@@ -32,22 +32,23 @@ func TestAsyncService_ImplementsInterface(t *testing.T) {
 
 func TestRequest_Fields(t *testing.T) {
 	msgID := uuid.New()
-	accID := uuid.New()
+	userID := uuid.New()
+	groupID := uuid.New()
 
 	req := &Request{
 		MessageID: msgID,
-		AccountID: accID,
-		TenantID:  "tenant-1",
+		UserID:    userID,
+		GroupID:   groupID,
 	}
 
 	if req.MessageID != msgID {
 		t.Errorf("expected MessageID=%s, got %s", msgID, req.MessageID)
 	}
-	if req.AccountID != accID {
-		t.Errorf("expected AccountID=%s, got %s", accID, req.AccountID)
+	if req.UserID != userID {
+		t.Errorf("expected UserID=%s, got %s", userID, req.UserID)
 	}
-	if req.TenantID != "tenant-1" {
-		t.Errorf("expected TenantID=tenant-1, got %s", req.TenantID)
+	if req.GroupID != groupID {
+		t.Errorf("expected GroupID=%s, got %s", groupID, req.GroupID)
 	}
 }
 
@@ -77,8 +78,8 @@ func TestAsyncService_DeliverMessage(t *testing.T) {
 
 	req := &Request{
 		MessageID: uuid.New(),
-		AccountID: uuid.New(),
-		TenantID:  "test-tenant",
+		UserID:    uuid.New(),
+		GroupID:   uuid.New(),
 	}
 
 	err := svc.DeliverMessage(context.Background(), req)
@@ -92,10 +93,10 @@ func TestAsyncService_DeliverMessage(t *testing.T) {
 	if capturedMsg.ID != req.MessageID.String() {
 		t.Errorf("message ID = %q, want %q", capturedMsg.ID, req.MessageID.String())
 	}
-	if capturedMsg.AccountID != req.AccountID.String() {
-		t.Errorf("account ID = %q, want %q", capturedMsg.AccountID, req.AccountID.String())
+	if capturedMsg.AccountID != req.GroupID.String() {
+		t.Errorf("account ID (group) = %q, want %q", capturedMsg.AccountID, req.GroupID.String())
 	}
-	if capturedMsg.TenantID != req.TenantID {
-		t.Errorf("tenant ID = %q, want %q", capturedMsg.TenantID, req.TenantID)
+	if capturedMsg.TenantID != req.GroupID.String() {
+		t.Errorf("tenant ID (group) = %q, want %q", capturedMsg.TenantID, req.GroupID.String())
 	}
 }

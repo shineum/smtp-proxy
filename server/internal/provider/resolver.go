@@ -21,9 +21,9 @@ type cachedProvider struct {
 	expiresAt time.Time
 }
 
-// ProviderResolver resolves the ESP provider for a given account by looking up
-// the account's provider configuration in the database. Results are cached with
-// a configurable TTL. When no provider is configured for an account, a shared
+// ProviderResolver resolves the ESP provider for a given group by looking up
+// the group's provider configuration in the database. Results are cached with
+// a configurable TTL. When no provider is configured for a group, a shared
 // stdout provider is returned as the default.
 type ProviderResolver struct {
 	queries storage.Querier
@@ -50,13 +50,13 @@ func NewResolver(queries storage.Querier, client HTTPClient, log zerolog.Logger)
 	}
 }
 
-// Resolve returns the ESP provider for the given account ID.
+// Resolve returns the ESP provider for the given group ID.
 // It checks the cache first, then queries the database. If no enabled provider
 // is found, it returns the shared stdout provider.
-func (r *ProviderResolver) Resolve(ctx context.Context, accountID uuid.UUID) (Provider, error) {
+func (r *ProviderResolver) Resolve(ctx context.Context, groupID uuid.UUID) (Provider, error) {
 	// Check cache under read lock.
 	r.mu.RLock()
-	if cached, ok := r.cache[accountID]; ok && time.Now().Before(cached.expiresAt) {
+	if cached, ok := r.cache[groupID]; ok && time.Now().Before(cached.expiresAt) {
 		p := cached.provider
 		r.mu.RUnlock()
 		return p, nil
@@ -64,9 +64,9 @@ func (r *ProviderResolver) Resolve(ctx context.Context, accountID uuid.UUID) (Pr
 	r.mu.RUnlock()
 
 	// Cache miss or expired: query the database.
-	providers, err := r.queries.ListProvidersByAccountID(ctx, accountID)
+	providers, err := r.queries.ListProvidersByGroupID(ctx, groupID)
 	if err != nil {
-		return nil, fmt.Errorf("list providers for account %s: %w", accountID, err)
+		return nil, fmt.Errorf("list providers for group %s: %w", groupID, err)
 	}
 
 	// Find the first enabled provider (ordered by created_at DESC from query).
@@ -81,9 +81,9 @@ func (r *ProviderResolver) Resolve(ctx context.Context, accountID uuid.UUID) (Pr
 	// No enabled provider found: return stdout default.
 	if espProvider == nil {
 		r.log.Debug().
-			Stringer("account_id", accountID).
+			Stringer("group_id", groupID).
 			Msg("no enabled provider found, using stdout default")
-		r.cacheProvider(accountID, r.stdout)
+		r.cacheProvider(groupID, r.stdout)
 		return r.stdout, nil
 	}
 
@@ -99,18 +99,18 @@ func (r *ProviderResolver) Resolve(ctx context.Context, accountID uuid.UUID) (Pr
 	}
 
 	r.log.Debug().
-		Stringer("account_id", accountID).
+		Stringer("group_id", groupID).
 		Str("provider", p.GetName()).
 		Msg("resolved provider from database")
 
-	r.cacheProvider(accountID, p)
+	r.cacheProvider(groupID, p)
 	return p, nil
 }
 
 // cacheProvider stores a provider in the cache with the configured TTL.
-func (r *ProviderResolver) cacheProvider(accountID uuid.UUID, p Provider) {
+func (r *ProviderResolver) cacheProvider(groupID uuid.UUID, p Provider) {
 	r.mu.Lock()
-	r.cache[accountID] = &cachedProvider{
+	r.cache[groupID] = &cachedProvider{
 		provider:  p,
 		expiresAt: time.Now().Add(r.cacheTTL),
 	}

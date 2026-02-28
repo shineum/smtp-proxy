@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (tenant_id, email, password_hash, role, status)
-VALUES ($1, $2, $3, $4, 'active')
+INSERT INTO users (email, password_hash, account_type, username, api_key, allowed_domains)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: GetUserByID :one
@@ -9,12 +9,18 @@ SELECT * FROM users WHERE id = $1;
 -- name: GetUserByEmail :one
 SELECT * FROM users WHERE email = $1;
 
--- name: ListUsersByTenantID :many
-SELECT * FROM users WHERE tenant_id = $1 ORDER BY created_at DESC;
+-- name: GetUserByUsername :one
+SELECT * FROM users WHERE username = $1;
 
--- name: UpdateUserRole :one
+-- name: GetUserByAPIKey :one
+SELECT * FROM users WHERE api_key = $1;
+
+-- name: ListUsers :many
+SELECT * FROM users ORDER BY created_at DESC;
+
+-- name: UpdateUser :one
 UPDATE users
-SET role = $2, updated_at = NOW()
+SET email = $2, status = $3, allowed_domains = $4, updated_at = NOW()
 WHERE id = $1
 RETURNING *;
 
@@ -41,3 +47,8 @@ WHERE id = $1;
 
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = $1;
+
+-- name: UpdateUserPassword :exec
+UPDATE users
+SET password_hash = $2, updated_at = NOW()
+WHERE id = $1;

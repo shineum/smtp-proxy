@@ -4,14 +4,14 @@ import (
 	"context"
 )
 
-// InsertAuditLogFunc is a function signature for persisting audit log entries.
+// InsertActivityLogFunc is a function signature for persisting activity log entries.
 // This is used to bridge the auth package to the storage package without
 // creating a circular dependency.
-type InsertAuditLogFunc func(ctx context.Context, entry AuditEntry) error
+type InsertActivityLogFunc func(ctx context.Context, entry AuditEntry) error
 
-// funcAuditStore wraps an InsertAuditLogFunc to implement AuditStore.
+// funcAuditStore wraps an InsertActivityLogFunc to implement AuditStore.
 type funcAuditStore struct {
-	fn InsertAuditLogFunc
+	fn InsertActivityLogFunc
 }
 
 // NewFuncAuditStore creates an AuditStore from a function.
@@ -21,23 +21,23 @@ type funcAuditStore struct {
 // Example usage in main.go or server setup:
 //
 //	store := auth.NewFuncAuditStore(func(ctx context.Context, entry auth.AuditEntry) error {
-//		_, err := queries.CreateAuditLog(ctx, storage.CreateAuditLogParams{
-//			TenantID:     entry.TenantID,
-//			UserID:       pgtype.UUID{Bytes: entry.UserID, Valid: entry.UserID != uuid.Nil},
+//		_, err := queries.CreateActivityLog(ctx, storage.CreateActivityLogParams{
+//			GroupID:      entry.GroupID,
+//			ActorID:      entry.UserID,
 //			Action:       entry.Action,
 //			ResourceType: entry.ResourceType,
 //			ResourceID:   pgtype.Text{String: entry.ResourceID, Valid: entry.ResourceID != ""},
-//			Result:       entry.Result,
-//			Metadata:     metadataToJSON(entry.Metadata),
-//			IPAddress:    ipToInet(entry.IPAddress),
+//			Changes:      changesToJSON(entry.Changes),
+//			Comment:      pgtype.Text{String: entry.Comment, Valid: entry.Comment != ""},
+//			IpAddress:    ipToInet(entry.IPAddress),
 //		})
 //		return err
 //	})
-func NewFuncAuditStore(fn InsertAuditLogFunc) AuditStore {
+func NewFuncAuditStore(fn InsertActivityLogFunc) AuditStore {
 	return &funcAuditStore{fn: fn}
 }
 
-// InsertAuditLog implements AuditStore by delegating to the wrapped function.
-func (s *funcAuditStore) InsertAuditLog(ctx context.Context, entry AuditEntry) error {
+// InsertActivityLog implements AuditStore by delegating to the wrapped function.
+func (s *funcAuditStore) InsertActivityLog(ctx context.Context, entry AuditEntry) error {
 	return s.fn(ctx, entry)
 }

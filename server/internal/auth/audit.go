@@ -13,37 +13,31 @@ import (
 
 // AuditAction defines known audit log actions.
 const (
-	AuditActionLogin         = "auth.login"
-	AuditActionLoginFailed   = "auth.login_failed"
-	AuditActionLogout        = "auth.logout"
-	AuditActionTokenRefresh  = "auth.token_refresh"
-	AuditActionCreateUser    = "admin.create_user"
-	AuditActionUpdateRole    = "admin.update_role"
-	AuditActionCreateTenant  = "admin.create_tenant"
-	AuditActionDeleteTenant  = "admin.delete_tenant"
+	AuditActionLogin        = "auth.login"
+	AuditActionLoginFailed  = "auth.login_failed"
+	AuditActionLogout       = "auth.logout"
+	AuditActionTokenRefresh = "auth.token_refresh"
+	AuditActionCreateUser   = "admin.create_user"
+	AuditActionUpdateRole   = "admin.update_role"
+	AuditActionCreateGroup  = "admin.create_group"
+	AuditActionDeleteGroup  = "admin.delete_group"
 )
 
-// AuditResult defines the result of an audited action.
-const (
-	AuditResultSuccess = "success"
-	AuditResultFailure = "failure"
-)
-
-// AuditEntry represents a single audit log entry to be persisted.
+// AuditEntry represents a single activity log entry to be persisted.
 type AuditEntry struct {
-	TenantID     uuid.UUID
+	GroupID      uuid.UUID
 	UserID       uuid.UUID
 	Action       string
 	ResourceType string
 	ResourceID   string
-	Result       string
-	Metadata     map[string]interface{}
+	Changes      map[string]interface{}
+	Comment      string
 	IPAddress    string
 }
 
-// AuditStore is the interface for persisting audit log entries.
+// AuditStore is the interface for persisting activity log entries.
 type AuditStore interface {
-	InsertAuditLog(ctx context.Context, entry AuditEntry) error
+	InsertActivityLog(ctx context.Context, entry AuditEntry) error
 }
 
 // AuditLogger logs security-relevant events to the audit_logs table and zerolog.
@@ -61,13 +55,12 @@ func NewAuditLogger(store AuditStore, logger zerolog.Logger) *AuditLogger {
 }
 
 // LogAuthAttempt logs a successful authentication event.
-func (al *AuditLogger) LogAuthAttempt(ctx context.Context, r *http.Request, tenantID, userID uuid.UUID, action string) {
+func (al *AuditLogger) LogAuthAttempt(ctx context.Context, r *http.Request, groupID, userID uuid.UUID, action string) {
 	entry := AuditEntry{
-		TenantID:     tenantID,
+		GroupID:      groupID,
 		UserID:       userID,
 		Action:       action,
 		ResourceType: "session",
-		Result:       AuditResultSuccess,
 		IPAddress:    extractIP(r),
 	}
 
@@ -76,16 +69,15 @@ func (al *AuditLogger) LogAuthAttempt(ctx context.Context, r *http.Request, tena
 
 // LogAuthFailure logs a failed authentication event.
 func (al *AuditLogger) LogAuthFailure(ctx context.Context, r *http.Request, action, reason string) {
-	tenantID := TenantFromContext(ctx)
+	groupID := GroupIDFromContext(ctx)
 	userID := UserFromContext(ctx)
 
 	entry := AuditEntry{
-		TenantID:     tenantID,
+		GroupID:      groupID,
 		UserID:       userID,
 		Action:       action,
 		ResourceType: "session",
-		Result:       AuditResultFailure,
-		Metadata:     map[string]interface{}{"reason": reason},
+		Comment:      reason,
 		IPAddress:    extractIP(r),
 	}
 
@@ -93,18 +85,17 @@ func (al *AuditLogger) LogAuthFailure(ctx context.Context, r *http.Request, acti
 }
 
 // LogAdminAction logs an administrative action (user creation, role change, etc.).
-func (al *AuditLogger) LogAdminAction(ctx context.Context, r *http.Request, action, resourceType, resourceID string, metadata map[string]interface{}) {
-	tenantID := TenantFromContext(ctx)
+func (al *AuditLogger) LogAdminAction(ctx context.Context, r *http.Request, action, resourceType, resourceID string, changes map[string]interface{}) {
+	groupID := GroupIDFromContext(ctx)
 	userID := UserFromContext(ctx)
 
 	entry := AuditEntry{
-		TenantID:     tenantID,
+		GroupID:      groupID,
 		UserID:       userID,
 		Action:       action,
 		ResourceType: resourceType,
 		ResourceID:   resourceID,
-		Result:       AuditResultSuccess,
-		Metadata:     metadata,
+		Changes:      changes,
 		IPAddress:    extractIP(r),
 	}
 
@@ -117,11 +108,10 @@ func (al *AuditLogger) log(ctx context.Context, entry AuditEntry) {
 	event := al.logger.Info().
 		Str("action", entry.Action).
 		Str("resource_type", entry.ResourceType).
-		Str("result", entry.Result).
 		Str("ip_address", entry.IPAddress)
 
-	if entry.TenantID != uuid.Nil {
-		event = event.Str("tenant_id", entry.TenantID.String())
+	if entry.GroupID != uuid.Nil {
+		event = event.Str("group_id", entry.GroupID.String())
 	}
 	if entry.UserID != uuid.Nil {
 		event = event.Str("user_id", entry.UserID.String())
@@ -129,15 +119,18 @@ func (al *AuditLogger) log(ctx context.Context, entry AuditEntry) {
 	if entry.ResourceID != "" {
 		event = event.Str("resource_id", entry.ResourceID)
 	}
+	if entry.Comment != "" {
+		event = event.Str("comment", entry.Comment)
+	}
 
-	event.Msg("audit log")
+	event.Msg("activity log")
 
 	// Persist to database
 	if al.store != nil {
-		if err := al.store.InsertAuditLog(ctx, entry); err != nil {
+		if err := al.store.InsertActivityLog(ctx, entry); err != nil {
 			al.logger.Error().Err(err).
 				Str("action", entry.Action).
-				Msg("failed to persist audit log")
+				Msg("failed to persist activity log")
 		}
 	}
 }
@@ -175,12 +168,12 @@ func extractIP(r *http.Request) string {
 	return host
 }
 
-// MetadataToJSON converts metadata map to JSONB-compatible bytes.
-func MetadataToJSON(metadata map[string]interface{}) []byte {
-	if metadata == nil {
+// ChangesToJSON converts a changes map to JSONB-compatible bytes.
+func ChangesToJSON(changes map[string]interface{}) []byte {
+	if changes == nil {
 		return nil
 	}
-	data, err := json.Marshal(metadata)
+	data, err := json.Marshal(changes)
 	if err != nil {
 		return nil
 	}

@@ -37,7 +37,8 @@ type Session struct {
 	queries        storage.Querier
 	log            zerolog.Logger
 	backend        *Backend
-	accountID      uuid.UUID
+	userID         uuid.UUID
+	groupID        uuid.UUID
 	authenticated  bool
 	allowedDomains []string
 	sender         string
@@ -58,9 +59,10 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 	return sasl.NewPlainServer(func(identity, username, password string) error {
 		s.log.Info().Str("username", username).Msg("auth attempt")
 
-		account, err := s.queries.GetAccountByName(s.ctx, username)
+		// Step 1: Look up user by SMTP username.
+		user, err := s.queries.GetUserByUsername(s.ctx, sql.NullString{String: username, Valid: true})
 		if err != nil {
-			s.log.Warn().Str("username", username).Msg("auth failed: account not found")
+			s.log.Warn().Str("username", username).Msg("auth failed: user not found")
 			return &gosmtp.SMTPError{
 				Code:         535,
 				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
@@ -68,7 +70,21 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 
-		if err := auth.VerifyPassword(account.PasswordHash, password); err != nil {
+		// Verify user is an active SMTP account.
+		if user.AccountType != "smtp" || user.Status != "active" {
+			s.log.Warn().Str("username", username).
+				Str("account_type", user.AccountType).
+				Str("status", user.Status).
+				Msg("auth failed: user not eligible for SMTP")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
+		}
+
+		// Step 2: Verify password.
+		if err := auth.VerifyPassword(user.PasswordHash, password); err != nil {
 			s.log.Warn().Str("username", username).Msg("auth failed: invalid password")
 			return &gosmtp.SMTPError{
 				Code:         535,
@@ -77,13 +93,38 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 
-		s.accountID = account.ID
+		// Step 3: Resolve group membership (SMTP accounts belong to exactly one group).
+		groups, err := s.queries.ListGroupsByUserID(s.ctx, user.ID)
+		if err != nil || len(groups) == 0 {
+			s.log.Warn().Str("username", username).Msg("auth failed: no group membership")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
+		}
+
+		// Step 4: Check group status.
+		group, err := s.queries.GetGroupByID(s.ctx, groups[0].ID)
+		if err != nil || group.Status != "active" {
+			s.log.Warn().Str("username", username).
+				Str("group_id", groups[0].ID.String()).
+				Msg("auth failed: group not active")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
+		}
+
+		s.userID = user.ID
+		s.groupID = group.ID
 		s.authenticated = true
 
 		// Parse allowed domains from JSONB column.
 		var domains []string
-		if len(account.AllowedDomains) > 0 {
-			if err := json.Unmarshal(account.AllowedDomains, &domains); err != nil {
+		if len(user.AllowedDomains) > 0 {
+			if err := json.Unmarshal(user.AllowedDomains, &domains); err != nil {
 				s.log.Error().Err(err).Msg("failed to parse allowed domains")
 				domains = nil
 			}
@@ -92,7 +133,8 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 
 		s.log.Info().
 			Str("username", username).
-			Str("account_id", account.ID.String()).
+			Str("user_id", user.ID.String()).
+			Str("group_id", group.ID.String()).
 			Msg("auth successful")
 
 		return nil
@@ -100,7 +142,7 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 }
 
 // Mail handles the MAIL FROM command. It validates that the session is
-// authenticated and that the sender domain is in the account's allowed
+// authenticated and that the sender domain is in the user's allowed
 // domains list.
 func (s *Session) Mail(from string, opts *gosmtp.MailOptions) error {
 	if !s.authenticated {
@@ -222,6 +264,10 @@ func (s *Session) Data(r io.Reader) error {
 
 	bodyBytes := buf.Bytes()
 
+	// Build pgtype.UUID values for user and group identifiers.
+	userPgID := pgtype.UUID{Bytes: s.userID, Valid: true}
+	groupPgID := pgtype.UUID{Bytes: s.groupID, Valid: true}
+
 	// Try to store body in MessageStore and persist metadata.
 	var dbMsg storage.Message
 	if s.backend.store != nil {
@@ -230,7 +276,8 @@ func (s *Session) Data(r io.Reader) error {
 				Msg("MessageStore write failed, falling back to inline body")
 			// Fall back to inline body storage.
 			dbMsg, err = s.queries.EnqueueMessage(s.ctx, storage.EnqueueMessageParams{
-				AccountID:  s.accountID,
+				UserID:     userPgID,
+				GroupID:    groupPgID,
 				Sender:     s.sender,
 				Recipients: recipientsJSON,
 				Subject:    sql.NullString{String: subject, Valid: subject != ""},
@@ -248,7 +295,8 @@ func (s *Session) Data(r io.Reader) error {
 		} else {
 			// Body stored successfully -- persist metadata only.
 			dbMsg, err = s.queries.EnqueueMessageMetadata(s.ctx, storage.EnqueueMessageMetadataParams{
-				AccountID:  s.accountID,
+				UserID:     userPgID,
+				GroupID:    groupPgID,
 				Sender:     s.sender,
 				Recipients: recipientsJSON,
 				Subject:    sql.NullString{String: subject, Valid: subject != ""},
@@ -267,7 +315,8 @@ func (s *Session) Data(r io.Reader) error {
 	} else {
 		// No MessageStore configured -- use inline body (backward compat).
 		dbMsg, err = s.queries.EnqueueMessage(s.ctx, storage.EnqueueMessageParams{
-			AccountID:  s.accountID,
+			UserID:     userPgID,
+			GroupID:    groupPgID,
 			Sender:     s.sender,
 			Recipients: recipientsJSON,
 			Subject:    sql.NullString{String: subject, Valid: subject != ""},
@@ -294,8 +343,8 @@ func (s *Session) Data(r io.Reader) error {
 	// Retry with exponential backoff per REQ-SMTP-005.
 	req := &delivery.Request{
 		MessageID: dbMsg.ID,
-		AccountID: s.accountID,
-		TenantID:  s.accountID.String(),
+		UserID:    s.userID,
+		GroupID:   s.groupID,
 	}
 
 	enqueueStart := time.Now()
@@ -368,7 +417,7 @@ func (s *Session) Logout() error {
 	return nil
 }
 
-// isDomainAllowed checks whether the given domain is in the account's allowed
+// isDomainAllowed checks whether the given domain is in the user's allowed
 // domains list. If no domains are configured, all domains are allowed.
 func (s *Session) isDomainAllowed(domain string) bool {
 	if len(s.allowedDomains) == 0 {

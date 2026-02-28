@@ -28,7 +28,7 @@ func NewAsyncService(enqueuer queue.Enqueuer, log zerolog.Logger) *AsyncService 
 // The actual ESP delivery is handled asynchronously by the queue-worker process,
 // which fetches the full message body from the message store.
 func (a *AsyncService) DeliverMessage(ctx context.Context, req *Request) error {
-	msg := queue.NewIDOnlyMessage(req.MessageID.String(), req.AccountID.String(), req.TenantID)
+	msg := queue.NewIDOnlyMessage(req.MessageID.String(), req.GroupID.String(), req.GroupID.String())
 
 	entryID, err := a.enqueuer.Enqueue(ctx, msg)
 	if err != nil {

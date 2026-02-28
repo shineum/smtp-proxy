@@ -10,38 +10,17 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
-// setAuthContext injects the account ID into context the same way the auth
-// middleware does, so that auth.AccountFromContext can retrieve it.
-func setAuthContext(ctx context.Context, accountID uuid.UUID) context.Context {
-	// We pass a fake request through the real auth middleware to produce
-	// a context with the correct unexported key populated.
-	lookup := func(_ context.Context, _ string) (uuid.UUID, error) {
-		return accountID, nil
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Authorization", "Bearer fakekey")
-	req = req.WithContext(ctx)
-
-	var resultCtx context.Context
-	captured := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resultCtx = r.Context()
-	})
-	auth.BearerAuth(lookup)(captured).ServeHTTP(httptest.NewRecorder(), req)
-
-	return resultCtx
-}
-
 func TestCreateProviderHandler_Valid(t *testing.T) {
 	prov := testProvider()
+	groupID := testGroup().ID
+
 	mock := &mockQuerier{
 		createProviderFn: func(ctx context.Context, arg storage.CreateProviderParams) (storage.EspProvider, error) {
-			if arg.AccountID == uuid.Nil {
-				t.Error("expected non-nil account ID")
+			if arg.GroupID != groupID {
+				t.Errorf("expected group ID %s, got %s", groupID, arg.GroupID)
 			}
 			if arg.Name != "my-sendgrid" {
 				t.Errorf("expected name my-sendgrid, got %s", arg.Name)
@@ -54,8 +33,7 @@ func TestCreateProviderHandler_Valid(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	accountID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	ctx := setAuthContext(req.Context(), accountID)
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
@@ -73,17 +51,20 @@ func TestCreateProviderHandler_Valid(t *testing.T) {
 	if resp.Name != prov.Name {
 		t.Errorf("expected name %s, got %s", prov.Name, resp.Name)
 	}
+	if resp.GroupID != groupID {
+		t.Errorf("expected group_id %s, got %s", groupID, resp.GroupID)
+	}
 }
 
 func TestCreateProviderHandler_InvalidType(t *testing.T) {
 	mock := &mockQuerier{}
+	groupID := testGroup().ID
 
 	body := `{"name":"bad","provider_type":"invalid_type","enabled":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	accountID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	ctx := setAuthContext(req.Context(), accountID)
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
@@ -95,21 +76,21 @@ func TestCreateProviderHandler_InvalidType(t *testing.T) {
 	}
 }
 
-func TestListProvidersHandler_FilteredByAccount(t *testing.T) {
-	accountID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+func TestListProvidersHandler_FilteredByGroup(t *testing.T) {
+	groupID := testGroup().ID
 	prov := testProvider()
 
 	mock := &mockQuerier{
-		listProvidersByAccountFn: func(ctx context.Context, acctID uuid.UUID) ([]storage.EspProvider, error) {
-			if acctID != accountID {
-				t.Errorf("expected account ID %s, got %s", accountID, acctID)
+		listProvidersByGroupFn: func(ctx context.Context, gID uuid.UUID) ([]storage.EspProvider, error) {
+			if gID != groupID {
+				t.Errorf("expected group ID %s, got %s", groupID, gID)
 			}
 			return []storage.EspProvider{prov}, nil
 		},
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers", nil)
-	ctx := setAuthContext(req.Context(), accountID)
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()

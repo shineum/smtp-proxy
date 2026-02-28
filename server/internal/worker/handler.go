@@ -28,9 +28,9 @@ var storageRetryBackoff = []time.Duration{
 	4 * time.Second,
 }
 
-// providerResolver resolves the ESP provider for a given account ID.
+// providerResolver resolves the ESP provider for a given group ID.
 type providerResolver interface {
-	Resolve(ctx context.Context, accountID uuid.UUID) (provider.Provider, error)
+	Resolve(ctx context.Context, groupID uuid.UUID) (provider.Provider, error)
 }
 
 // Handler implements queue.MessageHandler. It delivers messages via ESP
@@ -75,7 +75,7 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		h.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to set processing status")
 	}
 
-	// Look up the message in DB to get the account ID and metadata.
+	// Look up the message in DB to get the group/user IDs and metadata.
 	dbMsg, err := h.queries.GetMessageByID(ctx, messageID)
 	if err != nil {
 		// REQ-QW-005: Orphaned message_id -- acknowledge without delivery.
@@ -84,9 +84,12 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 			return nil
 		}
 		h.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to get message from database")
-		h.recordFailure(ctx, messageID, uuid.Nil, "", fmt.Errorf("get message: %w", err))
+		h.recordFailure(ctx, messageID, pgtype.UUID{}, pgtype.UUID{}, "", fmt.Errorf("get message: %w", err))
 		return fmt.Errorf("get message %s: %w", msg.ID, err)
 	}
+
+	// Extract group ID as uuid.UUID for provider resolution.
+	groupID := uuid.UUID(dbMsg.GroupID.Bytes)
 
 	// Determine message body source.
 	var body []byte
@@ -105,19 +108,19 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 			}); statusErr != nil {
 				h.log.Error().Err(statusErr).Str("message_id", msg.ID).Msg("failed to set storage_error status")
 			}
-			h.recordFailure(ctx, messageID, dbMsg.AccountID, "", fmt.Errorf("storage read: %w", err))
+			h.recordFailure(ctx, messageID, dbMsg.GroupID, dbMsg.UserID, "", fmt.Errorf("storage read: %w", err))
 			return fmt.Errorf("fetch body for %s: %w", msg.ID, err)
 		}
 	}
 
-	// Resolve provider for this account.
-	p, err := h.resolver.Resolve(ctx, dbMsg.AccountID)
+	// Resolve provider for this group.
+	p, err := h.resolver.Resolve(ctx, groupID)
 	if err != nil {
 		h.log.Error().Err(err).
-			Stringer("account_id", dbMsg.AccountID).
+			Stringer("group_id", groupID).
 			Str("message_id", msg.ID).
 			Msg("failed to resolve provider")
-		h.recordFailure(ctx, messageID, dbMsg.AccountID, "", err)
+		h.recordFailure(ctx, messageID, dbMsg.GroupID, dbMsg.UserID, "", err)
 		return fmt.Errorf("resolve provider: %w", err)
 	}
 
@@ -126,7 +129,7 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 	// Build provider message from DB metadata + body.
 	providerMsg := &provider.Message{
 		ID:       msg.ID,
-		TenantID: dbMsg.AccountID.String(),
+		TenantID: groupID.String(),
 		From:     dbMsg.Sender,
 		To:       parseRecipients(dbMsg.Recipients),
 		Subject:  nullStringValue(dbMsg.Subject),
@@ -166,7 +169,7 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 			Str("provider", providerName).
 			Str("message_id", msg.ID).
 			Msg("provider send failed")
-		h.recordFailure(ctx, messageID, dbMsg.AccountID, providerName, sendErr)
+		h.recordFailure(ctx, messageID, dbMsg.GroupID, dbMsg.UserID, providerName, sendErr)
 		return fmt.Errorf("provider send: %w", sendErr)
 	}
 
@@ -191,7 +194,8 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		Status:            string(storage.MessageStatusDelivered),
 		Provider:          sql.NullString{String: providerName, Valid: true},
 		ProviderMessageID: sql.NullString{String: result.ProviderMessageID, Valid: result.ProviderMessageID != ""},
-		AccountID:         pgtype.UUID{Bytes: dbMsg.AccountID, Valid: true},
+		GroupID:           dbMsg.GroupID,
+		UserID:            dbMsg.UserID,
 		DurationMs:        pgtype.Int4{Int32: int32(sendDuration.Milliseconds()), Valid: true},
 		AttemptNumber:     1,
 	}); err != nil {
@@ -232,7 +236,7 @@ func (h *Handler) fetchBodyWithRetry(ctx context.Context, messageID string) ([]b
 }
 
 // recordFailure updates the message status to failed and creates a delivery log.
-func (h *Handler) recordFailure(ctx context.Context, messageID uuid.UUID, accountID uuid.UUID, providerName string, deliveryErr error) {
+func (h *Handler) recordFailure(ctx context.Context, messageID uuid.UUID, groupID pgtype.UUID, userID pgtype.UUID, providerName string, deliveryErr error) {
 	if err := h.queries.UpdateMessageStatus(ctx, storage.UpdateMessageStatusParams{
 		ID:     messageID,
 		Status: storage.MessageStatusFailed,
@@ -246,7 +250,8 @@ func (h *Handler) recordFailure(ctx context.Context, messageID uuid.UUID, accoun
 		Status:     string(storage.MessageStatusFailed),
 		Provider:   sql.NullString{String: providerName, Valid: providerName != ""},
 		LastError:  pgtype.Text{String: deliveryErr.Error(), Valid: true},
-		AccountID:  pgtype.UUID{Bytes: accountID, Valid: accountID != uuid.Nil},
+		GroupID:    groupID,
+		UserID:     userID,
 	}); err != nil {
 		h.log.Error().Err(err).Stringer("message_id", messageID).Msg("failed to create failure delivery log")
 	}

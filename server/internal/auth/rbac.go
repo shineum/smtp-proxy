@@ -30,3 +30,26 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// RequireSystemAdmin returns an HTTP middleware that checks if the user belongs
+// to a system group (group_type = "system"). Returns 403 Forbidden if not.
+// The group type is extracted from JWT claims stored in context by JWTAuth.
+// Must be used after JWTAuth middleware.
+func RequireSystemAdmin() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			groupType := GroupTypeFromContext(r.Context())
+			if groupType == "" {
+				http.Error(w, `{"error":"authentication required"}`, http.StatusUnauthorized)
+				return
+			}
+
+			if groupType != "system" {
+				http.Error(w, `{"error":"system admin access required"}`, http.StatusForbidden)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}

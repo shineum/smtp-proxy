@@ -21,7 +21,7 @@ type routingRuleRequest struct {
 // routingRuleResponse is the JSON response for a routing rule.
 type routingRuleResponse struct {
 	ID         uuid.UUID       `json:"id"`
-	AccountID  uuid.UUID       `json:"account_id"`
+	GroupID    uuid.UUID       `json:"group_id"`
 	Priority   int32           `json:"priority"`
 	Conditions json.RawMessage `json:"conditions"`
 	ProviderID uuid.UUID       `json:"provider_id"`
@@ -39,7 +39,7 @@ func toRoutingRuleResponse(rr storage.RoutingRule) routingRuleResponse {
 
 	return routingRuleResponse{
 		ID:         rr.ID,
-		AccountID:  rr.AccountID,
+		GroupID:    rr.GroupID,
 		Priority:   rr.Priority,
 		Conditions: conditions,
 		ProviderID: rr.ProviderID,
@@ -50,10 +50,11 @@ func toRoutingRuleResponse(rr storage.RoutingRule) routingRuleResponse {
 }
 
 // CreateRoutingRuleHandler handles POST /api/v1/routing-rules.
+// Creates a new routing rule for the authenticated user's group.
 func CreateRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID := auth.AccountFromContext(r.Context())
-		if accountID == uuid.Nil {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -76,7 +77,7 @@ func CreateRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 		}
 
 		rule, err := queries.CreateRoutingRule(r.Context(), storage.CreateRoutingRuleParams{
-			AccountID:  accountID,
+			GroupID:    groupID,
 			Priority:   req.Priority,
 			Conditions: conditions,
 			ProviderID: providerID,
@@ -95,13 +96,13 @@ func CreateRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 // Rules are returned ordered by priority ASC (as defined by the SQL query).
 func ListRoutingRulesHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID := auth.AccountFromContext(r.Context())
-		if accountID == uuid.Nil {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
-		rules, err := queries.ListRoutingRulesByAccountID(r.Context(), accountID)
+		rules, err := queries.ListRoutingRulesByGroupID(r.Context(), groupID)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return

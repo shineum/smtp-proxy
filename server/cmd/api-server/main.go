@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net/http"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/api"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
+	"github.com/sungwon/smtp-proxy/server/internal/bootstrap"
 	"github.com/sungwon/smtp-proxy/server/internal/config"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -65,14 +65,22 @@ func main() {
 
 	// Initialize audit store (bridges auth.AuditStore to storage.Querier)
 	auditStore := auth.NewFuncAuditStore(func(ctx context.Context, entry auth.AuditEntry) error {
-		_, err := queries.CreateAuditLog(ctx, storage.CreateAuditLogParams{
-			TenantID:     entry.TenantID,
-			UserID:       pgtype.UUID{Bytes: entry.UserID, Valid: entry.UserID != uuid.Nil},
+		// Parse ResourceID as UUID; set invalid if empty or unparseable.
+		var resourceID pgtype.UUID
+		if entry.ResourceID != "" {
+			if parsed, err := uuid.Parse(entry.ResourceID); err == nil {
+				resourceID = pgtype.UUID{Bytes: parsed, Valid: true}
+			}
+		}
+
+		_, err := queries.CreateActivityLog(ctx, storage.CreateActivityLogParams{
+			GroupID:      entry.GroupID,
+			ActorID:      pgtype.UUID{Bytes: entry.UserID, Valid: entry.UserID != uuid.Nil},
 			Action:       entry.Action,
 			ResourceType: entry.ResourceType,
-			ResourceID:   sql.NullString{String: entry.ResourceID, Valid: entry.ResourceID != ""},
-			Result:       entry.Result,
-			Metadata:     auth.MetadataToJSON(entry.Metadata),
+			ResourceID:   resourceID,
+			Changes:      auth.ChangesToJSON(entry.Changes),
+			Comment:      pgtype.Text{String: entry.Comment, Valid: entry.Comment != ""},
 			IpAddress:    auth.IPToInet(entry.IPAddress),
 		})
 		return err
@@ -86,6 +94,19 @@ func main() {
 		LoginLockoutDuration: cfg.RateLimit.LoginLockoutDuration,
 	})
 	log.Info().Msg("rate limiter initialized")
+
+	// Auto-seed system admin on startup (idempotent)
+	adminEmail := os.Getenv("SMTP_PROXY_ADMIN_EMAIL")
+	if adminEmail == "" {
+		adminEmail = "admin@localhost"
+	}
+	adminPassword := os.Getenv("SMTP_PROXY_ADMIN_PASSWORD")
+	if adminPassword == "" {
+		adminPassword = "admin"
+	}
+	if err := bootstrap.SeedSystemAdmin(ctx, queries, log, adminEmail, adminPassword); err != nil {
+		log.Error().Err(err).Msg("failed to seed system admin")
+	}
 
 	// Build router with full config
 	router := api.NewRouterWithConfig(api.RouterConfig{

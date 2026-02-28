@@ -23,7 +23,7 @@ type providerRequest struct {
 // providerResponse is the JSON response for a provider.
 type providerResponse struct {
 	ID           uuid.UUID       `json:"id"`
-	AccountID    uuid.UUID       `json:"account_id"`
+	GroupID      uuid.UUID       `json:"group_id"`
 	Name         string          `json:"name"`
 	ProviderType string          `json:"provider_type"`
 	SMTPConfig   json.RawMessage `json:"smtp_config"`
@@ -42,7 +42,7 @@ func toProviderResponse(p storage.EspProvider) providerResponse {
 
 	return providerResponse{
 		ID:           p.ID,
-		AccountID:    p.AccountID,
+		GroupID:      p.GroupID,
 		Name:         p.Name,
 		ProviderType: string(p.ProviderType),
 		SMTPConfig:   smtpConfig,
@@ -62,10 +62,11 @@ var validProviderTypes = map[string]storage.ProviderType{
 }
 
 // CreateProviderHandler handles POST /api/v1/providers.
+// Creates a new ESP provider for the authenticated user's group.
 func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID := auth.AccountFromContext(r.Context())
-		if accountID == uuid.Nil {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -96,7 +97,7 @@ func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
 		}
 
 		provider, err := queries.CreateProvider(r.Context(), storage.CreateProviderParams{
-			AccountID:    accountID,
+			GroupID:      groupID,
 			Name:         req.Name,
 			ProviderType: pt,
 			ApiKey:       apiKey,
@@ -113,15 +114,16 @@ func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
 }
 
 // ListProvidersHandler handles GET /api/v1/providers.
+// Lists all providers for the authenticated user's group.
 func ListProvidersHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID := auth.AccountFromContext(r.Context())
-		if accountID == uuid.Nil {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
-		providers, err := queries.ListProvidersByAccountID(r.Context(), accountID)
+		providers, err := queries.ListProvidersByGroupID(r.Context(), groupID)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return

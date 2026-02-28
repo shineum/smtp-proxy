@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
 	"github.com/sungwon/smtp-proxy/server/internal/msgstore"
@@ -29,34 +30,24 @@ type mockQuerier struct {
 	createLogProvider string
 	createLogStatus   string
 	createLogParams   storage.CreateDeliveryLogParams
-	listProvidersFn   func(ctx context.Context, accountID uuid.UUID) ([]storage.EspProvider, error)
+	listProvidersFn   func(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error)
 	getMessageFn      func(ctx context.Context, id uuid.UUID) (storage.Message, error)
 }
 
-// Account methods.
-func (m *mockQuerier) CreateAccount(_ context.Context, _ storage.CreateAccountParams) (storage.Account, error) {
-	return storage.Account{}, nil
+// ActivityLog methods.
+func (m *mockQuerier) CreateActivityLog(_ context.Context, _ storage.CreateActivityLogParams) (storage.ActivityLog, error) {
+	return storage.ActivityLog{}, nil
 }
-func (m *mockQuerier) DeleteAccount(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *mockQuerier) GetAccountByAPIKey(_ context.Context, _ string) (storage.Account, error) {
-	return storage.Account{}, nil
+func (m *mockQuerier) GetActivityLogByID(_ context.Context, _ uuid.UUID) (storage.ActivityLog, error) {
+	return storage.ActivityLog{}, nil
 }
-func (m *mockQuerier) GetAccountByID(_ context.Context, _ uuid.UUID) (storage.Account, error) {
-	return storage.Account{}, nil
+func (m *mockQuerier) ListActivityLogsByActorID(_ context.Context, _ storage.ListActivityLogsByActorIDParams) ([]storage.ActivityLog, error) {
+	return nil, nil
 }
-func (m *mockQuerier) GetAccountByName(_ context.Context, _ string) (storage.Account, error) {
-	return storage.Account{}, nil
+func (m *mockQuerier) ListActivityLogsByGroupID(_ context.Context, _ storage.ListActivityLogsByGroupIDParams) ([]storage.ActivityLog, error) {
+	return nil, nil
 }
-func (m *mockQuerier) ListAccounts(_ context.Context) ([]storage.Account, error) { return nil, nil }
-func (m *mockQuerier) UpdateAccount(_ context.Context, _ storage.UpdateAccountParams) (storage.Account, error) {
-	return storage.Account{}, nil
-}
-
-// AuditLog methods.
-func (m *mockQuerier) CreateAuditLog(_ context.Context, _ storage.CreateAuditLogParams) (storage.AuditLog, error) {
-	return storage.AuditLog{}, nil
-}
-func (m *mockQuerier) ListAuditLogsByTenantID(_ context.Context, _ storage.ListAuditLogsByTenantIDParams) ([]storage.AuditLog, error) {
+func (m *mockQuerier) ListActivityLogsByResource(_ context.Context, _ storage.ListActivityLogsByResourceParams) ([]storage.ActivityLog, error) {
 	return nil, nil
 }
 
@@ -77,7 +68,7 @@ func (m *mockQuerier) GetDeliveryLogByProviderMessageID(_ context.Context, _ sql
 func (m *mockQuerier) ListDeliveryLogsByMessageID(_ context.Context, _ uuid.UUID) ([]storage.DeliveryLog, error) {
 	return nil, nil
 }
-func (m *mockQuerier) ListDeliveryLogsByTenantAndStatus(_ context.Context, _ storage.ListDeliveryLogsByTenantAndStatusParams) ([]storage.DeliveryLog, error) {
+func (m *mockQuerier) ListDeliveryLogsByGroupAndStatus(_ context.Context, _ storage.ListDeliveryLogsByGroupAndStatusParams) ([]storage.DeliveryLog, error) {
 	return nil, nil
 }
 func (m *mockQuerier) UpdateDeliveryLogStatus(_ context.Context, _ storage.UpdateDeliveryLogStatusParams) error {
@@ -88,7 +79,7 @@ func (m *mockQuerier) UpdateDeliveryLogStatus(_ context.Context, _ storage.Updat
 func (m *mockQuerier) AverageDeliveryDuration(_ context.Context, _ storage.AverageDeliveryDurationParams) ([]storage.AverageDeliveryDurationRow, error) {
 	return nil, nil
 }
-func (m *mockQuerier) CountDeliveryLogsByAccount(_ context.Context, _ storage.CountDeliveryLogsByAccountParams) ([]storage.CountDeliveryLogsByAccountRow, error) {
+func (m *mockQuerier) CountDeliveryLogsByGroup(_ context.Context, _ storage.CountDeliveryLogsByGroupParams) ([]storage.CountDeliveryLogsByGroupRow, error) {
 	return nil, nil
 }
 func (m *mockQuerier) CountDeliveryLogsByProvider(_ context.Context, _ storage.CountDeliveryLogsByProviderParams) ([]storage.CountDeliveryLogsByProviderRow, error) {
@@ -96,6 +87,52 @@ func (m *mockQuerier) CountDeliveryLogsByProvider(_ context.Context, _ storage.C
 }
 func (m *mockQuerier) CountDeliveryLogsByStatus(_ context.Context, _ storage.CountDeliveryLogsByStatusParams) ([]storage.CountDeliveryLogsByStatusRow, error) {
 	return nil, nil
+}
+
+// Group methods.
+func (m *mockQuerier) CreateGroup(_ context.Context, _ storage.CreateGroupParams) (storage.Group, error) {
+	return storage.Group{}, nil
+}
+func (m *mockQuerier) DeleteGroup(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockQuerier) GetGroupByID(_ context.Context, _ uuid.UUID) (storage.Group, error) {
+	return storage.Group{}, nil
+}
+func (m *mockQuerier) GetGroupByName(_ context.Context, _ string) (storage.Group, error) {
+	return storage.Group{}, nil
+}
+func (m *mockQuerier) ListGroups(_ context.Context) ([]storage.Group, error) { return nil, nil }
+func (m *mockQuerier) ListGroupsByUserID(_ context.Context, _ uuid.UUID) ([]storage.Group, error) {
+	return nil, nil
+}
+func (m *mockQuerier) UpdateGroup(_ context.Context, _ storage.UpdateGroupParams) (storage.Group, error) {
+	return storage.Group{}, nil
+}
+func (m *mockQuerier) UpdateGroupStatus(_ context.Context, _ storage.UpdateGroupStatusParams) (storage.Group, error) {
+	return storage.Group{}, nil
+}
+func (m *mockQuerier) CountGroupOwners(_ context.Context, _ uuid.UUID) (int64, error) {
+	return 0, nil
+}
+
+// GroupMember methods.
+func (m *mockQuerier) CreateGroupMember(_ context.Context, _ storage.CreateGroupMemberParams) (storage.GroupMember, error) {
+	return storage.GroupMember{}, nil
+}
+func (m *mockQuerier) DeleteGroupMember(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockQuerier) DeleteGroupMembersByUserID(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+func (m *mockQuerier) GetGroupMemberByID(_ context.Context, _ uuid.UUID) (storage.GroupMember, error) {
+	return storage.GroupMember{}, nil
+}
+func (m *mockQuerier) GetGroupMemberByUserAndGroup(_ context.Context, _ storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
+	return storage.GroupMember{}, nil
+}
+func (m *mockQuerier) ListGroupMembersByGroupID(_ context.Context, _ uuid.UUID) ([]storage.GroupMember, error) {
+	return nil, nil
+}
+func (m *mockQuerier) UpdateGroupMemberRole(_ context.Context, _ storage.UpdateGroupMemberRoleParams) (storage.GroupMember, error) {
+	return storage.GroupMember{}, nil
 }
 
 // Message methods.
@@ -109,7 +146,10 @@ func (m *mockQuerier) GetMessageByID(ctx context.Context, id uuid.UUID) (storage
 	if m.getMessageFn != nil {
 		return m.getMessageFn(ctx, id)
 	}
-	return storage.Message{AccountID: uuid.New()}, nil
+	return storage.Message{
+		GroupID: pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		UserID:  pgtype.UUID{Bytes: uuid.New(), Valid: true},
+	}, nil
 }
 func (m *mockQuerier) GetQueuedMessages(_ context.Context, _ int32) ([]storage.Message, error) {
 	return nil, nil
@@ -117,7 +157,7 @@ func (m *mockQuerier) GetQueuedMessages(_ context.Context, _ int32) ([]storage.M
 func (m *mockQuerier) IncrementRetryCount(_ context.Context, _ storage.IncrementRetryCountParams) error {
 	return nil
 }
-func (m *mockQuerier) ListMessagesByAccountID(_ context.Context, _ storage.ListMessagesByAccountIDParams) ([]storage.Message, error) {
+func (m *mockQuerier) ListMessagesByGroupID(_ context.Context, _ storage.ListMessagesByGroupIDParams) ([]storage.Message, error) {
 	return nil, nil
 }
 func (m *mockQuerier) UpdateMessageStatus(_ context.Context, arg storage.UpdateMessageStatusParams) error {
@@ -133,9 +173,9 @@ func (m *mockQuerier) DeleteProvider(_ context.Context, _ uuid.UUID) error { ret
 func (m *mockQuerier) GetProviderByID(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
 	return storage.EspProvider{}, nil
 }
-func (m *mockQuerier) ListProvidersByAccountID(ctx context.Context, accountID uuid.UUID) ([]storage.EspProvider, error) {
+func (m *mockQuerier) ListProvidersByGroupID(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error) {
 	if m.listProvidersFn != nil {
-		return m.listProvidersFn(ctx, accountID)
+		return m.listProvidersFn(ctx, groupID)
 	}
 	return nil, nil
 }
@@ -151,7 +191,7 @@ func (m *mockQuerier) DeleteRoutingRule(_ context.Context, _ uuid.UUID) error { 
 func (m *mockQuerier) GetRoutingRuleByID(_ context.Context, _ uuid.UUID) (storage.RoutingRule, error) {
 	return storage.RoutingRule{}, nil
 }
-func (m *mockQuerier) ListRoutingRulesByAccountID(_ context.Context, _ uuid.UUID) ([]storage.RoutingRule, error) {
+func (m *mockQuerier) ListRoutingRulesByGroupID(_ context.Context, _ uuid.UUID) ([]storage.RoutingRule, error) {
 	return nil, nil
 }
 func (m *mockQuerier) UpdateRoutingRule(_ context.Context, _ storage.UpdateRoutingRuleParams) (storage.RoutingRule, error) {
@@ -174,55 +214,49 @@ func (m *mockQuerier) ListSessionsByUserID(_ context.Context, _ uuid.UUID) ([]st
 	return nil, nil
 }
 
-// Tenant methods.
-func (m *mockQuerier) CreateTenant(_ context.Context, _ storage.CreateTenantParams) (storage.Tenant, error) {
-	return storage.Tenant{}, nil
-}
-func (m *mockQuerier) DeleteTenant(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *mockQuerier) GetTenantByID(_ context.Context, _ uuid.UUID) (storage.Tenant, error) {
-	return storage.Tenant{}, nil
-}
-func (m *mockQuerier) GetTenantByName(_ context.Context, _ string) (storage.Tenant, error) {
-	return storage.Tenant{}, nil
-}
-func (m *mockQuerier) ListTenants(_ context.Context) ([]storage.Tenant, error) { return nil, nil }
-func (m *mockQuerier) UpdateTenant(_ context.Context, _ storage.UpdateTenantParams) (storage.Tenant, error) {
-	return storage.Tenant{}, nil
-}
-
 // User methods.
 func (m *mockQuerier) CreateUser(_ context.Context, _ storage.CreateUserParams) (storage.User, error) {
 	return storage.User{}, nil
 }
 func (m *mockQuerier) DeleteUser(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockQuerier) GetUserByAPIKey(_ context.Context, _ sql.NullString) (storage.User, error) {
+	return storage.User{}, nil
+}
 func (m *mockQuerier) GetUserByEmail(_ context.Context, _ string) (storage.User, error) {
 	return storage.User{}, nil
 }
 func (m *mockQuerier) GetUserByID(_ context.Context, _ uuid.UUID) (storage.User, error) {
 	return storage.User{}, nil
 }
+func (m *mockQuerier) GetUserByUsername(_ context.Context, _ sql.NullString) (storage.User, error) {
+	return storage.User{}, nil
+}
 func (m *mockQuerier) IncrementFailedAttempts(_ context.Context, _ uuid.UUID) error { return nil }
 func (m *mockQuerier) IncrementMonthlySent(_ context.Context, _ uuid.UUID) error    { return nil }
-func (m *mockQuerier) ListUsersByTenantID(_ context.Context, _ uuid.UUID) ([]storage.User, error) {
-	return nil, nil
-}
-func (m *mockQuerier) ResetFailedAttempts(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *mockQuerier) ResetMonthlySent(_ context.Context, _ uuid.UUID) error    { return nil }
-func (m *mockQuerier) UpdateUserLastLogin(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *mockQuerier) UpdateUserRole(_ context.Context, _ storage.UpdateUserRoleParams) (storage.User, error) {
+func (m *mockQuerier) ListUsers(_ context.Context) ([]storage.User, error)          { return nil, nil }
+func (m *mockQuerier) ResetFailedAttempts(_ context.Context, _ uuid.UUID) error     { return nil }
+func (m *mockQuerier) ResetMonthlySent(_ context.Context, _ uuid.UUID) error        { return nil }
+func (m *mockQuerier) UpdateUser(_ context.Context, _ storage.UpdateUserParams) (storage.User, error) {
 	return storage.User{}, nil
+}
+func (m *mockQuerier) UpdateUserLastLogin(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockQuerier) UpdateUserPassword(_ context.Context, _ storage.UpdateUserPasswordParams) error {
+	return nil
 }
 func (m *mockQuerier) UpdateUserStatus(_ context.Context, _ storage.UpdateUserStatusParams) (storage.User, error) {
 	return storage.User{}, nil
 }
+
+// Ensure mockQuerier satisfies the Querier interface at compile time.
+var _ storage.Querier = (*mockQuerier)(nil)
 
 // ---------------------------------------------------------------------------
 // Mock: msgstore.MessageStore
 // ---------------------------------------------------------------------------
 
 type mockMessageStore struct {
-	data    map[string][]byte
-	getFn   func(ctx context.Context, messageID string) ([]byte, error)
+	data     map[string][]byte
+	getFn    func(ctx context.Context, messageID string) ([]byte, error)
 	getCalls int32 // atomic counter for Get calls
 }
 
@@ -257,11 +291,12 @@ func (m *mockMessageStore) Delete(_ context.Context, _ string) error {
 
 // newTestDBMessage creates a storage.Message with populated metadata fields
 // suitable for building a provider.Message.
-func newTestDBMessage(accountID uuid.UUID) storage.Message {
+func newTestDBMessage(groupID, userID uuid.UUID) storage.Message {
 	recipients, _ := json.Marshal([]string{"recipient@example.com"})
 	headers, _ := json.Marshal(map[string][]string{"X-Test": {"value1"}})
 	return storage.Message{
-		AccountID:  accountID,
+		GroupID:    pgtype.UUID{Bytes: groupID, Valid: true},
+		UserID:     pgtype.UUID{Bytes: userID, Valid: true},
 		Sender:     "sender@example.com",
 		Recipients: recipients,
 		Subject:    sql.NullString{String: "Test Subject", Valid: true},
@@ -284,12 +319,13 @@ func newHandler(t *testing.T, mq *mockQuerier, store msgstore.MessageStore) *Han
 // ---------------------------------------------------------------------------
 
 func TestHandler_HandleMessage_InlineBody_Success(t *testing.T) {
-	accountID := uuid.New()
+	groupID := uuid.New()
+	userID := uuid.New()
 	msgID := uuid.New()
 
 	mq := &mockQuerier{
 		getMessageFn: func(_ context.Context, _ uuid.UUID) (storage.Message, error) {
-			return newTestDBMessage(accountID), nil
+			return newTestDBMessage(groupID, userID), nil
 		},
 	}
 	h := newHandler(t, mq, nil)
@@ -326,8 +362,8 @@ func TestHandler_HandleMessage_InlineBody_Success(t *testing.T) {
 		t.Errorf("expected provider stdout, got %s", mq.createLogProvider)
 	}
 	// Verify new delivery log fields.
-	if !mq.createLogParams.AccountID.Valid {
-		t.Error("expected AccountID to be set in delivery log")
+	if !mq.createLogParams.GroupID.Valid {
+		t.Error("expected GroupID to be set in delivery log")
 	}
 	if !mq.createLogParams.DurationMs.Valid {
 		t.Error("expected DurationMs to be set in delivery log")
@@ -350,13 +386,14 @@ func TestHandler_HandleMessage_StorageFetch_Success(t *testing.T) {
 	storageRetryBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
 	defer func() { storageRetryBackoff = origBackoff }()
 
-	accountID := uuid.New()
+	groupID := uuid.New()
+	userID := uuid.New()
 	msgID := uuid.New()
 	bodyContent := []byte("Hello from storage")
 
 	mq := &mockQuerier{
 		getMessageFn: func(_ context.Context, _ uuid.UUID) (storage.Message, error) {
-			return newTestDBMessage(accountID), nil
+			return newTestDBMessage(groupID, userID), nil
 		},
 	}
 	store := &mockMessageStore{
@@ -367,7 +404,7 @@ func TestHandler_HandleMessage_StorageFetch_Success(t *testing.T) {
 	// ID-only message (no inline body).
 	msg := &queue.Message{
 		ID:        msgID.String(),
-		AccountID: accountID.String(),
+		AccountID: groupID.String(),
 		TenantID:  "tenant-1",
 	}
 
@@ -390,11 +427,17 @@ func TestHandler_HandleMessage_StorageFetch_Success(t *testing.T) {
 		t.Error("expected delivery log to be created")
 	}
 	// Verify new delivery log fields.
-	if !mq.createLogParams.AccountID.Valid {
-		t.Error("expected AccountID to be set in delivery log")
+	if !mq.createLogParams.GroupID.Valid {
+		t.Error("expected GroupID to be set in delivery log")
 	}
-	if mq.createLogParams.AccountID.Bytes != accountID {
-		t.Errorf("expected AccountID %v, got %v", accountID, mq.createLogParams.AccountID.Bytes)
+	if mq.createLogParams.GroupID.Bytes != groupID {
+		t.Errorf("expected GroupID %v, got %v", groupID, mq.createLogParams.GroupID.Bytes)
+	}
+	if !mq.createLogParams.UserID.Valid {
+		t.Error("expected UserID to be set in delivery log")
+	}
+	if mq.createLogParams.UserID.Bytes != userID {
+		t.Errorf("expected UserID %v, got %v", userID, mq.createLogParams.UserID.Bytes)
 	}
 	if !mq.createLogParams.DurationMs.Valid {
 		t.Error("expected DurationMs to be set in delivery log")
@@ -414,13 +457,14 @@ func TestHandler_HandleMessage_StorageRetryExhaustion(t *testing.T) {
 	storageRetryBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
 	defer func() { storageRetryBackoff = origBackoff }()
 
-	accountID := uuid.New()
+	groupID := uuid.New()
+	userID := uuid.New()
 	msgID := uuid.New()
 	storageErr := errors.New("disk I/O error")
 
 	mq := &mockQuerier{
 		getMessageFn: func(_ context.Context, _ uuid.UUID) (storage.Message, error) {
-			return newTestDBMessage(accountID), nil
+			return newTestDBMessage(groupID, userID), nil
 		},
 	}
 	store := &mockMessageStore{
@@ -432,7 +476,7 @@ func TestHandler_HandleMessage_StorageRetryExhaustion(t *testing.T) {
 
 	msg := &queue.Message{
 		ID:        msgID.String(),
-		AccountID: accountID.String(),
+		AccountID: groupID.String(),
 		TenantID:  "tenant-1",
 	}
 
@@ -504,12 +548,13 @@ func TestHandler_HandleMessage_OrphanedMessageID(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_HandleMessage_SendFail(t *testing.T) {
-	accountID := uuid.New()
+	groupID := uuid.New()
+	userID := uuid.New()
 	msgID := uuid.New()
 
 	mq := &mockQuerier{
 		getMessageFn: func(_ context.Context, _ uuid.UUID) (storage.Message, error) {
-			return newTestDBMessage(accountID), nil
+			return newTestDBMessage(groupID, userID), nil
 		},
 		listProvidersFn: func(_ context.Context, _ uuid.UUID) ([]storage.EspProvider, error) {
 			return nil, errors.New("database error")
@@ -542,9 +587,9 @@ func TestHandler_HandleMessage_SendFail(t *testing.T) {
 	if mq.createLogStatus != string(storage.MessageStatusFailed) {
 		t.Errorf("expected log status failed, got %s", mq.createLogStatus)
 	}
-	// Verify AccountID is set in failure delivery log (we have dbMsg at this point).
-	if !mq.createLogParams.AccountID.Valid {
-		t.Error("expected AccountID to be set in failure delivery log")
+	// Verify GroupID is set in failure delivery log (we have dbMsg at this point).
+	if !mq.createLogParams.GroupID.Valid {
+		t.Error("expected GroupID to be set in failure delivery log")
 	}
 }
 
@@ -602,9 +647,9 @@ func TestHandler_HandleMessage_GetMessageError(t *testing.T) {
 	if mq.statuses[len(mq.statuses)-1] != storage.MessageStatusFailed {
 		t.Errorf("expected final status failed, got %s", mq.statuses[len(mq.statuses)-1])
 	}
-	// AccountID should NOT be set since we failed before getting dbMsg.
-	if mq.createLogParams.AccountID.Valid {
-		t.Error("expected AccountID to be unset when message lookup fails")
+	// GroupID should NOT be set since we failed before getting dbMsg.
+	if mq.createLogParams.GroupID.Valid {
+		t.Error("expected GroupID to be unset when message lookup fails")
 	}
 }
 
@@ -617,12 +662,13 @@ func TestHandler_HandleMessage_StorageRetryContextCancelled(t *testing.T) {
 	storageRetryBackoff = []time.Duration{50 * time.Millisecond, 50 * time.Millisecond, 50 * time.Millisecond}
 	defer func() { storageRetryBackoff = origBackoff }()
 
-	accountID := uuid.New()
+	groupID := uuid.New()
+	userID := uuid.New()
 	msgID := uuid.New()
 
 	mq := &mockQuerier{
 		getMessageFn: func(_ context.Context, _ uuid.UUID) (storage.Message, error) {
-			return newTestDBMessage(accountID), nil
+			return newTestDBMessage(groupID, userID), nil
 		},
 	}
 	store := &mockMessageStore{
@@ -641,7 +687,7 @@ func TestHandler_HandleMessage_StorageRetryContextCancelled(t *testing.T) {
 
 	msg := &queue.Message{
 		ID:        msgID.String(),
-		AccountID: accountID.String(),
+		AccountID: groupID.String(),
 		TenantID:  "tenant-1",
 	}
 
@@ -740,7 +786,7 @@ func (m *mockCaptureProvider) Send(_ context.Context, msg *provider.Message) (*p
 }
 func (m *mockCaptureProvider) HealthCheck(_ context.Context) error { return nil }
 
-// mockCaptureResolver returns a fixed provider for any account.
+// mockCaptureResolver returns a fixed provider for any group.
 type mockCaptureResolver struct {
 	provider provider.Provider
 }
@@ -755,7 +801,8 @@ func TestHandler_HandleMessage_MIMEParsing(t *testing.T) {
 	storageRetryBackoff = []time.Duration{time.Millisecond}
 	defer func() { storageRetryBackoff = origBackoff }()
 
-	accountID := uuid.New()
+	groupID := uuid.New()
+	userID := uuid.New()
 	msgID := uuid.New()
 
 	// Build a real multipart MIME message with HTML body and an attachment.
@@ -781,7 +828,7 @@ func TestHandler_HandleMessage_MIMEParsing(t *testing.T) {
 
 	mq := &mockQuerier{
 		getMessageFn: func(_ context.Context, _ uuid.UUID) (storage.Message, error) {
-			return newTestDBMessage(accountID), nil
+			return newTestDBMessage(groupID, userID), nil
 		},
 	}
 	store := &mockMessageStore{
@@ -800,7 +847,7 @@ func TestHandler_HandleMessage_MIMEParsing(t *testing.T) {
 
 	msg := &queue.Message{
 		ID:        msgID.String(),
-		AccountID: accountID.String(),
+		AccountID: groupID.String(),
 		TenantID:  "tenant-1",
 	}
 
@@ -851,13 +898,14 @@ func TestHandler_HandleMessage_MIMEParseFallback(t *testing.T) {
 	storageRetryBackoff = []time.Duration{time.Millisecond}
 	defer func() { storageRetryBackoff = origBackoff }()
 
-	accountID := uuid.New()
+	groupID := uuid.New()
+	userID := uuid.New()
 	msgID := uuid.New()
 	plainBody := []byte("Just a plain string, not MIME at all")
 
 	mq := &mockQuerier{
 		getMessageFn: func(_ context.Context, _ uuid.UUID) (storage.Message, error) {
-			return newTestDBMessage(accountID), nil
+			return newTestDBMessage(groupID, userID), nil
 		},
 	}
 	store := &mockMessageStore{
@@ -876,7 +924,7 @@ func TestHandler_HandleMessage_MIMEParseFallback(t *testing.T) {
 
 	msg := &queue.Message{
 		ID:        msgID.String(),
-		AccountID: accountID.String(),
+		AccountID: groupID.String(),
 		TenantID:  "tenant-1",
 	}
 

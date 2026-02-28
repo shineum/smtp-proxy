@@ -17,6 +17,7 @@ import (
 type loginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	GroupID  string `json:"group_id,omitempty"`
 }
 
 // tokenResponse is the JSON response containing access and refresh tokens.
@@ -32,8 +33,16 @@ type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// switchGroupRequest is the JSON body for POST /api/v1/auth/switch-group.
+type switchGroupRequest struct {
+	GroupID string `json:"group_id"`
+}
+
 // LoginHandler handles POST /api/v1/auth/login.
-// Authenticates a user by email and password, creates a session, and returns JWT tokens.
+// Authenticates a user by email and password, resolves group membership,
+// creates a session, and returns JWT tokens.
+// If group_id is provided, the user must be a member of that group.
+// If group_id is omitted, the first group membership is used.
 func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLogger *auth.AuditLogger, rateLimiter *auth.RateLimiter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req loginRequest
@@ -93,15 +102,72 @@ func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLog
 			return
 		}
 
+		// Resolve group membership
+		var groupID uuid.UUID
+		var role string
+		var groupType string
+
+		if req.GroupID != "" {
+			// User specified a group to log into
+			gid, err := uuid.Parse(req.GroupID)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "invalid group_id format")
+				return
+			}
+
+			// Verify user is a member of this group
+			member, err := queries.GetGroupMemberByUserAndGroup(r.Context(), storage.GetGroupMemberByUserAndGroupParams{
+				UserID:  user.ID,
+				GroupID: gid,
+			})
+			if err != nil {
+				respondError(w, http.StatusForbidden, "user is not a member of the specified group")
+				return
+			}
+
+			// Get group details for group_type
+			group, err := queries.GetGroupByID(r.Context(), gid)
+			if err != nil {
+				respondError(w, http.StatusInternalServerError, "internal server error")
+				return
+			}
+
+			groupID = gid
+			role = member.Role
+			groupType = group.GroupType
+		} else {
+			// No group specified, use the first group membership
+			groups, err := queries.ListGroupsByUserID(r.Context(), user.ID)
+			if err != nil || len(groups) == 0 {
+				respondError(w, http.StatusForbidden, "user has no group memberships")
+				return
+			}
+
+			// Use the first group
+			groupID = groups[0].ID
+			groupType = groups[0].GroupType
+
+			// Get member role for this group
+			member, err := queries.GetGroupMemberByUserAndGroup(r.Context(), storage.GetGroupMemberByUserAndGroupParams{
+				UserID:  user.ID,
+				GroupID: groupID,
+			})
+			if err != nil {
+				respondError(w, http.StatusInternalServerError, "internal server error")
+				return
+			}
+			role = member.Role
+		}
+
 		// Create session
 		sessionID := uuid.New()
-		accessToken, err := jwtService.GenerateAccessToken(user.ID, user.TenantID, user.Email, user.Role)
+		accessToken, err := jwtService.GenerateAccessToken(user.ID, groupID, user.Email, role, groupType)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
-		refreshToken, err := jwtService.GenerateRefreshToken(user.ID, user.TenantID, sessionID)
+		refreshToken, err := jwtService.GenerateRefreshToken(user.ID, groupID, sessionID)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -113,7 +179,7 @@ func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLog
 		expiresAt := time.Now().Add(7 * 24 * time.Hour)
 		_, err = queries.CreateSession(r.Context(), storage.CreateSessionParams{
 			UserID:           user.ID,
-			TenantID:         user.TenantID,
+			GroupID:          groupID,
 			RefreshTokenHash: refreshHash,
 			ExpiresAt:        pgtype.Timestamptz{Time: expiresAt, Valid: true},
 		})
@@ -132,7 +198,7 @@ func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLog
 
 		// Audit log
 		if auditLogger != nil {
-			auditLogger.LogAuthAttempt(r.Context(), r, user.TenantID, user.ID, auth.AuditActionLogin)
+			auditLogger.LogAuthAttempt(r.Context(), r, groupID, user.ID, auth.AuditActionLogin)
 		}
 
 		respondJSON(w, http.StatusOK, tokenResponse{
@@ -205,15 +271,31 @@ func RefreshHandler(queries storage.Querier, jwtService *auth.JWTService, auditL
 			return
 		}
 
+		// Get the session's group details and member role for fresh claims
+		group, err := queries.GetGroupByID(r.Context(), session.GroupID)
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "group not found")
+			return
+		}
+
+		member, err := queries.GetGroupMemberByUserAndGroup(r.Context(), storage.GetGroupMemberByUserAndGroupParams{
+			UserID:  user.ID,
+			GroupID: session.GroupID,
+		})
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "user is no longer a member of this group")
+			return
+		}
+
 		// Generate new access token
-		accessToken, err := jwtService.GenerateAccessToken(user.ID, user.TenantID, user.Email, user.Role)
+		accessToken, err := jwtService.GenerateAccessToken(user.ID, session.GroupID, user.Email, member.Role, group.GroupType)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAuthAttempt(r.Context(), r, user.TenantID, user.ID, auth.AuditActionTokenRefresh)
+			auditLogger.LogAuthAttempt(r.Context(), r, session.GroupID, user.ID, auth.AuditActionTokenRefresh)
 		}
 
 		respondJSON(w, http.StatusOK, tokenResponse{
@@ -259,13 +341,114 @@ func LogoutHandler(queries storage.Querier, jwtService *auth.JWTService, auditLo
 
 		if auditLogger != nil {
 			userID := auth.UserFromContext(r.Context())
-			tenantID := auth.TenantFromContext(r.Context())
+			groupID := auth.GroupIDFromContext(r.Context())
 			if userID != uuid.Nil {
-				auditLogger.LogAuthAttempt(r.Context(), r, tenantID, userID, auth.AuditActionLogout)
+				auditLogger.LogAuthAttempt(r.Context(), r, groupID, userID, auth.AuditActionLogout)
 			}
 		}
 
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// SwitchGroupHandler handles POST /api/v1/auth/switch-group.
+// Allows an authenticated user to switch their active group context.
+// Creates a new session for the target group and returns new tokens.
+// Requires the user to be a member of the target group.
+func SwitchGroupHandler(queries storage.Querier, jwtService *auth.JWTService, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req switchGroupRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		if req.GroupID == "" {
+			respondError(w, http.StatusBadRequest, "group_id is required")
+			return
+		}
+
+		targetGroupID, err := uuid.Parse(req.GroupID)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid group_id format")
+			return
+		}
+
+		// Get the authenticated user
+		userID := auth.UserFromContext(r.Context())
+		if userID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		// Get user details
+		user, err := queries.GetUserByID(r.Context(), userID)
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "user not found")
+			return
+		}
+
+		if user.Status != "active" {
+			respondError(w, http.StatusUnauthorized, "account is not active")
+			return
+		}
+
+		// Verify user is a member of the target group
+		member, err := queries.GetGroupMemberByUserAndGroup(r.Context(), storage.GetGroupMemberByUserAndGroupParams{
+			UserID:  userID,
+			GroupID: targetGroupID,
+		})
+		if err != nil {
+			respondError(w, http.StatusForbidden, "user is not a member of the specified group")
+			return
+		}
+
+		// Get group details
+		group, err := queries.GetGroupByID(r.Context(), targetGroupID)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "group not found")
+			return
+		}
+
+		// Create new session for the target group
+		sessionID := uuid.New()
+		accessToken, err := jwtService.GenerateAccessToken(user.ID, targetGroupID, user.Email, member.Role, group.GroupType)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		refreshToken, err := jwtService.GenerateRefreshToken(user.ID, targetGroupID, sessionID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		refreshHash := hashToken(refreshToken)
+		expiresAt := time.Now().Add(7 * 24 * time.Hour)
+		_, err = queries.CreateSession(r.Context(), storage.CreateSessionParams{
+			UserID:           user.ID,
+			GroupID:          targetGroupID,
+			RefreshTokenHash: refreshHash,
+			ExpiresAt:        pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "auth.switch_group", "session", sessionID.String(), map[string]interface{}{
+				"target_group_id": targetGroupID.String(),
+			})
+		}
+
+		respondJSON(w, http.StatusOK, tokenResponse{
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
+			TokenType:    "Bearer",
+			ExpiresIn:    900,
+		})
 	}
 }
 

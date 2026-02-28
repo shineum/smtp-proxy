@@ -20,15 +20,16 @@ type JWTConfig struct {
 
 // AccessTokenClaims represents claims in an access token.
 type AccessTokenClaims struct {
-	TenantID string `json:"tenant_id"`
-	Email    string `json:"email"`
-	Role     string `json:"role"`
+	GroupID   string `json:"group_id"`
+	GroupType string `json:"group_type"`
+	Email     string `json:"email"`
+	Role      string `json:"role"`
 	jwt.RegisteredClaims
 }
 
 // RefreshTokenClaims represents claims in a refresh token.
 type RefreshTokenClaims struct {
-	TenantID  string `json:"tenant_id"`
+	GroupID   string `json:"group_id"`
 	SessionID string `json:"session_id"`
 	jwt.RegisteredClaims
 }
@@ -52,12 +53,13 @@ var (
 )
 
 // GenerateAccessToken creates a signed JWT access token for the given user.
-func (s *JWTService) GenerateAccessToken(userID, tenantID uuid.UUID, email, role string) (string, error) {
+func (s *JWTService) GenerateAccessToken(userID, groupID uuid.UUID, email, role, groupType string) (string, error) {
 	now := time.Now()
 	claims := AccessTokenClaims{
-		TenantID: tenantID.String(),
-		Email:    email,
-		Role:     role,
+		GroupID:   groupID.String(),
+		GroupType: groupType,
+		Email:     email,
+		Role:      role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),
 			Issuer:    s.config.Issuer,
@@ -76,10 +78,10 @@ func (s *JWTService) GenerateAccessToken(userID, tenantID uuid.UUID, email, role
 }
 
 // GenerateRefreshToken creates a signed JWT refresh token for the given session.
-func (s *JWTService) GenerateRefreshToken(userID, tenantID, sessionID uuid.UUID) (string, error) {
+func (s *JWTService) GenerateRefreshToken(userID, groupID, sessionID uuid.UUID) (string, error) {
 	now := time.Now()
 	claims := RefreshTokenClaims{
-		TenantID:  tenantID.String(),
+		GroupID:   groupID.String(),
 		SessionID: sessionID.String(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID.String(),

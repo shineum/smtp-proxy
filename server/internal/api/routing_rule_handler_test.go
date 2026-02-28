@@ -15,10 +15,12 @@ import (
 
 func TestCreateRoutingRuleHandler_Valid(t *testing.T) {
 	rule := testRoutingRule()
+	groupID := testGroup().ID
+
 	mock := &mockQuerier{
 		createRoutingRuleFn: func(ctx context.Context, arg storage.CreateRoutingRuleParams) (storage.RoutingRule, error) {
-			if arg.AccountID == uuid.Nil {
-				t.Error("expected non-nil account ID")
+			if arg.GroupID != groupID {
+				t.Errorf("expected group ID %s, got %s", groupID, arg.GroupID)
 			}
 			if arg.Priority != 10 {
 				t.Errorf("expected priority 10, got %d", arg.Priority)
@@ -32,8 +34,7 @@ func TestCreateRoutingRuleHandler_Valid(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/routing-rules", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	accountID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	ctx := setAuthContext(req.Context(), accountID)
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
@@ -51,17 +52,20 @@ func TestCreateRoutingRuleHandler_Valid(t *testing.T) {
 	if resp.Priority != 10 {
 		t.Errorf("expected priority 10, got %d", resp.Priority)
 	}
+	if resp.GroupID != groupID {
+		t.Errorf("expected group_id %s, got %s", groupID, resp.GroupID)
+	}
 }
 
 func TestCreateRoutingRuleHandler_InvalidProviderID(t *testing.T) {
 	mock := &mockQuerier{}
+	groupID := testGroup().ID
 
 	body := `{"priority":10,"conditions":{},"provider_id":"not-a-uuid","enabled":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/routing-rules", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	accountID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	ctx := setAuthContext(req.Context(), accountID)
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
@@ -74,7 +78,7 @@ func TestCreateRoutingRuleHandler_InvalidProviderID(t *testing.T) {
 }
 
 func TestListRoutingRulesHandler_OrderedByPriority(t *testing.T) {
-	accountID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	groupID := testGroup().ID
 
 	rule1 := testRoutingRule()
 	rule1.Priority = 1
@@ -88,9 +92,9 @@ func TestListRoutingRulesHandler_OrderedByPriority(t *testing.T) {
 	rule3.Priority = 10
 
 	mock := &mockQuerier{
-		listRoutingRulesByAccountFn: func(ctx context.Context, acctID uuid.UUID) ([]storage.RoutingRule, error) {
-			if acctID != accountID {
-				t.Errorf("expected account ID %s, got %s", accountID, acctID)
+		listRoutingRulesByGroupFn: func(ctx context.Context, gID uuid.UUID) ([]storage.RoutingRule, error) {
+			if gID != groupID {
+				t.Errorf("expected group ID %s, got %s", groupID, gID)
 			}
 			// Return in priority order (as the SQL query does)
 			return []storage.RoutingRule{rule1, rule2, rule3}, nil
@@ -98,7 +102,7 @@ func TestListRoutingRulesHandler_OrderedByPriority(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/routing-rules", nil)
-	ctx := setAuthContext(req.Context(), accountID)
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()

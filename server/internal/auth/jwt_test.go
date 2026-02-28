@@ -21,9 +21,9 @@ func newTestJWTService() *JWTService {
 func TestGenerateAccessToken(t *testing.T) {
 	svc := newTestJWTService()
 	userID := uuid.New()
-	tenantID := uuid.New()
+	groupID := uuid.New()
 
-	token, err := svc.GenerateAccessToken(userID, tenantID, "user@example.com", "admin")
+	token, err := svc.GenerateAccessToken(userID, groupID, "user@example.com", "admin", "organization")
 	if err != nil {
 		t.Fatalf("GenerateAccessToken() error = %v", err)
 	}
@@ -35,10 +35,10 @@ func TestGenerateAccessToken(t *testing.T) {
 func TestGenerateRefreshToken(t *testing.T) {
 	svc := newTestJWTService()
 	userID := uuid.New()
-	tenantID := uuid.New()
+	groupID := uuid.New()
 	sessionID := uuid.New()
 
-	token, err := svc.GenerateRefreshToken(userID, tenantID, sessionID)
+	token, err := svc.GenerateRefreshToken(userID, groupID, sessionID)
 	if err != nil {
 		t.Fatalf("GenerateRefreshToken() error = %v", err)
 	}
@@ -50,11 +50,11 @@ func TestGenerateRefreshToken(t *testing.T) {
 func TestValidateAccessToken_Valid(t *testing.T) {
 	svc := newTestJWTService()
 	userID := uuid.New()
-	tenantID := uuid.New()
+	groupID := uuid.New()
 	email := "user@example.com"
 	role := "admin"
 
-	token, err := svc.GenerateAccessToken(userID, tenantID, email, role)
+	token, err := svc.GenerateAccessToken(userID, groupID, email, role, "organization")
 	if err != nil {
 		t.Fatalf("GenerateAccessToken() error = %v", err)
 	}
@@ -67,8 +67,11 @@ func TestValidateAccessToken_Valid(t *testing.T) {
 	if claims.Subject != userID.String() {
 		t.Errorf("Subject = %q, want %q", claims.Subject, userID.String())
 	}
-	if claims.TenantID != tenantID.String() {
-		t.Errorf("TenantID = %q, want %q", claims.TenantID, tenantID.String())
+	if claims.GroupID != groupID.String() {
+		t.Errorf("GroupID = %q, want %q", claims.GroupID, groupID.String())
+	}
+	if claims.GroupType != "organization" {
+		t.Errorf("GroupType = %q, want %q", claims.GroupType, "organization")
 	}
 	if claims.Email != email {
 		t.Errorf("Email = %q, want %q", claims.Email, email)
@@ -90,7 +93,7 @@ func TestValidateAccessToken_Expired(t *testing.T) {
 		Audience:           "smtp-proxy-api",
 	})
 
-	token, err := svc.GenerateAccessToken(uuid.New(), uuid.New(), "user@example.com", "member")
+	token, err := svc.GenerateAccessToken(uuid.New(), uuid.New(), "user@example.com", "member", "organization")
 	if err != nil {
 		t.Fatalf("GenerateAccessToken() error = %v", err)
 	}
@@ -104,7 +107,7 @@ func TestValidateAccessToken_Expired(t *testing.T) {
 func TestValidateAccessToken_InvalidSignature(t *testing.T) {
 	svc := newTestJWTService()
 
-	token, err := svc.GenerateAccessToken(uuid.New(), uuid.New(), "user@example.com", "member")
+	token, err := svc.GenerateAccessToken(uuid.New(), uuid.New(), "user@example.com", "member", "organization")
 	if err != nil {
 		t.Fatalf("GenerateAccessToken() error = %v", err)
 	}
@@ -136,10 +139,10 @@ func TestValidateAccessToken_Malformed(t *testing.T) {
 func TestValidateRefreshToken_Valid(t *testing.T) {
 	svc := newTestJWTService()
 	userID := uuid.New()
-	tenantID := uuid.New()
+	groupID := uuid.New()
 	sessionID := uuid.New()
 
-	token, err := svc.GenerateRefreshToken(userID, tenantID, sessionID)
+	token, err := svc.GenerateRefreshToken(userID, groupID, sessionID)
 	if err != nil {
 		t.Fatalf("GenerateRefreshToken() error = %v", err)
 	}
@@ -152,8 +155,8 @@ func TestValidateRefreshToken_Valid(t *testing.T) {
 	if claims.Subject != userID.String() {
 		t.Errorf("Subject = %q, want %q", claims.Subject, userID.String())
 	}
-	if claims.TenantID != tenantID.String() {
-		t.Errorf("TenantID = %q, want %q", claims.TenantID, tenantID.String())
+	if claims.GroupID != groupID.String() {
+		t.Errorf("GroupID = %q, want %q", claims.GroupID, groupID.String())
 	}
 	if claims.SessionID != sessionID.String() {
 		t.Errorf("SessionID = %q, want %q", claims.SessionID, sessionID.String())
@@ -183,9 +186,10 @@ func TestValidateRefreshToken_Expired(t *testing.T) {
 func TestValidateAccessToken_WrongSigningMethod(t *testing.T) {
 	// Create a token with a different signing method (none)
 	claims := AccessTokenClaims{
-		TenantID: uuid.New().String(),
-		Email:    "user@example.com",
-		Role:     "admin",
+		GroupID:   uuid.New().String(),
+		GroupType: "organization",
+		Email:     "user@example.com",
+		Role:      "admin",
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   uuid.New().String(),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
@@ -207,9 +211,9 @@ func TestValidateAccessToken_WrongSigningMethod(t *testing.T) {
 func TestGenerateAccessToken_ClaimsExtraction(t *testing.T) {
 	svc := newTestJWTService()
 	userID := uuid.New()
-	tenantID := uuid.New()
+	groupID := uuid.New()
 
-	token, _ := svc.GenerateAccessToken(userID, tenantID, "test@test.com", "owner")
+	token, _ := svc.GenerateAccessToken(userID, groupID, "test@test.com", "owner", "organization")
 	claims, err := svc.ValidateAccessToken(token)
 	if err != nil {
 		t.Fatalf("ValidateAccessToken() error = %v", err)

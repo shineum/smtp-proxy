@@ -18,6 +18,6 @@ type Service interface {
 // the MessageID.
 type Request struct {
 	MessageID uuid.UUID
-	AccountID uuid.UUID
-	TenantID  string
+	UserID    uuid.UUID
+	GroupID   uuid.UUID
 }

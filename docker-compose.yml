@@ -3,6 +3,7 @@
 #
 # Quick start:
 #   docker compose up -d --build            # Start everything (zero prerequisites)
+#   docker compose run --rm seed            # First time: create dev group + SMTP account
 #   docker compose run --rm test-client     # Send test email (zero flags)
 #   docker compose down                     # Stop all services
 # =============================================================================
@@ -124,12 +125,18 @@ services:
       - backend
 
   # ---------------------------------------------------------------------------
-  # Dev seed (runs once and exits)
+  # Dev seed (local init - not for production)
   # System admin is auto-seeded by the API server on startup.
   # This service creates a dev company group and SMTP account for testing.
+  #
+  # Usage:
+  #   docker compose run --rm seed          # Run manually
+  #   docker compose --profile seed-init-dev-accounts up -d     # Include in startup
   # ---------------------------------------------------------------------------
   seed:
     image: curlimages/curl:8.11.1
+    profiles:
+      - seed-init-dev-accounts
     entrypoint: ["sh", "-c"]
     command:
       - |

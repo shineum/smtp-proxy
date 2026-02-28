@@ -8,7 +8,7 @@ Multi-tenant SMTP proxy server that accepts email via SMTP and delivers asynchro
 # Start all services (zero prerequisites except Docker)
 docker compose up -d --build
 
-# First time: create dev group + SMTP account
+# First time: create dev group + SMTP account (dev/dev)
 docker compose run --rm seed
 
 # Send a test email
@@ -22,7 +22,7 @@ docker compose down
 ```
 
 The API server auto-seeds a system admin on startup (`admin@localhost` / `admin`).
-Run `docker compose run --rm seed` once to create a dev company group with an SMTP account (`dev`) for testing.
+Run `docker compose run --rm seed` once to create a dev company group with an SMTP account (`dev` / `dev`) for testing.
 
 ## Architecture
 
@@ -254,7 +254,34 @@ Group types: `system` (platform admin), `company` (tenant organization)
 | PATCH | `/api/v1/users/{id}/status` | Authenticated | Update user status |
 | DELETE | `/api/v1/users/{id}` | Authenticated | Delete user |
 
-Account types: `human` (JWT login), `smtp` (API key auth for SMTP)
+Account types: `user` (JWT login), `smtp` (SMTP sending account)
+
+### SMTP Authentication
+
+SMTP accounts authenticate via SASL PLAIN (`username` + `password`). The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
+
+| Method | Used For | How It Works |
+|--------|----------|--------------|
+| Password | SMTP AUTH | Username + password set at account creation |
+| API Key | REST API | Auto-generated, used as `Bearer` token for `/api/v1/` endpoints |
+
+When creating an SMTP account, if `password` is provided it is used for SMTP AUTH. The API key is always auto-generated separately for REST API access.
+
+```bash
+# Create SMTP account with explicit password
+curl -X POST http://localhost:8080/api/v1/users \
+  -H "Authorization: Bearer <jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "sender@smtp.internal",
+    "account_type": "smtp",
+    "username": "sender",
+    "password": "my-smtp-password",
+    "group_id": "<group-uuid>",
+    "allowed_domains": ["example.com"]
+  }'
+# Response includes auto-generated api_key for REST API use
+```
 
 ### ESP Providers (Unified Auth)
 

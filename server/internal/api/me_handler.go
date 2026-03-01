@@ -116,6 +116,11 @@ func ChangePasswordHandler(queries storage.Querier) http.HandlerFunc {
 			return
 		}
 
+		if user.PasswordDisabled {
+			respondError(w, http.StatusForbidden, "password management is disabled for this account")
+			return
+		}
+
 		if err := auth.VerifyPassword(user.PasswordHash, req.CurrentPassword); err != nil {
 			respondError(w, http.StatusUnauthorized, "current password is incorrect")
 			return
@@ -172,9 +177,14 @@ func ResetPasswordHandler(queries storage.Querier, auditLogger *auth.AuditLogger
 		}
 
 		// Verify target user exists
-		_, err = queries.GetUserByID(r.Context(), targetUserID)
+		targetUser, err := queries.GetUserByID(r.Context(), targetUserID)
 		if err != nil {
 			respondError(w, http.StatusNotFound, "user not found")
+			return
+		}
+
+		if targetUser.PasswordDisabled {
+			respondError(w, http.StatusForbidden, "password management is disabled for this account")
 			return
 		}
 

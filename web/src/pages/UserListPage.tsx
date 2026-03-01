@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PageSection, Title, Button, Modal, ModalVariant,
   Form, FormGroup, TextInput, FormSelect, FormSelectOption, Spinner, Label,
+  Checkbox,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import { fetchUsers, createUser, deleteUser, updateUserStatus, fetchGroups } from '../api/resources';
@@ -14,7 +15,7 @@ export default function UserListPage() {
   const queryClient = useQueryClient();
   const { me, isSystemAdmin } = useAuth();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [form, setForm] = useState({ email: '', password: '', account_type: 'user', username: '', role: 'member', group_id: '' });
+  const [form, setForm] = useState({ email: '', password: '', account_type: 'user', username: '', role: 'member', group_id: '', password_disabled: true });
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['users'],
@@ -30,14 +31,19 @@ export default function UserListPage() {
   const currentGroupId = me?.current_group.group_id || '';
 
   const createMutation = useMutation({
-    mutationFn: () => createUser({
-      ...form,
-      group_id: isSystemAdmin ? (form.group_id || currentGroupId) : currentGroupId,
-    }),
+    mutationFn: () => {
+      const payload: Record<string, unknown> = { ...form };
+      if (!isSystemAdmin) {
+        payload.group_id = currentGroupId;
+      } else if (!form.group_id) {
+        delete payload.group_id;
+      }
+      return createUser(payload);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setIsCreateOpen(false);
-      setForm({ email: '', password: '', account_type: 'user', username: '', role: 'member', group_id: '' });
+      setForm({ email: '', password: '', account_type: 'user', username: '', role: 'member', group_id: '', password_disabled: true });
     },
   });
 
@@ -52,7 +58,7 @@ export default function UserListPage() {
   });
 
   const isSmtp = form.account_type === 'smtp';
-  const canCreate = isSmtp ? !!form.username : !!form.email;
+  const canCreate = isSmtp ? !!form.username : (!!form.email && (form.password_disabled || !!form.password));
 
   if (isLoading) return <PageSection><Spinner size="xl" /></PageSection>;
 
@@ -119,7 +125,7 @@ export default function UserListPage() {
         <Form>
           <FormGroup label="Account Type" fieldId="user-type">
             <FormSelect id="user-type" value={form.account_type} onChange={(_e, v) => setForm({ ...form, account_type: v, email: '', username: '' })}>
-              <FormSelectOption value="user" label="Human User" />
+              <FormSelectOption value="user" label="Team Member" />
               <FormSelectOption value="smtp" label="SMTP Account" />
             </FormSelect>
           </FormGroup>
@@ -137,9 +143,19 @@ export default function UserListPage() {
               <FormGroup label="Email" isRequired fieldId="user-email">
                 <TextInput id="user-email" value={form.email} onChange={(_e, v) => setForm({ ...form, email: v })} isRequired />
               </FormGroup>
-              <FormGroup label="Password" isRequired fieldId="user-password">
-                <TextInput id="user-password" type="password" value={form.password} onChange={(_e, v) => setForm({ ...form, password: v })} isRequired />
+              <FormGroup fieldId="user-password-disabled">
+                <Checkbox
+                  id="user-password-disabled"
+                  label="Disable password (SSO-only account)"
+                  isChecked={form.password_disabled}
+                  onChange={(_e, checked) => setForm({ ...form, password_disabled: checked, password: '' })}
+                />
               </FormGroup>
+              {!form.password_disabled && (
+                <FormGroup label="Password" isRequired fieldId="user-password">
+                  <TextInput id="user-password" type="password" value={form.password} onChange={(_e, v) => setForm({ ...form, password: v })} isRequired />
+                </FormGroup>
+              )}
               <FormGroup label="Username" fieldId="user-username">
                 <TextInput id="user-username" value={form.username} onChange={(_e, v) => setForm({ ...form, username: v })} />
               </FormGroup>
@@ -147,7 +163,8 @@ export default function UserListPage() {
           )}
           <FormGroup label="Group" fieldId="user-group">
             {isSystemAdmin ? (
-              <FormSelect id="user-group" value={form.group_id || currentGroupId} onChange={(_e, v) => setForm({ ...form, group_id: v })}>
+              <FormSelect id="user-group" value={form.group_id} onChange={(_e, v) => setForm({ ...form, group_id: v })}>
+                <FormSelectOption value="" label="No group assignment" />
                 {groups?.map((g) => (
                   <FormSelectOption key={g.id} value={g.id} label={g.name} />
                 ))}

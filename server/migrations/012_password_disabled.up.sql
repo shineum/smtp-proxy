@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN password_disabled BOOLEAN NOT NULL DEFAULT false;

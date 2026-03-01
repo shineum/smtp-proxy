@@ -41,6 +41,8 @@ export const resetUserPassword = async (id: string, new_password: string): Promi
   { await api.post(`/users/${id}/reset-password`, { new_password }); };
 export const fetchUserMemberships = async (id: string): Promise<Membership[]> =>
   (await api.get(`/users/${id}/memberships`)).data;
+export const updatePasswordDisabled = async (id: string, password_disabled: boolean): Promise<User> =>
+  (await api.patch(`/users/${id}/password-disabled`, { password_disabled })).data;
 
 // Providers
 export const fetchProviders = async (): Promise<Provider[]> => (await api.get('/providers')).data;

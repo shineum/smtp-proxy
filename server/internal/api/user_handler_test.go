@@ -169,7 +169,7 @@ func TestCreateUserHandler_SMTPAccount(t *testing.T) {
 		},
 	}
 
-	body := `{"email":"smtp@example.com","account_type":"smtp"}`
+	body := `{"email":"smtp@example.com","account_type":"smtp","username":"smtp-bot"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -255,7 +255,7 @@ func TestCreateUserHandler_OwnerCannotBeCreatedByAdmin(t *testing.T) {
 	}
 }
 
-func TestListUsersHandler(t *testing.T) {
+func TestListUsersHandler_SystemAdmin(t *testing.T) {
 	usr := testUser()
 	mock := &mockQuerier{
 		listUsersFn: func(ctx context.Context) ([]storage.User, error) {
@@ -264,6 +264,9 @@ func TestListUsersHandler(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	groupID := testGroup().ID
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "system")
+	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
 	handler := ListUsersHandler(mock)
@@ -279,6 +282,23 @@ func TestListUsersHandler(t *testing.T) {
 	}
 	if len(resp) != 1 {
 		t.Fatalf("expected 1 user, got %d", len(resp))
+	}
+}
+
+func TestListUsersHandler_MemberDenied(t *testing.T) {
+	mock := &mockQuerier{}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
+	groupID := testGroup().ID
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "member", "organization")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	handler := ListUsersHandler(mock)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
 	}
 }
 

@@ -14,38 +14,41 @@ import (
 
 // createUserRequest is the JSON body for POST /api/v1/users.
 type createUserRequest struct {
-	Email          string   `json:"email"`
-	Password       string   `json:"password,omitempty"`
-	AccountType    string   `json:"account_type"`
-	Username       string   `json:"username,omitempty"`
-	GroupID        string   `json:"group_id,omitempty"`
-	Role           string   `json:"role,omitempty"`
-	AllowedDomains []string `json:"allowed_domains,omitempty"`
+	Email            string   `json:"email"`
+	Password         string   `json:"password,omitempty"`
+	AccountType      string   `json:"account_type"`
+	Username         string   `json:"username,omitempty"`
+	GroupID          string   `json:"group_id,omitempty"`
+	Role             string   `json:"role,omitempty"`
+	AllowedDomains   []string `json:"allowed_domains,omitempty"`
+	PasswordDisabled bool     `json:"password_disabled,omitempty"`
 }
 
 // userResponse is the JSON response for a user, excluding sensitive fields.
 type userResponse struct {
-	ID             uuid.UUID  `json:"id"`
-	Email          string     `json:"email"`
-	Username       *string    `json:"username,omitempty"`
-	AccountType    string     `json:"account_type"`
-	Status         string     `json:"status"`
-	AllowedDomains []string   `json:"allowed_domains,omitempty"`
-	ApiKey         *string    `json:"api_key,omitempty"`
-	LastLogin      *time.Time `json:"last_login,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID               uuid.UUID  `json:"id"`
+	Email            string     `json:"email"`
+	Username         *string    `json:"username,omitempty"`
+	AccountType      string     `json:"account_type"`
+	Status           string     `json:"status"`
+	AllowedDomains   []string   `json:"allowed_domains,omitempty"`
+	ApiKey           *string    `json:"api_key,omitempty"`
+	PasswordDisabled bool       `json:"password_disabled"`
+	LastLogin        *time.Time `json:"last_login,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // toUserResponse converts a storage.User to a userResponse.
 func toUserResponse(u storage.User) userResponse {
 	resp := userResponse{
-		ID:          u.ID,
-		Email:       u.Email,
-		AccountType: u.AccountType,
-		Status:      u.Status,
-		CreatedAt:   timestampToTime(u.CreatedAt),
-		UpdatedAt:   timestampToTime(u.UpdatedAt),
+		ID:               u.ID,
+		Email:            u.Email,
+		AccountType:      u.AccountType,
+		Status:           u.Status,
+		PasswordDisabled: u.PasswordDisabled,
+		CreatedAt:        timestampToTime(u.CreatedAt),
+		UpdatedAt:        timestampToTime(u.UpdatedAt),
 	}
 	if u.Username.Valid {
 		resp.Username = &u.Username.String
@@ -114,8 +117,8 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			errs = append(errs, "email is required")
 		}
 
-		// Password is required for human users, optional for SMTP
-		if req.AccountType == "user" && req.Password == "" {
+		// Password is required for human users unless password_disabled is true
+		if req.AccountType == "user" && req.Password == "" && !req.PasswordDisabled {
 			errs = append(errs, "password is required for user accounts")
 		}
 
@@ -186,12 +189,13 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 		}
 
 		user, err := queries.CreateUser(r.Context(), storage.CreateUserParams{
-			Email:          req.Email,
-			PasswordHash:   passwordHash,
-			AccountType:    req.AccountType,
-			Username:       username,
-			ApiKey:         apiKey,
-			AllowedDomains: domainsJSON,
+			Email:            req.Email,
+			PasswordHash:     passwordHash,
+			AccountType:      req.AccountType,
+			Username:         username,
+			ApiKey:           apiKey,
+			AllowedDomains:   domainsJSON,
+			PasswordDisabled: req.PasswordDisabled,
 		})
 		if err != nil {
 			if req.AccountType == "smtp" {
@@ -289,10 +293,28 @@ func ListUserMembershipsHandler(queries storage.Querier) http.HandlerFunc {
 }
 
 // ListUsersHandler handles GET /api/v1/users.
-// Lists all users. Requires system admin access.
+// System admins see all users; group admins/owners see only their group's users.
+// Regular members are denied access.
 func ListUsersHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		users, err := queries.ListUsers(r.Context())
+		callerRole := auth.RoleFromContext(r.Context())
+		callerGroupType := auth.GroupTypeFromContext(r.Context())
+		callerGroupID := auth.GroupIDFromContext(r.Context())
+
+		// Only admin+ roles can list users
+		if callerRole != "admin" && callerRole != "owner" {
+			respondError(w, http.StatusForbidden, "access denied")
+			return
+		}
+
+		var users []storage.User
+		var err error
+
+		if callerGroupType == "system" {
+			users, err = queries.ListUsers(r.Context())
+		} else {
+			users, err = queries.ListUsersByGroupID(r.Context(), callerGroupID)
+		}
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -402,5 +424,46 @@ func DeleteUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 		}
 
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// updatePasswordDisabledRequest is the JSON body for PATCH /api/v1/users/{id}/password-disabled.
+type updatePasswordDisabledRequest struct {
+	PasswordDisabled bool `json:"password_disabled"`
+}
+
+// UpdatePasswordDisabledHandler handles PATCH /api/v1/users/{id}/password-disabled.
+// Toggles the password_disabled flag for a user.
+func UpdatePasswordDisabledHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		var req updatePasswordDisabledRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		user, err := queries.UpdatePasswordDisabled(r.Context(), storage.UpdatePasswordDisabledParams{
+			ID:               id,
+			PasswordDisabled: req.PasswordDisabled,
+		})
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user not found")
+			return
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "admin.update_password_disabled", "user", id.String(), map[string]interface{}{
+				"password_disabled": req.PasswordDisabled,
+			})
+		}
+
+		respondJSON(w, http.StatusOK, toUserResponse(user))
 	}
 }

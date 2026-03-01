@@ -8,7 +8,7 @@ import {
   Form, FormGroup, TextInput, FormSelect, FormSelectOption,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
-import { fetchUser, resetUserPassword, fetchUserMemberships, fetchGroups, addGroupMember, removeMember, updateMemberRole } from '../api/resources';
+import { fetchUser, resetUserPassword, fetchUserMemberships, fetchGroups, addGroupMember, removeMember, updateMemberRole, updatePasswordDisabled } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
 
 export default function UserDetailPage() {
@@ -47,6 +47,11 @@ export default function UserDetailPage() {
     },
   });
 
+  const togglePasswordDisabledMutation = useMutation({
+    mutationFn: (disabled: boolean) => updatePasswordDisabled(id!, disabled),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['user', id] }),
+  });
+
   const addToGroupMutation = useMutation({
     mutationFn: () => addGroupMember(addGroupForm.group_id, id!, addGroupForm.role),
     onSuccess: () => {
@@ -79,7 +84,18 @@ export default function UserDetailPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <Title headingLevel="h1" size="lg">User: {user.email}</Title>
         {user.account_type === 'user' && (
-          <Button variant="secondary" onClick={() => setIsResetOpen(true)}>Reset Password</Button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <Button
+              variant={user.password_disabled ? 'primary' : 'warning'}
+              onClick={() => togglePasswordDisabledMutation.mutate(!user.password_disabled)}
+              isDisabled={togglePasswordDisabledMutation.isPending}
+            >
+              {user.password_disabled ? 'Enable Password' : 'Disable Password'}
+            </Button>
+            {!user.password_disabled && (
+              <Button variant="secondary" onClick={() => setIsResetOpen(true)}>Reset Password</Button>
+            )}
+          </div>
         )}
       </div>
 
@@ -110,6 +126,16 @@ export default function UserDetailPage() {
                 <Label color={user.status === 'active' ? 'green' : 'red'}>{user.status}</Label>
               </DescriptionListDescription>
             </DescriptionListGroup>
+            {user.account_type === 'user' && (
+              <DescriptionListGroup>
+                <DescriptionListTerm>Password</DescriptionListTerm>
+                <DescriptionListDescription>
+                  <Label color={user.password_disabled ? 'orange' : 'green'}>
+                    {user.password_disabled ? 'Disabled (SSO-only)' : 'Enabled'}
+                  </Label>
+                </DescriptionListDescription>
+              </DescriptionListGroup>
+            )}
             {user.allowed_domains && user.allowed_domains.length > 0 && (
               <DescriptionListGroup>
                 <DescriptionListTerm>Allowed Domains</DescriptionListTerm>

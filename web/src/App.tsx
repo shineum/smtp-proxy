@@ -42,6 +42,13 @@ function RedirectIfAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireAdmin({ children }: { children: ReactNode }) {
+  const { isAdmin, isLoading } = useAuth();
+  if (isLoading) return <PageSection><Spinner size="xl" /></PageSection>;
+  if (!isAdmin) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -53,8 +60,8 @@ export default function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/groups" element={<GroupListPage />} />
               <Route path="/groups/:id" element={<GroupDetailPage />} />
-              <Route path="/users" element={<UserListPage />} />
-              <Route path="/users/:id" element={<UserDetailPage />} />
+              <Route path="/users" element={<RequireAdmin><UserListPage /></RequireAdmin>} />
+              <Route path="/users/:id" element={<RequireAdmin><UserDetailPage /></RequireAdmin>} />
               <Route path="/providers" element={<ProviderListPage />} />
               <Route path="/providers/new" element={<ProviderFormPage />} />
               <Route path="/providers/:id" element={<ProviderFormPage />} />

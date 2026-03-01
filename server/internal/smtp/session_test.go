@@ -337,6 +337,10 @@ func (m *mockQuerier) ListUsers(_ context.Context) ([]storage.User, error) {
 	return nil, nil
 }
 
+func (m *mockQuerier) ListUsersByGroupID(_ context.Context, _ uuid.UUID) ([]storage.User, error) {
+	return nil, nil
+}
+
 func (m *mockQuerier) ResetFailedAttempts(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
@@ -382,6 +386,10 @@ func (m *mockQuerier) UpdateUser(_ context.Context, _ storage.UpdateUserParams) 
 
 func (m *mockQuerier) UpdateUserLastLogin(_ context.Context, _ uuid.UUID) error {
 	return nil
+}
+
+func (m *mockQuerier) UpdatePasswordDisabled(_ context.Context, _ storage.UpdatePasswordDisabledParams) (storage.User, error) {
+	return storage.User{}, nil
 }
 
 func (m *mockQuerier) UpdateUserPassword(_ context.Context, _ storage.UpdateUserPasswordParams) error {

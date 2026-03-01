@@ -12,7 +12,7 @@ import { BarsIcon } from '@patternfly/react-icons';
 import { useAuth } from '../context/AuthContext';
 
 export default function Layout() {
-  const { me, logout, switchGroup, isSystemAdmin } = useAuth();
+  const { me, logout, switchGroup, isSystemAdmin, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -22,7 +22,7 @@ export default function Layout() {
   const navItems = [
     { path: '/', label: 'Dashboard' },
     ...(isSystemAdmin ? [{ path: '/groups', label: 'Groups' }] : []),
-    { path: '/users', label: 'Users' },
+    ...(isAdmin ? [{ path: '/users', label: 'Users' }] : []),
     { path: '/providers', label: 'Providers' },
     { path: '/routing-rules', label: 'Routing Rules' },
     { path: '/messages', label: 'Messages' },

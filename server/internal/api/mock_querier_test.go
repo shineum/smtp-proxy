@@ -122,10 +122,18 @@ func (m *mockQuerier) ListUsers(ctx context.Context) ([]storage.User, error) {
 	return nil, nil
 }
 
+func (m *mockQuerier) ListUsersByGroupID(_ context.Context, _ uuid.UUID) ([]storage.User, error) {
+	return nil, nil
+}
+
 func (m *mockQuerier) UpdateUser(ctx context.Context, arg storage.UpdateUserParams) (storage.User, error) {
 	if m.updateUserFn != nil {
 		return m.updateUserFn(ctx, arg)
 	}
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) UpdatePasswordDisabled(_ context.Context, _ storage.UpdatePasswordDisabledParams) (storage.User, error) {
 	return storage.User{}, nil
 }
 

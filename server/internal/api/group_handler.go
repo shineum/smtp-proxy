@@ -45,6 +45,8 @@ type groupMemberResponse struct {
 	ID        uuid.UUID `json:"id"`
 	GroupID   uuid.UUID `json:"group_id"`
 	UserID    uuid.UUID `json:"user_id"`
+	Email     string    `json:"email,omitempty"`
+	Username  *string   `json:"username,omitempty"`
 	Role      string    `json:"role"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -258,6 +260,12 @@ func ListGroupMembersHandler(queries storage.Querier) http.HandlerFunc {
 		resp := make([]groupMemberResponse, len(members))
 		for i, m := range members {
 			resp[i] = toGroupMemberResponse(m)
+			if user, err := queries.GetUserByID(r.Context(), m.UserID); err == nil {
+				resp[i].Email = user.Email
+				if user.Username.Valid {
+					resp[i].Username = &user.Username.String
+				}
+			}
 		}
 
 		respondJSON(w, http.StatusOK, resp)

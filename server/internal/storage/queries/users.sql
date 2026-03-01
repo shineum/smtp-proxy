@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (email, password_hash, account_type, username, api_key, allowed_domains)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO users (email, password_hash, account_type, username, api_key, allowed_domains, password_disabled)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- name: GetUserByID :one
@@ -52,3 +52,15 @@ DELETE FROM users WHERE id = $1;
 UPDATE users
 SET password_hash = $2, updated_at = NOW()
 WHERE id = $1;
+
+-- name: ListUsersByGroupID :many
+SELECT u.* FROM users u
+JOIN group_members gm ON u.id = gm.user_id
+WHERE gm.group_id = $1
+ORDER BY u.created_at DESC;
+
+-- name: UpdatePasswordDisabled :one
+UPDATE users
+SET password_disabled = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING *;

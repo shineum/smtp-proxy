@@ -73,11 +73,12 @@ export default function GroupDetailPage() {
           <Card style={{ marginTop: '1rem' }}>
             <CardBody>
               <Table aria-label="Members">
-                <Thead><Tr><Th>User ID</Th><Th>Role</Th><Th>Joined</Th></Tr></Thead>
+                <Thead><Tr><Th>Email</Th><Th>Username</Th><Th>Role</Th><Th>Joined</Th></Tr></Thead>
                 <Tbody>
                   {members?.map((m) => (
                     <Tr key={m.id}>
-                      <Td>{m.user_id}</Td>
+                      <Td>{m.email || m.user_id}</Td>
+                      <Td>{m.username || '-'}</Td>
                       <Td><Label>{m.role}</Label></Td>
                       <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
                     </Tr>

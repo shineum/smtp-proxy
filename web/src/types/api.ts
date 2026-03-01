@@ -19,6 +19,7 @@ export interface User {
   status: string;
   allowed_domains?: string[];
   api_key?: string;
+  password_disabled: boolean;
   last_login?: string;
   created_at: string;
   updated_at: string;
@@ -39,6 +40,8 @@ export interface GroupMember {
   id: string;
   group_id: string;
   user_id: string;
+  email?: string;
+  username?: string;
   role: string;
   created_at: string;
 }

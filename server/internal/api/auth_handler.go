@@ -89,6 +89,15 @@ func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLog
 			return
 		}
 
+		// Block login for password-disabled users (SSO-only)
+		if user.PasswordDisabled {
+			if auditLogger != nil {
+				auditLogger.LogAuthFailure(r.Context(), r, auth.AuditActionLoginFailed, "password disabled")
+			}
+			respondError(w, http.StatusUnauthorized, "password login is disabled for this account")
+			return
+		}
+
 		// Verify password
 		if err := auth.VerifyPassword(user.PasswordHash, req.Password); err != nil {
 			_ = queries.IncrementFailedAttempts(r.Context(), user.ID)

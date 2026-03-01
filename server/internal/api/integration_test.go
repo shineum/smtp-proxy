@@ -619,7 +619,7 @@ func TestSMTPAccountCreation_WithGroupMembership(t *testing.T) {
 	}
 
 	// Step 1: Create SMTP user with group_id
-	body := `{"email":"smtp-bot@example.com","account_type":"smtp","group_id":"` + groupID.String() + `","role":"member"}`
+	body := `{"email":"smtp-bot@example.com","account_type":"smtp","username":"smtp-bot","group_id":"` + groupID.String() + `","role":"member"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 

@@ -15,6 +15,7 @@ interface AuthContextType extends AuthState {
   switchGroup: (groupId: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
   isSystemAdmin: boolean;
+  isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -98,6 +99,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const isSystemAdmin = state.me?.current_group?.group_type === 'system';
+  const currentRole = state.me?.current_group?.role;
+  const isAdmin = isSystemAdmin || currentRole === 'admin' || currentRole === 'owner';
 
   return (
     <AuthContext.Provider value={{
@@ -107,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       switchGroup: switchGroupFn,
       refreshProfile,
       isSystemAdmin,
+      isAdmin,
     }}>
       {children}
     </AuthContext.Provider>

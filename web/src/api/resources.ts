@@ -1,6 +1,6 @@
 import api from './client';
 import type {
-  Group, GroupMember, User, Provider, ProviderHealth,
+  Group, GroupMember, Membership, User, Provider, ProviderHealth,
   RoutingRule, DashboardStats, TimeSeriesPoint,
   UsageByUser, UsageByProvider, PaginatedMessages,
   MessageDetail, ActivityLog,
@@ -39,6 +39,8 @@ export const updateUserStatus = async (id: string, status: string): Promise<User
 export const deleteUser = async (id: string): Promise<void> => { await api.delete(`/users/${id}`); };
 export const resetUserPassword = async (id: string, new_password: string): Promise<void> =>
   { await api.post(`/users/${id}/reset-password`, { new_password }); };
+export const fetchUserMemberships = async (id: string): Promise<Membership[]> =>
+  (await api.get(`/users/${id}/memberships`)).data;
 
 // Providers
 export const fetchProviders = async (): Promise<Provider[]> => (await api.get('/providers')).data;

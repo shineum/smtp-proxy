@@ -246,6 +246,48 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 	}
 }
 
+// ListUserMembershipsHandler handles GET /api/v1/users/{id}/memberships.
+// Returns all group memberships for a user.
+func ListUserMembershipsHandler(queries storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		memberships, err := queries.ListMembershipsByUserID(r.Context(), id)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		type membershipResponse struct {
+			ID        uuid.UUID `json:"id"`
+			GroupID   uuid.UUID `json:"group_id"`
+			GroupName string    `json:"group_name"`
+			GroupType string    `json:"group_type"`
+			Role      string    `json:"role"`
+			CreatedAt time.Time `json:"created_at"`
+		}
+
+		resp := make([]membershipResponse, len(memberships))
+		for i, m := range memberships {
+			resp[i] = membershipResponse{
+				ID:        m.ID,
+				GroupID:   m.GroupID,
+				GroupName: m.GroupName,
+				GroupType: m.GroupType,
+				Role:      m.Role,
+				CreatedAt: timestampToTime(m.CreatedAt),
+			}
+		}
+
+		respondJSON(w, http.StatusOK, resp)
+	}
+}
+
 // ListUsersHandler handles GET /api/v1/users.
 // Lists all users. Requires system admin access.
 func ListUsersHandler(queries storage.Querier) http.HandlerFunc {

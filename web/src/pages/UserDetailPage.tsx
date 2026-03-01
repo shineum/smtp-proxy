@@ -1,23 +1,42 @@
 import { useParams } from 'react-router-dom';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
-  PageSection, Title, Card, CardBody, DescriptionList, DescriptionListGroup,
+  PageSection, Title, Card, CardBody, CardTitle, DescriptionList, DescriptionListGroup,
   DescriptionListTerm, DescriptionListDescription, Label, Spinner,
   Button, Modal, ModalVariant,
-  Form, FormGroup, TextInput,
+  Form, FormGroup, TextInput, FormSelect, FormSelectOption,
 } from '@patternfly/react-core';
-import { fetchUser, resetUserPassword } from '../api/resources';
+import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
+import { fetchUser, resetUserPassword, fetchUserMemberships, fetchGroups, addGroupMember, removeMember, updateMemberRole } from '../api/resources';
+import { useAuth } from '../context/AuthContext';
 
 export default function UserDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const queryClient = useQueryClient();
+  const { isSystemAdmin } = useAuth();
   const [isResetOpen, setIsResetOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
+  const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
+  const [addGroupForm, setAddGroupForm] = useState({ group_id: '', role: 'member' });
+  const [editingMembership, setEditingMembership] = useState<{ groupId: string; role: string } | null>(null);
 
   const { data: user, isLoading } = useQuery({
     queryKey: ['user', id],
     queryFn: () => fetchUser(id!),
     enabled: !!id,
+  });
+
+  const { data: memberships, isLoading: membershipsLoading } = useQuery({
+    queryKey: ['user-memberships', id],
+    queryFn: () => fetchUserMemberships(id!),
+    enabled: !!id,
+  });
+
+  const { data: groups } = useQuery({
+    queryKey: ['groups'],
+    queryFn: fetchGroups,
+    enabled: isAddGroupOpen,
   });
 
   const resetMutation = useMutation({
@@ -28,7 +47,32 @@ export default function UserDetailPage() {
     },
   });
 
+  const addToGroupMutation = useMutation({
+    mutationFn: () => addGroupMember(addGroupForm.group_id, id!, addGroupForm.role),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-memberships', id] });
+      setIsAddGroupOpen(false);
+      setAddGroupForm({ group_id: '', role: 'member' });
+    },
+  });
+
+  const removeFromGroupMutation = useMutation({
+    mutationFn: (groupId: string) => removeMember(groupId, id!),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['user-memberships', id] }),
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: ({ groupId, role }: { groupId: string; role: string }) => updateMemberRole(groupId, id!, role),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user-memberships', id] });
+      setEditingMembership(null);
+    },
+  });
+
   if (isLoading || !user) return <PageSection><Spinner size="xl" /></PageSection>;
+
+  const memberGroupIds = new Set(memberships?.map(m => m.group_id) || []);
+  const availableGroups = groups?.filter(g => !memberGroupIds.has(g.id)) || [];
 
   return (
     <PageSection>
@@ -39,7 +83,7 @@ export default function UserDetailPage() {
         )}
       </div>
 
-      <Card>
+      <Card style={{ marginBottom: '1rem' }}>
         <CardBody>
           <DescriptionList>
             <DescriptionListGroup>
@@ -92,6 +136,94 @@ export default function UserDetailPage() {
         </CardBody>
       </Card>
 
+      <Card>
+        <CardTitle>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Group Memberships</span>
+            {isSystemAdmin && (
+              <Button variant="secondary" size="sm" onClick={() => setIsAddGroupOpen(true)}>Add to Group</Button>
+            )}
+          </div>
+        </CardTitle>
+        <CardBody>
+          {membershipsLoading ? (
+            <Spinner size="md" />
+          ) : !memberships?.length ? (
+            <p>No group memberships.</p>
+          ) : (
+            <Table aria-label="Memberships table" variant="compact">
+              <Thead>
+                <Tr>
+                  <Th>Group</Th>
+                  <Th>Type</Th>
+                  <Th>Role</Th>
+                  {isSystemAdmin && <Th>Actions</Th>}
+                </Tr>
+              </Thead>
+              <Tbody>
+                {memberships.map((m) => (
+                  <Tr key={m.group_id}>
+                    <Td>{m.group_name}</Td>
+                    <Td><Label color={m.group_type === 'system' ? 'purple' : 'blue'}>{m.group_type}</Label></Td>
+                    <Td>
+                      {editingMembership?.groupId === m.group_id ? (
+                        <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <FormSelect
+                            value={editingMembership!.role}
+                            onChange={(_e, v) => setEditingMembership(prev => prev ? { ...prev, role: v } : prev)}
+                            aria-label="Role"
+                            style={{ width: '120px' }}
+                          >
+                            <FormSelectOption value="member" label="Member" />
+                            <FormSelectOption value="admin" label="Admin" />
+                            <FormSelectOption value="owner" label="Owner" />
+                          </FormSelect>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            isDisabled={updateRoleMutation.isPending}
+                            onClick={() => editingMembership && updateRoleMutation.mutate({ groupId: editingMembership.groupId, role: editingMembership.role })}
+                          >
+                            Save
+                          </Button>
+                          <Button variant="link" size="sm" onClick={() => setEditingMembership(null)}>Cancel</Button>
+                        </span>
+                      ) : (
+                        <Label>{m.role}</Label>
+                      )}
+                    </Td>
+                    {isSystemAdmin && (
+                      <Td>
+                        {editingMembership?.groupId !== m.group_id && (
+                          <>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setEditingMembership({ groupId: m.group_id, role: m.role })}
+                              style={{ marginRight: '0.5rem' }}
+                            >
+                              Change Role
+                            </Button>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              onClick={() => { if (confirm(`Remove from "${m.group_name}"?`)) removeFromGroupMutation.mutate(m.group_id); }}
+                            >
+                              Remove
+                            </Button>
+                          </>
+                        )}
+                      </Td>
+                    )}
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Reset Password Modal */}
       <Modal
         variant={ModalVariant.small}
         title="Reset Password"
@@ -107,6 +239,38 @@ export default function UserDetailPage() {
         <Form>
           <FormGroup label="New Password" isRequired fieldId="new-password">
             <TextInput id="new-password" type="password" value={newPassword} onChange={(_e, v) => setNewPassword(v)} isRequired />
+          </FormGroup>
+        </Form>
+      </Modal>
+
+      {/* Add to Group Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        title="Add to Group"
+        isOpen={isAddGroupOpen}
+        onClose={() => setIsAddGroupOpen(false)}
+        actions={[
+          <Button key="add" onClick={() => addToGroupMutation.mutate()} isDisabled={!addGroupForm.group_id || addToGroupMutation.isPending}>
+            {addToGroupMutation.isPending ? 'Adding...' : 'Add'}
+          </Button>,
+          <Button key="cancel" variant="link" onClick={() => setIsAddGroupOpen(false)}>Cancel</Button>,
+        ]}
+      >
+        <Form>
+          <FormGroup label="Group" isRequired fieldId="add-group-select">
+            <FormSelect id="add-group-select" value={addGroupForm.group_id} onChange={(_e, v) => setAddGroupForm({ ...addGroupForm, group_id: v })}>
+              <FormSelectOption value="" label="Select a group..." isPlaceholder />
+              {availableGroups.map((g) => (
+                <FormSelectOption key={g.id} value={g.id} label={g.name} />
+              ))}
+            </FormSelect>
+          </FormGroup>
+          <FormGroup label="Role" fieldId="add-group-role">
+            <FormSelect id="add-group-role" value={addGroupForm.role} onChange={(_e, v) => setAddGroupForm({ ...addGroupForm, role: v })}>
+              <FormSelectOption value="member" label="Member" />
+              <FormSelectOption value="admin" label="Admin" />
+              <FormSelectOption value="owner" label="Owner" />
+            </FormSelect>
           </FormGroup>
         </Form>
       </Modal>

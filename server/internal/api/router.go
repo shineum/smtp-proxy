@@ -100,6 +100,7 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			r.Patch("/{id}/status", UpdateUserStatusHandler(cfg.Queries, cfg.AuditLogger))
 			r.Delete("/{id}", DeleteUserHandler(cfg.Queries, cfg.AuditLogger))
 			r.Post("/{id}/reset-password", ResetPasswordHandler(cfg.Queries, cfg.AuditLogger))
+			r.Get("/{id}/memberships", ListUserMembershipsHandler(cfg.Queries))
 		})
 
 		// Providers

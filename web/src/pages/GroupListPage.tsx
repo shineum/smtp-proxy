@@ -8,10 +8,12 @@ import {
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import { fetchGroups, createGroup, deleteGroup } from '../api/resources';
+import { useAuth } from '../context/AuthContext';
 
 export default function GroupListPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { refreshProfile } = useAuth();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newLimit, setNewLimit] = useState('');
@@ -25,6 +27,7 @@ export default function GroupListPage() {
     mutationFn: () => createGroup(newName, newLimit ? parseInt(newLimit) : undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['groups'] });
+      refreshProfile();
       setIsCreateOpen(false);
       setNewName('');
       setNewLimit('');

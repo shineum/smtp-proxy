@@ -25,6 +25,12 @@ export const updateMemberRole = async (groupId: string, userId: string, role: st
 export const removeMember = async (groupId: string, userId: string): Promise<void> =>
   { await api.delete(`/groups/${groupId}/members/${userId}`); };
 
+// Service accounts (group-scoped)
+export const createServiceAccount = async (
+  groupId: string,
+  data: { username: string; email?: string; allowed_domains?: string[] }
+): Promise<User> => (await api.post(`/groups/${groupId}/service-accounts`, data)).data;
+
 // Activity logs
 export const fetchActivityLogs = async (groupId: string, limit = 50, offset = 0): Promise<ActivityLog[]> =>
   (await api.get(`/groups/${groupId}/activity`, { params: { limit, offset } })).data;

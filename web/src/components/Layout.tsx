@@ -21,7 +21,7 @@ export default function Layout() {
 
   const navItems = [
     { path: '/', label: 'Dashboard' },
-    ...(isSystemAdmin ? [{ path: '/groups', label: 'Groups' }] : []),
+    { path: '/groups', label: 'Groups' },
     ...(isAdmin ? [{ path: '/users', label: 'Users' }] : []),
     { path: '/providers', label: 'Providers' },
     { path: '/routing-rules', label: 'Routing Rules' },

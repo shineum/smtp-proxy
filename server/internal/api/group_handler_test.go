@@ -108,6 +108,10 @@ func TestListGroupsHandler(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups", nil)
+	// System admin sees all groups
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx := setJWTContext(req.Context(), testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
 	handler := ListGroupsHandler(mock)
@@ -128,9 +132,13 @@ func TestListGroupsHandler(t *testing.T) {
 
 func TestGetGroupHandler_Found(t *testing.T) {
 	grp := testGroup()
+	member := testGroupMember()
 	mock := &mockQuerier{
 		getGroupByIDFn: func(ctx context.Context, id uuid.UUID) (storage.Group, error) {
 			return grp, nil
+		},
+		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
+			return member, nil
 		},
 	}
 
@@ -140,7 +148,7 @@ func TestGetGroupHandler_Found(t *testing.T) {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", grp.ID.String())
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-	// Set JWT context with matching group
+	// Set JWT context with matching group (non-system, so requireGroupRole checks membership)
 	ctx = setJWTContext(ctx, testUser().ID, grp.ID, "admin", "organization")
 	req = req.WithContext(ctx)
 
@@ -226,7 +234,11 @@ func TestDeleteGroupHandler_Success(t *testing.T) {
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", grp.ID.String())
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	// System admin can delete any group
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
 
 	handler := DeleteGroupHandler(mock, nil)
 	handler.ServeHTTP(rec, req)
@@ -250,7 +262,10 @@ func TestDeleteGroupHandler_SystemGroupForbidden(t *testing.T) {
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", grp.ID.String())
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
 
 	handler := DeleteGroupHandler(mock, nil)
 	handler.ServeHTTP(rec, req)
@@ -266,6 +281,9 @@ func TestListGroupMembersHandler(t *testing.T) {
 	mock := &mockQuerier{
 		listGroupMembersByGroupIDFn: func(ctx context.Context, groupID uuid.UUID) ([]storage.GroupMember, error) {
 			return []storage.GroupMember{member}, nil
+		},
+		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
+			return member, nil
 		},
 	}
 
@@ -321,7 +339,10 @@ func TestAddGroupMemberHandler_Valid(t *testing.T) {
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", grp.ID.String())
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
 	handler := AddGroupMemberHandler(mock, nil)
@@ -352,7 +373,10 @@ func TestAddGroupMemberHandler_SMTPAlreadyInGroup(t *testing.T) {
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", grp.ID.String())
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
 	handler := AddGroupMemberHandler(mock, nil)
@@ -385,7 +409,11 @@ func TestUpdateGroupMemberRoleHandler_Valid(t *testing.T) {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", grp.ID.String())
 	rctx.URLParams.Add("uid", member.UserID.String())
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	// System admin bypasses role check (promoting to admin requires owner)
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
 	handler := UpdateGroupMemberRoleHandler(mock, nil)
@@ -417,7 +445,10 @@ func TestUpdateGroupMemberRoleHandler_LastOwner(t *testing.T) {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", grp.ID.String())
 	rctx.URLParams.Add("uid", member.UserID.String())
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
 	handler := UpdateGroupMemberRoleHandler(mock, nil)
@@ -449,7 +480,10 @@ func TestRemoveGroupMemberHandler_Success(t *testing.T) {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", grp.ID.String())
 	rctx.URLParams.Add("uid", member.UserID.String())
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
 	handler := RemoveGroupMemberHandler(mock, nil)
@@ -482,7 +516,10 @@ func TestRemoveGroupMemberHandler_LastOwner(t *testing.T) {
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", grp.ID.String())
 	rctx.URLParams.Add("uid", member.UserID.String())
-	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
 	handler := RemoveGroupMemberHandler(mock, nil)

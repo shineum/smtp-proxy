@@ -62,30 +62,25 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 	r.Group(func(r chi.Router) {
 		r.Use(auth.UnifiedAuth(cfg.JWTService, cfg.Queries))
 
-		// Group management (system admin only for create/list)
+		// Group management (open to all authenticated users)
 		r.Route("/api/v1/groups", func(r chi.Router) {
-			r.Group(func(r chi.Router) {
-				r.Use(auth.RequireSystemAdmin())
-				r.Post("/", CreateGroupHandler(cfg.Queries, cfg.AuditLogger))
-				r.Get("/", ListGroupsHandler(cfg.Queries))
-			})
+			r.Post("/", CreateGroupHandler(cfg.Queries, cfg.AuditLogger))
+			r.Get("/", ListGroupsHandler(cfg.Queries))
 
 			// Group detail routes
 			r.Route("/{id}", func(r chi.Router) {
 				r.Get("/", GetGroupHandler(cfg.Queries))
 				r.Put("/", UpdateGroupHandler(cfg.Queries, cfg.AuditLogger))
-
-				// System admin only: delete group
-				r.Group(func(r chi.Router) {
-					r.Use(auth.RequireSystemAdmin())
-					r.Delete("/", DeleteGroupHandler(cfg.Queries, cfg.AuditLogger))
-				})
+				r.Delete("/", DeleteGroupHandler(cfg.Queries, cfg.AuditLogger))
 
 				// Members
 				r.Get("/members", ListGroupMembersHandler(cfg.Queries))
 				r.Post("/members", AddGroupMemberHandler(cfg.Queries, cfg.AuditLogger))
 				r.Patch("/members/{uid}", UpdateGroupMemberRoleHandler(cfg.Queries, cfg.AuditLogger))
 				r.Delete("/members/{uid}", RemoveGroupMemberHandler(cfg.Queries, cfg.AuditLogger))
+
+				// Service accounts (group-scoped)
+				r.Post("/service-accounts", CreateServiceAccountHandler(cfg.Queries, cfg.AuditLogger))
 
 				// Activity logs
 				r.Get("/activity", ListActivityLogsHandler(cfg.Queries))

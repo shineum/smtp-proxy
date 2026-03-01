@@ -326,25 +326,24 @@ func TestGroupManagement_SystemAdminOnly(t *testing.T) {
 		},
 	}
 
-	t.Run("CompanyUser_CannotCreateGroup", func(t *testing.T) {
+	t.Run("AnyUser_CanCreateGroup", func(t *testing.T) {
 		t.Parallel()
 
 		body := `{"name":"new-group"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/groups", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 
-		// Company group user (not system admin)
+		// Company group user (not system admin) can now create groups
 		ctx := setJWTContext(req.Context(), userID, companyGroupID, "admin", "company")
 		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
 
-		// Use RequireSystemAdmin middleware wrapping CreateGroupHandler
-		handler := auth.RequireSystemAdmin()(CreateGroupHandler(mock, nil))
+		handler := CreateGroupHandler(mock, nil)
 		handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusForbidden {
-			t.Errorf("expected 403, got %d; body: %s", rec.Code, rec.Body.String())
+		if rec.Code != http.StatusCreated {
+			t.Errorf("expected 201, got %d; body: %s", rec.Code, rec.Body.String())
 		}
 	})
 
@@ -361,7 +360,7 @@ func TestGroupManagement_SystemAdminOnly(t *testing.T) {
 
 		rec := httptest.NewRecorder()
 
-		handler := auth.RequireSystemAdmin()(CreateGroupHandler(mock, nil))
+		handler := CreateGroupHandler(mock, nil)
 		handler.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusCreated {
@@ -376,7 +375,9 @@ func TestGroupManagement_SystemAdminOnly(t *testing.T) {
 
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("id", systemGroupID.String())
-		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+		ctx = setJWTContext(ctx, userID, systemGroupID, "admin", "system")
+		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
 		DeleteGroupHandler(mock, nil).ServeHTTP(rec, req)
@@ -393,7 +394,9 @@ func TestGroupManagement_SystemAdminOnly(t *testing.T) {
 
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("id", companyGroupToDelete.String())
-		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+		ctx = setJWTContext(ctx, userID, systemGroupID, "admin", "system")
+		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
 		DeleteGroupHandler(mock, nil).ServeHTTP(rec, req)
@@ -711,6 +714,8 @@ func TestMemberRoleProtection_LastOwner(t *testing.T) {
 		},
 	}
 
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+
 	t.Run("DemoteLastOwner_Conflict", func(t *testing.T) {
 		t.Parallel()
 
@@ -721,7 +726,9 @@ func TestMemberRoleProtection_LastOwner(t *testing.T) {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("id", groupID.String())
 		rctx.URLParams.Add("uid", ownerUserID.String())
-		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+		ctx = setJWTContext(ctx, ownerUserID, systemGroupID, "admin", "system")
+		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
 		UpdateGroupMemberRoleHandler(mock, nil).ServeHTTP(rec, req)
@@ -739,7 +746,9 @@ func TestMemberRoleProtection_LastOwner(t *testing.T) {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("id", groupID.String())
 		rctx.URLParams.Add("uid", ownerUserID.String())
-		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+		ctx = setJWTContext(ctx, ownerUserID, systemGroupID, "admin", "system")
+		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
 		RemoveGroupMemberHandler(mock, nil).ServeHTTP(rec, req)
@@ -775,7 +784,9 @@ func TestMemberRoleProtection_LastOwner(t *testing.T) {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("id", groupID.String())
 		rctx.URLParams.Add("uid", ownerUserID.String())
-		req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+		ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+		ctx = setJWTContext(ctx, ownerUserID, systemGroupID, "admin", "system")
+		req = req.WithContext(ctx)
 
 		rec := httptest.NewRecorder()
 		UpdateGroupMemberRoleHandler(twoOwnerMock, nil).ServeHTTP(rec, req)

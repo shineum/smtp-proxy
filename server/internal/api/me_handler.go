@@ -217,7 +217,7 @@ type updateGroupRequest struct {
 }
 
 // UpdateGroupHandler handles PUT /api/v1/groups/{id}.
-// Updates a group's name and monthly limit.
+// Updates a group's name and monthly limit. Requires owner/admin or system admin.
 func UpdateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
@@ -227,10 +227,8 @@ func UpdateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 			return
 		}
 
-		// Verify access
-		callerGroupID := auth.GroupIDFromContext(r.Context())
-		callerGroupType := auth.GroupTypeFromContext(r.Context())
-		if callerGroupType != "system" && callerGroupID != id {
+		// Verify access: owner/admin in the group or system admin
+		if _, err := requireGroupRole(queries, r, id, "owner", "admin"); err != nil {
 			respondError(w, http.StatusForbidden, "access denied")
 			return
 		}

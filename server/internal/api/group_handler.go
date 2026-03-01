@@ -1,7 +1,9 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -76,9 +78,42 @@ func toGroupMemberResponse(gm storage.GroupMember) groupMemberResponse {
 	}
 }
 
+// createServiceAccountRequest is the JSON body for POST /api/v1/groups/{id}/service-accounts.
+type createServiceAccountRequest struct {
+	Username       string   `json:"username"`
+	Email          string   `json:"email,omitempty"`
+	AllowedDomains []string `json:"allowed_domains,omitempty"`
+}
+
+// requireGroupRole checks that the caller has one of the allowed roles in the specified group.
+// System admins bypass this check. Returns the caller's membership or an error.
+func requireGroupRole(queries storage.Querier, r *http.Request, groupID uuid.UUID, allowedRoles ...string) (storage.GroupMember, error) {
+	callerGroupType := auth.GroupTypeFromContext(r.Context())
+	if callerGroupType == "system" {
+		return storage.GroupMember{Role: "owner"}, nil
+	}
+
+	callerUserID := auth.UserFromContext(r.Context())
+	member, err := queries.GetGroupMemberByUserAndGroup(r.Context(), storage.GetGroupMemberByUserAndGroupParams{
+		UserID:  callerUserID,
+		GroupID: groupID,
+	})
+	if err != nil {
+		return storage.GroupMember{}, fmt.Errorf("not a member of this group")
+	}
+
+	for _, role := range allowedRoles {
+		if member.Role == role {
+			return member, nil
+		}
+	}
+
+	return storage.GroupMember{}, fmt.Errorf("insufficient role: requires %v", allowedRoles)
+}
+
 // CreateGroupHandler handles POST /api/v1/groups.
 // Creates a new group with group_type='company' and status='active'.
-// Requires system admin access (group_type == "system").
+// Any authenticated user can create a group; the caller becomes the owner.
 func CreateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req createGroupRequest
@@ -115,6 +150,16 @@ func CreateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 			}
 		}
 
+		// Auto-create owner membership for the caller
+		callerUserID := auth.UserFromContext(r.Context())
+		if callerUserID != uuid.Nil {
+			_, _ = queries.CreateGroupMember(r.Context(), storage.CreateGroupMemberParams{
+				GroupID: group.ID,
+				UserID:  callerUserID,
+				Role:    "owner",
+			})
+		}
+
 		if auditLogger != nil {
 			auditLogger.LogAdminAction(r.Context(), r, auth.AuditActionCreateGroup, "group", group.ID.String(), map[string]interface{}{
 				"name": req.Name,
@@ -126,10 +171,20 @@ func CreateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 }
 
 // ListGroupsHandler handles GET /api/v1/groups.
-// Lists all groups. Requires system admin access.
+// System admins see all groups; other users see only their own groups.
 func ListGroupsHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		groups, err := queries.ListGroups(r.Context())
+		callerGroupType := auth.GroupTypeFromContext(r.Context())
+		callerUserID := auth.UserFromContext(r.Context())
+
+		var groups []storage.Group
+		var err error
+
+		if callerGroupType == "system" {
+			groups, err = queries.ListGroups(r.Context())
+		} else {
+			groups, err = queries.ListGroupsByUserID(r.Context(), callerUserID)
+		}
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -145,7 +200,7 @@ func ListGroupsHandler(queries storage.Querier) http.HandlerFunc {
 }
 
 // GetGroupHandler handles GET /api/v1/groups/{id}.
-// Returns group details. Requires group admin+ role.
+// Returns group details. Requires membership in the group or system admin.
 func GetGroupHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
@@ -156,9 +211,7 @@ func GetGroupHandler(queries storage.Querier) http.HandlerFunc {
 		}
 
 		// Verify the requesting user has access to this group
-		callerGroupID := auth.GroupIDFromContext(r.Context())
-		callerGroupType := auth.GroupTypeFromContext(r.Context())
-		if callerGroupType != "system" && callerGroupID != id {
+		if _, err := requireGroupRole(queries, r, id, "owner", "admin", "member"); err != nil {
 			respondError(w, http.StatusForbidden, "access denied")
 			return
 		}
@@ -177,7 +230,7 @@ func GetGroupHandler(queries storage.Querier) http.HandlerFunc {
 // Soft-deletes a group by setting status='deleted'.
 // Auto-suspends SMTP accounts in the group.
 // Returns 403 if attempting to delete a system group.
-// Requires system admin access.
+// Requires system admin or group owner.
 func DeleteGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
@@ -197,6 +250,12 @@ func DeleteGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 		// Cannot delete system group
 		if group.GroupType == "system" {
 			respondError(w, http.StatusForbidden, "cannot delete system group")
+			return
+		}
+
+		// Require system admin or group owner
+		if _, err := requireGroupRole(queries, r, id, "owner"); err != nil {
+			respondError(w, http.StatusForbidden, "only group owner or system admin can delete a group")
 			return
 		}
 
@@ -233,7 +292,7 @@ func DeleteGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 }
 
 // ListGroupMembersHandler handles GET /api/v1/groups/{id}/members.
-// Lists all members of a group. Requires group admin+ role.
+// Lists all members of a group. Requires membership in the group or system admin.
 func ListGroupMembersHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
@@ -243,10 +302,7 @@ func ListGroupMembersHandler(queries storage.Querier) http.HandlerFunc {
 			return
 		}
 
-		// Verify access
-		callerGroupID := auth.GroupIDFromContext(r.Context())
-		callerGroupType := auth.GroupTypeFromContext(r.Context())
-		if callerGroupType != "system" && callerGroupID != id {
+		if _, err := requireGroupRole(queries, r, id, "owner", "admin", "member"); err != nil {
 			respondError(w, http.StatusForbidden, "access denied")
 			return
 		}
@@ -273,13 +329,19 @@ func ListGroupMembersHandler(queries storage.Querier) http.HandlerFunc {
 }
 
 // AddGroupMemberHandler handles POST /api/v1/groups/{id}/members.
-// Adds a member to a group. Returns 409 if SMTP account is already in another group.
+// Adds a member to a group. Requires owner or admin role in the group.
+// Returns 409 if SMTP account is already in another group.
 func AddGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		groupID, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
+			return
+		}
+
+		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
 			return
 		}
 
@@ -341,7 +403,8 @@ func AddGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLogge
 }
 
 // UpdateGroupMemberRoleHandler handles PATCH /api/v1/groups/{id}/members/{uid}.
-// Updates a member's role. Returns 409 if last owner.
+// Updates a member's role. Owner required for promoting to owner/admin.
+// Admin can manage member roles. Returns 409 if last owner.
 func UpdateGroupMemberRoleHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupIDStr := chi.URLParam(r, "id")
@@ -367,6 +430,19 @@ func UpdateGroupMemberRoleHandler(queries storage.Querier, auditLogger *auth.Aud
 		if _, ok := validRoles[req.Role]; !ok {
 			respondError(w, http.StatusBadRequest, "role must be one of: owner, admin, member")
 			return
+		}
+
+		// Owner required for promoting to owner/admin; admin can manage members
+		if req.Role == "owner" || req.Role == "admin" {
+			if _, err := requireGroupRole(queries, r, groupID, "owner"); err != nil {
+				respondError(w, http.StatusForbidden, "only owner can promote to owner or admin")
+				return
+			}
+		} else {
+			if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+				respondError(w, http.StatusForbidden, "owner or admin role required")
+				return
+			}
 		}
 
 		// Find the membership
@@ -414,7 +490,7 @@ func UpdateGroupMemberRoleHandler(queries storage.Querier, auditLogger *auth.Aud
 }
 
 // RemoveGroupMemberHandler handles DELETE /api/v1/groups/{id}/members/{uid}.
-// Removes a member from a group. Returns 409 if last owner.
+// Removes a member from a group. Requires owner or admin role. Returns 409 if last owner.
 func RemoveGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupIDStr := chi.URLParam(r, "id")
@@ -428,6 +504,11 @@ func RemoveGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLo
 		userID, err := uuid.Parse(uidStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
 			return
 		}
 
@@ -467,5 +548,97 @@ func RemoveGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLo
 		}
 
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// CreateServiceAccountHandler handles POST /api/v1/groups/{id}/service-accounts.
+// Creates an SMTP service account and adds it to the group.
+// Requires owner or admin role in the group.
+func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		groupID, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid group ID format")
+			return
+		}
+
+		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
+			return
+		}
+
+		var req createServiceAccountRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		if req.Username == "" {
+			respondError(w, http.StatusBadRequest, "username is required")
+			return
+		}
+
+		email := req.Email
+		if email == "" {
+			email = req.Username + "@smtp.internal"
+		}
+
+		// Generate random password hash (SMTP accounts don't log in)
+		passwordHash, err := auth.HashPassword(uuid.New().String())
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		// Auto-generate API key
+		apiKey, err := auth.GenerateAPIKey()
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		// Marshal allowed domains
+		var domainsJSON []byte
+		if len(req.AllowedDomains) > 0 {
+			domainsJSON, err = json.Marshal(req.AllowedDomains)
+			if err != nil {
+				respondError(w, http.StatusInternalServerError, "internal server error")
+				return
+			}
+		}
+
+		user, err := queries.CreateUser(r.Context(), storage.CreateUserParams{
+			Email:          email,
+			PasswordHash:   passwordHash,
+			AccountType:    "smtp",
+			Username:       sql.NullString{String: req.Username, Valid: true},
+			ApiKey:         sql.NullString{String: apiKey, Valid: true},
+			AllowedDomains: domainsJSON,
+		})
+		if err != nil {
+			respondError(w, http.StatusConflict, "username already in use")
+			return
+		}
+
+		// Add to the group as member
+		_, err = queries.CreateGroupMember(r.Context(), storage.CreateGroupMemberParams{
+			GroupID: groupID,
+			UserID:  user.ID,
+			Role:    "member",
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to add service account to group")
+			return
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "admin.create_service_account", "user", user.ID.String(), map[string]interface{}{
+				"username": req.Username,
+				"group_id": groupID.String(),
+			})
+		}
+
+		respondJSON(w, http.StatusCreated, toUserResponseWithAPIKey(user))
 	}
 }

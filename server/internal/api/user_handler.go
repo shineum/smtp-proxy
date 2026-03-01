@@ -92,9 +92,6 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 
 		// Validate required fields
 		var errs []string
-		if req.Email == "" {
-			errs = append(errs, "email is required")
-		}
 
 		// Default account type
 		if req.AccountType == "" {
@@ -102,6 +99,19 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 		}
 		if req.AccountType != "user" && req.AccountType != "smtp" {
 			errs = append(errs, "account_type must be one of: user, smtp")
+		}
+
+		// For SMTP accounts: username is required, email is optional (defaults to {username}@smtp.internal)
+		// For human users: email is required
+		if req.AccountType == "smtp" {
+			if req.Username == "" {
+				errs = append(errs, "username is required for smtp accounts")
+			}
+			if req.Email == "" {
+				req.Email = req.Username + "@smtp.internal"
+			}
+		} else if req.Email == "" {
+			errs = append(errs, "email is required")
 		}
 
 		// Password is required for human users, optional for SMTP
@@ -184,7 +194,11 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			AllowedDomains: domainsJSON,
 		})
 		if err != nil {
-			respondError(w, http.StatusConflict, "email already in use")
+			if req.AccountType == "smtp" {
+				respondError(w, http.StatusConflict, "username already in use")
+			} else {
+				respondError(w, http.StatusConflict, "email already in use")
+			}
 			return
 		}
 

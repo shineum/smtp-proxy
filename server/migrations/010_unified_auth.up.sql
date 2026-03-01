@@ -51,6 +51,10 @@ ALTER TABLE users ADD COLUMN account_type VARCHAR(20) NOT NULL DEFAULT 'human';
 ALTER TABLE users ADD COLUMN api_key VARCHAR(255) UNIQUE;
 ALTER TABLE users ADD COLUMN allowed_domains JSONB;
 
+-- Enforce unique emails only for human (non-smtp) accounts
+CREATE UNIQUE INDEX idx_users_email_human ON users(email)
+    WHERE account_type != 'smtp';
+
 -- ============================================================
 -- PHASE 4: Create group_members table (many-to-many)
 -- ============================================================

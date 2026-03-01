@@ -17,6 +17,7 @@ import (
 	"github.com/sungwon/smtp-proxy/server/internal/config"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
+	"github.com/sungwon/smtp-proxy/server/internal/web"
 )
 
 func main() {
@@ -118,6 +119,9 @@ func main() {
 		AuditLogger: auditLogger,
 		RateLimiter: rateLimiter,
 	})
+
+	// Mount SPA catch-all handler (after API routes)
+	router.Handle("/*", web.SPAHandler())
 
 	// Configure HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.API.Host, cfg.API.Port)

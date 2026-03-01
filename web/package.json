@@ -1,0 +1,30 @@
+{
+  "name": "smtp-proxy-admin",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@patternfly/patternfly": "^5.4.0",
+    "@patternfly/react-core": "^5.4.0",
+    "@patternfly/react-icons": "^5.4.0",
+    "@patternfly/react-table": "^5.4.0",
+    "@patternfly/react-charts": "^7.4.0",
+    "@tanstack/react-query": "^5.62.0",
+    "axios": "^1.7.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "~5.7.0",
+    "vite": "^6.0.0"
+  }
+}

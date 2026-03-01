@@ -51,6 +51,13 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 		r.Post("/api/v1/auth/switch-group", SwitchGroupHandler(cfg.Queries, cfg.JWTService, cfg.AuditLogger))
 	})
 
+	// Auth/me endpoints (JWT auth only)
+	r.Group(func(r chi.Router) {
+		r.Use(auth.JWTAuth(cfg.JWTService))
+		r.Get("/api/v1/auth/me", MeHandler(cfg.Queries))
+		r.Patch("/api/v1/users/me/password", ChangePasswordHandler(cfg.Queries))
+	})
+
 	// Unified authenticated routes: accepts both JWT tokens and API keys
 	r.Group(func(r chi.Router) {
 		r.Use(auth.UnifiedAuth(cfg.JWTService, cfg.Queries))
@@ -66,6 +73,7 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			// Group detail routes
 			r.Route("/{id}", func(r chi.Router) {
 				r.Get("/", GetGroupHandler(cfg.Queries))
+				r.Put("/", UpdateGroupHandler(cfg.Queries, cfg.AuditLogger))
 
 				// System admin only: delete group
 				r.Group(func(r chi.Router) {
@@ -91,6 +99,7 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			r.Get("/{id}", GetUserHandler(cfg.Queries))
 			r.Patch("/{id}/status", UpdateUserStatusHandler(cfg.Queries, cfg.AuditLogger))
 			r.Delete("/{id}", DeleteUserHandler(cfg.Queries, cfg.AuditLogger))
+			r.Post("/{id}/reset-password", ResetPasswordHandler(cfg.Queries, cfg.AuditLogger))
 		})
 
 		// Providers
@@ -100,6 +109,7 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			r.Get("/{id}", GetProviderHandler(cfg.Queries))
 			r.Put("/{id}", UpdateProviderHandler(cfg.Queries))
 			r.Delete("/{id}", DeleteProviderHandler(cfg.Queries))
+			r.Get("/{id}/health", ProviderHealthHandler(cfg.Queries))
 		})
 
 		// Routing Rules
@@ -109,6 +119,20 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			r.Get("/{id}", GetRoutingRuleHandler(cfg.Queries))
 			r.Put("/{id}", UpdateRoutingRuleHandler(cfg.Queries))
 			r.Delete("/{id}", DeleteRoutingRuleHandler(cfg.Queries))
+		})
+
+		// Stats (dashboard, timeseries, usage)
+		r.Route("/api/v1/stats", func(r chi.Router) {
+			r.Get("/dashboard", DashboardHandler(cfg.Queries))
+			r.Get("/timeseries", TimeSeriesHandler(cfg.Queries))
+			r.Get("/by-user", UsageByUserHandler(cfg.Queries))
+			r.Get("/by-provider", UsageByProviderHandler(cfg.Queries))
+		})
+
+		// Messages
+		r.Route("/api/v1/messages", func(r chi.Router) {
+			r.Get("/", ListMessagesHandler(cfg.Queries))
+			r.Get("/{id}", GetMessageHandler(cfg.Queries))
 		})
 
 		// DLQ Reprocess

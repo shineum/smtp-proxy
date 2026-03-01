@@ -32,3 +32,11 @@ DELETE FROM group_members WHERE user_id = $1;
 
 -- name: CountGroupOwners :one
 SELECT count(*) FROM group_members WHERE group_id = $1 AND role = 'owner';
+
+-- name: ListMembershipsByUserID :many
+SELECT gm.id, gm.group_id, gm.user_id, gm.role, gm.created_at,
+       g.name as group_name, g.group_type
+FROM group_members gm
+JOIN groups g ON gm.group_id = g.id
+WHERE gm.user_id = $1
+ORDER BY gm.created_at;

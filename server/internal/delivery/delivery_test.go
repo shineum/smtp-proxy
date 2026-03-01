@@ -5,6 +5,7 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -67,6 +68,18 @@ func (m *mockQuerier) CountDeliveryLogsByProvider(_ context.Context, _ storage.C
 func (m *mockQuerier) CountDeliveryLogsByGroup(_ context.Context, _ storage.CountDeliveryLogsByGroupParams) ([]storage.CountDeliveryLogsByGroupRow, error) {
 	return nil, nil
 }
+func (m *mockQuerier) CountDeliveryLogsByGroupDateRange(_ context.Context, _ storage.CountDeliveryLogsByGroupDateRangeParams) ([]storage.CountDeliveryLogsByGroupDateRangeRow, error) {
+	return nil, nil
+}
+func (m *mockQuerier) DailyDeliveryCountsByGroup(_ context.Context, _ storage.DailyDeliveryCountsByGroupParams) ([]storage.DailyDeliveryCountsByGroupRow, error) {
+	return nil, nil
+}
+func (m *mockQuerier) DeliveryCountsByGroupAndUser(_ context.Context, _ storage.DeliveryCountsByGroupAndUserParams) ([]storage.DeliveryCountsByGroupAndUserRow, error) {
+	return nil, nil
+}
+func (m *mockQuerier) DeliveryCountsByGroupAndProvider(_ context.Context, _ storage.DeliveryCountsByGroupAndProviderParams) ([]storage.DeliveryCountsByGroupAndProviderRow, error) {
+	return nil, nil
+}
 func (m *mockQuerier) AverageDeliveryDuration(_ context.Context, _ storage.AverageDeliveryDurationParams) ([]storage.AverageDeliveryDurationRow, error) {
 	return nil, nil
 }
@@ -113,6 +126,9 @@ func (m *mockQuerier) GetGroupMemberByUserAndGroup(_ context.Context, _ storage.
 func (m *mockQuerier) ListGroupMembersByGroupID(_ context.Context, _ uuid.UUID) ([]storage.GroupMember, error) {
 	return nil, nil
 }
+func (m *mockQuerier) ListMembershipsByUserID(_ context.Context, _ uuid.UUID) ([]storage.ListMembershipsByUserIDRow, error) {
+	return nil, nil
+}
 func (m *mockQuerier) UpdateGroupMemberRole(_ context.Context, _ storage.UpdateGroupMemberRoleParams) (storage.GroupMember, error) {
 	return storage.GroupMember{}, nil
 }
@@ -133,7 +149,19 @@ func (m *mockQuerier) GetQueuedMessages(_ context.Context, _ int32) ([]storage.M
 func (m *mockQuerier) IncrementRetryCount(_ context.Context, _ storage.IncrementRetryCountParams) error {
 	return nil
 }
+func (m *mockQuerier) CountMessagesByGroup(_ context.Context, _ pgtype.UUID) (int32, error) {
+	return 0, nil
+}
+func (m *mockQuerier) CountMessagesByGroupAndStatus(_ context.Context, _ storage.CountMessagesByGroupAndStatusParams) (int32, error) {
+	return 0, nil
+}
 func (m *mockQuerier) ListMessagesByGroupID(_ context.Context, _ storage.ListMessagesByGroupIDParams) ([]storage.Message, error) {
+	return nil, nil
+}
+func (m *mockQuerier) ListMessagesByGroupPaginated(_ context.Context, _ storage.ListMessagesByGroupPaginatedParams) ([]storage.Message, error) {
+	return nil, nil
+}
+func (m *mockQuerier) ListMessagesByGroupAndStatusPaginated(_ context.Context, _ storage.ListMessagesByGroupAndStatusPaginatedParams) ([]storage.Message, error) {
 	return nil, nil
 }
 func (m *mockQuerier) UpdateMessageStatus(ctx context.Context, arg storage.UpdateMessageStatusParams) error {

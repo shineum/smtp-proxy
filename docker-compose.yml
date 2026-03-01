@@ -67,8 +67,8 @@ services:
   # ---------------------------------------------------------------------------
   smtp-server:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: server/Dockerfile
       target: smtp-server
     ports:
       - "587:587"
@@ -95,8 +95,8 @@ services:
   # ---------------------------------------------------------------------------
   api-server:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: server/Dockerfile
       target: api-server
     ports:
       - "8080:8080"
@@ -192,8 +192,8 @@ services:
   # ---------------------------------------------------------------------------
   queue-worker:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: server/Dockerfile
       target: queue-worker
     environment:
       SMTP_PROXY_DATABASE_URL: ${SMTP_PROXY_DATABASE_URL:-postgres://smtp_proxy:smtp_proxy_dev@postgres:5432/smtp_proxy?sslmode=disable}
@@ -216,8 +216,8 @@ services:
   # ---------------------------------------------------------------------------
   test-client:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: server/Dockerfile
       target: test-client
     command:
       - "--host=smtp-server"

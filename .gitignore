@@ -163,8 +163,6 @@ secret-*.*
 .claude/.env.local*
 .claude/local/
 .claude/plans/
-.claude/memory/
-.claude/agent-memory/
 
 # Skill-specific credentials
 .claude/skills/*/.env*
@@ -198,24 +196,18 @@ dist-ssr/
 .netlify/
 .firebase/
 
-# ===========================================
-# SMTP Proxy Specific
-# ===========================================
-# Binaries
+# Frontend build output (embedded via go:embed)
+!server/internal/web/dist/.gitkeep
+
+# User Custom Patterns (preserved by moai update)
+.claude/memory/
+.claude/agent-memory/
 server/bin/
-
-# Go workspace
 go.work.sum
-
-# Test
 *.test
 *.out
 coverage.out
 coverage.html
-
-# Docker volumes
 postgres-data/
 redis-data/
-
-# TLS certificates (generated, not committed)
 certs/

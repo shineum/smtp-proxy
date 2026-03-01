@@ -255,6 +255,10 @@ func (m *mockQuerier) ListGroupsByUserID(ctx context.Context, userID uuid.UUID) 
 	return nil, nil
 }
 
+func (m *mockQuerier) ListMembershipsByUserID(_ context.Context, _ uuid.UUID) ([]storage.ListMembershipsByUserIDRow, error) {
+	return nil, nil
+}
+
 func (m *mockQuerier) UpdateGroupMemberRole(ctx context.Context, arg storage.UpdateGroupMemberRoleParams) (storage.GroupMember, error) {
 	if m.updateGroupMemberRoleFn != nil {
 		return m.updateGroupMemberRoleFn(ctx, arg)
@@ -372,7 +376,23 @@ func (m *mockQuerier) GetQueuedMessages(_ context.Context, _ int32) ([]storage.M
 	return nil, nil
 }
 
+func (m *mockQuerier) CountMessagesByGroup(_ context.Context, _ pgtype.UUID) (int32, error) {
+	return 0, nil
+}
+
+func (m *mockQuerier) CountMessagesByGroupAndStatus(_ context.Context, _ storage.CountMessagesByGroupAndStatusParams) (int32, error) {
+	return 0, nil
+}
+
 func (m *mockQuerier) ListMessagesByGroupID(_ context.Context, _ storage.ListMessagesByGroupIDParams) ([]storage.Message, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) ListMessagesByGroupPaginated(_ context.Context, _ storage.ListMessagesByGroupPaginatedParams) ([]storage.Message, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) ListMessagesByGroupAndStatusPaginated(_ context.Context, _ storage.ListMessagesByGroupAndStatusPaginatedParams) ([]storage.Message, error) {
 	return nil, nil
 }
 
@@ -426,11 +446,27 @@ func (m *mockQuerier) CountDeliveryLogsByGroup(_ context.Context, _ storage.Coun
 	return nil, nil
 }
 
+func (m *mockQuerier) CountDeliveryLogsByGroupDateRange(_ context.Context, _ storage.CountDeliveryLogsByGroupDateRangeParams) ([]storage.CountDeliveryLogsByGroupDateRangeRow, error) {
+	return nil, nil
+}
+
 func (m *mockQuerier) CountDeliveryLogsByProvider(_ context.Context, _ storage.CountDeliveryLogsByProviderParams) ([]storage.CountDeliveryLogsByProviderRow, error) {
 	return nil, nil
 }
 
 func (m *mockQuerier) CountDeliveryLogsByStatus(_ context.Context, _ storage.CountDeliveryLogsByStatusParams) ([]storage.CountDeliveryLogsByStatusRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DailyDeliveryCountsByGroup(_ context.Context, _ storage.DailyDeliveryCountsByGroupParams) ([]storage.DailyDeliveryCountsByGroupRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DeliveryCountsByGroupAndUser(_ context.Context, _ storage.DeliveryCountsByGroupAndUserParams) ([]storage.DeliveryCountsByGroupAndUserRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DeliveryCountsByGroupAndProvider(_ context.Context, _ storage.DeliveryCountsByGroupAndProviderParams) ([]storage.DeliveryCountsByGroupAndProviderRow, error) {
 	return nil, nil
 }
 

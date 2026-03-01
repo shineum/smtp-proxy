@@ -61,3 +61,28 @@ SELECT provider, AVG(duration_ms)::integer as avg_duration_ms, COUNT(*) as count
 FROM delivery_logs
 WHERE duration_ms IS NOT NULL AND created_at >= $1 AND created_at <= $2
 GROUP BY provider;
+
+-- name: CountDeliveryLogsByGroupDateRange :many
+SELECT status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3
+GROUP BY status;
+
+-- name: DailyDeliveryCountsByGroup :many
+SELECT created_at::date as day, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3
+GROUP BY created_at::date, status
+ORDER BY created_at::date;
+
+-- name: DeliveryCountsByGroupAndUser :many
+SELECT user_id, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = $1 AND user_id IS NOT NULL AND created_at >= $2 AND created_at <= $3
+GROUP BY user_id, status;
+
+-- name: DeliveryCountsByGroupAndProvider :many
+SELECT provider, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3
+GROUP BY provider, status;

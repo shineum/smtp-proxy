@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const countGroupOwners = `-- name: CountGroupOwners :one
@@ -159,6 +160,53 @@ func (q *Queries) ListGroupsByUserID(ctx context.Context, userID uuid.UUID) ([]G
 			&i.AllowedIps,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.GroupType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMembershipsByUserID = `-- name: ListMembershipsByUserID :many
+SELECT gm.id, gm.group_id, gm.user_id, gm.role, gm.created_at,
+       g.name as group_name, g.group_type
+FROM group_members gm
+JOIN groups g ON gm.group_id = g.id
+WHERE gm.user_id = $1
+ORDER BY gm.created_at
+`
+
+type ListMembershipsByUserIDRow struct {
+	ID        uuid.UUID          `json:"id"`
+	GroupID   uuid.UUID          `json:"group_id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	Role      string             `json:"role"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	GroupName string             `json:"group_name"`
+	GroupType string             `json:"group_type"`
+}
+
+func (q *Queries) ListMembershipsByUserID(ctx context.Context, userID uuid.UUID) ([]ListMembershipsByUserIDRow, error) {
+	rows, err := q.db.Query(ctx, listMembershipsByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMembershipsByUserIDRow
+	for rows.Next() {
+		var i ListMembershipsByUserIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.UserID,
+			&i.Role,
+			&i.CreatedAt,
+			&i.GroupName,
 			&i.GroupType,
 		); err != nil {
 			return nil, err

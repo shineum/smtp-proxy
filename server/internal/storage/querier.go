@@ -9,14 +9,18 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	AverageDeliveryDuration(ctx context.Context, arg AverageDeliveryDurationParams) ([]AverageDeliveryDurationRow, error)
 	CountDeliveryLogsByGroup(ctx context.Context, arg CountDeliveryLogsByGroupParams) ([]CountDeliveryLogsByGroupRow, error)
+	CountDeliveryLogsByGroupDateRange(ctx context.Context, arg CountDeliveryLogsByGroupDateRangeParams) ([]CountDeliveryLogsByGroupDateRangeRow, error)
 	CountDeliveryLogsByProvider(ctx context.Context, arg CountDeliveryLogsByProviderParams) ([]CountDeliveryLogsByProviderRow, error)
 	CountDeliveryLogsByStatus(ctx context.Context, arg CountDeliveryLogsByStatusParams) ([]CountDeliveryLogsByStatusRow, error)
 	CountGroupOwners(ctx context.Context, groupID uuid.UUID) (int64, error)
+	CountMessagesByGroup(ctx context.Context, groupID pgtype.UUID) (int32, error)
+	CountMessagesByGroupAndStatus(ctx context.Context, arg CountMessagesByGroupAndStatusParams) (int32, error)
 	CreateActivityLog(ctx context.Context, arg CreateActivityLogParams) (ActivityLog, error)
 	CreateDeliveryLog(ctx context.Context, arg CreateDeliveryLogParams) (DeliveryLog, error)
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error)
@@ -25,6 +29,7 @@ type Querier interface {
 	CreateRoutingRule(ctx context.Context, arg CreateRoutingRuleParams) (RoutingRule, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DailyDeliveryCountsByGroup(ctx context.Context, arg DailyDeliveryCountsByGroupParams) ([]DailyDeliveryCountsByGroupRow, error)
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
 	DeleteGroupMember(ctx context.Context, id uuid.UUID) error
@@ -34,6 +39,8 @@ type Querier interface {
 	DeleteSession(ctx context.Context, id uuid.UUID) error
 	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	DeliveryCountsByGroupAndProvider(ctx context.Context, arg DeliveryCountsByGroupAndProviderParams) ([]DeliveryCountsByGroupAndProviderRow, error)
+	DeliveryCountsByGroupAndUser(ctx context.Context, arg DeliveryCountsByGroupAndUserParams) ([]DeliveryCountsByGroupAndUserRow, error)
 	EnqueueMessage(ctx context.Context, arg EnqueueMessageParams) (Message, error)
 	EnqueueMessageMetadata(ctx context.Context, arg EnqueueMessageMetadataParams) (Message, error)
 	GetActivityLogByID(ctx context.Context, id uuid.UUID) (ActivityLog, error)
@@ -63,7 +70,10 @@ type Querier interface {
 	ListGroupMembersByGroupID(ctx context.Context, groupID uuid.UUID) ([]GroupMember, error)
 	ListGroups(ctx context.Context) ([]Group, error)
 	ListGroupsByUserID(ctx context.Context, userID uuid.UUID) ([]Group, error)
+	ListMembershipsByUserID(ctx context.Context, userID uuid.UUID) ([]ListMembershipsByUserIDRow, error)
+	ListMessagesByGroupAndStatusPaginated(ctx context.Context, arg ListMessagesByGroupAndStatusPaginatedParams) ([]Message, error)
 	ListMessagesByGroupID(ctx context.Context, arg ListMessagesByGroupIDParams) ([]Message, error)
+	ListMessagesByGroupPaginated(ctx context.Context, arg ListMessagesByGroupPaginatedParams) ([]Message, error)
 	ListProvidersByGroupID(ctx context.Context, groupID uuid.UUID) ([]EspProvider, error)
 	ListRoutingRulesByGroupID(ctx context.Context, groupID uuid.UUID) ([]RoutingRule, error)
 	ListSessionsByUserID(ctx context.Context, userID uuid.UUID) ([]Session, error)

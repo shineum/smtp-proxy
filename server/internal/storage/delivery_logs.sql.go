@@ -88,6 +88,44 @@ func (q *Queries) CountDeliveryLogsByGroup(ctx context.Context, arg CountDeliver
 	return items, nil
 }
 
+const countDeliveryLogsByGroupDateRange = `-- name: CountDeliveryLogsByGroupDateRange :many
+SELECT status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3
+GROUP BY status
+`
+
+type CountDeliveryLogsByGroupDateRangeParams struct {
+	GroupID     pgtype.UUID        `json:"group_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
+}
+
+type CountDeliveryLogsByGroupDateRangeRow struct {
+	Status string `json:"status"`
+	Count  int32  `json:"count"`
+}
+
+func (q *Queries) CountDeliveryLogsByGroupDateRange(ctx context.Context, arg CountDeliveryLogsByGroupDateRangeParams) ([]CountDeliveryLogsByGroupDateRangeRow, error) {
+	rows, err := q.db.Query(ctx, countDeliveryLogsByGroupDateRange, arg.GroupID, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountDeliveryLogsByGroupDateRangeRow
+	for rows.Next() {
+		var i CountDeliveryLogsByGroupDateRangeRow
+		if err := rows.Scan(&i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countDeliveryLogsByProvider = `-- name: CountDeliveryLogsByProvider :many
 SELECT provider, status, COUNT(*) as count FROM delivery_logs
 WHERE created_at >= $1 AND created_at <= $2
@@ -228,6 +266,124 @@ func (q *Queries) CreateDeliveryLog(ctx context.Context, arg CreateDeliveryLogPa
 		&i.GroupID,
 	)
 	return i, err
+}
+
+const dailyDeliveryCountsByGroup = `-- name: DailyDeliveryCountsByGroup :many
+SELECT created_at::date as day, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3
+GROUP BY created_at::date, status
+ORDER BY created_at::date
+`
+
+type DailyDeliveryCountsByGroupParams struct {
+	GroupID     pgtype.UUID        `json:"group_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
+}
+
+type DailyDeliveryCountsByGroupRow struct {
+	Day    pgtype.Date `json:"day"`
+	Status string      `json:"status"`
+	Count  int32       `json:"count"`
+}
+
+func (q *Queries) DailyDeliveryCountsByGroup(ctx context.Context, arg DailyDeliveryCountsByGroupParams) ([]DailyDeliveryCountsByGroupRow, error) {
+	rows, err := q.db.Query(ctx, dailyDeliveryCountsByGroup, arg.GroupID, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DailyDeliveryCountsByGroupRow
+	for rows.Next() {
+		var i DailyDeliveryCountsByGroupRow
+		if err := rows.Scan(&i.Day, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deliveryCountsByGroupAndProvider = `-- name: DeliveryCountsByGroupAndProvider :many
+SELECT provider, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3
+GROUP BY provider, status
+`
+
+type DeliveryCountsByGroupAndProviderParams struct {
+	GroupID     pgtype.UUID        `json:"group_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
+}
+
+type DeliveryCountsByGroupAndProviderRow struct {
+	Provider sql.NullString `json:"provider"`
+	Status   string         `json:"status"`
+	Count    int32          `json:"count"`
+}
+
+func (q *Queries) DeliveryCountsByGroupAndProvider(ctx context.Context, arg DeliveryCountsByGroupAndProviderParams) ([]DeliveryCountsByGroupAndProviderRow, error) {
+	rows, err := q.db.Query(ctx, deliveryCountsByGroupAndProvider, arg.GroupID, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeliveryCountsByGroupAndProviderRow
+	for rows.Next() {
+		var i DeliveryCountsByGroupAndProviderRow
+		if err := rows.Scan(&i.Provider, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deliveryCountsByGroupAndUser = `-- name: DeliveryCountsByGroupAndUser :many
+SELECT user_id, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = $1 AND user_id IS NOT NULL AND created_at >= $2 AND created_at <= $3
+GROUP BY user_id, status
+`
+
+type DeliveryCountsByGroupAndUserParams struct {
+	GroupID     pgtype.UUID        `json:"group_id"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
+}
+
+type DeliveryCountsByGroupAndUserRow struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Status string      `json:"status"`
+	Count  int32       `json:"count"`
+}
+
+func (q *Queries) DeliveryCountsByGroupAndUser(ctx context.Context, arg DeliveryCountsByGroupAndUserParams) ([]DeliveryCountsByGroupAndUserRow, error) {
+	rows, err := q.db.Query(ctx, deliveryCountsByGroupAndUser, arg.GroupID, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeliveryCountsByGroupAndUserRow
+	for rows.Next() {
+		var i DeliveryCountsByGroupAndUserRow
+		if err := rows.Scan(&i.UserID, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getDeliveryLogByMessageID = `-- name: GetDeliveryLogByMessageID :one

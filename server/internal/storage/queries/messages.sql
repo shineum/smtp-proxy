@@ -19,3 +19,21 @@ UPDATE messages SET status = $2, processed_at = NOW() WHERE id = $1;
 
 -- name: GetQueuedMessages :many
 SELECT * FROM messages WHERE status = 'queued' ORDER BY enqueued_at ASC LIMIT $1;
+
+-- name: ListMessagesByGroupPaginated :many
+SELECT * FROM messages
+WHERE group_id = $1
+ORDER BY enqueued_at DESC
+LIMIT $2 OFFSET $3;
+
+-- name: ListMessagesByGroupAndStatusPaginated :many
+SELECT * FROM messages
+WHERE group_id = $1 AND status = $2
+ORDER BY enqueued_at DESC
+LIMIT $3 OFFSET $4;
+
+-- name: CountMessagesByGroup :one
+SELECT COUNT(*)::integer as count FROM messages WHERE group_id = $1;
+
+-- name: CountMessagesByGroupAndStatus :one
+SELECT COUNT(*)::integer as count FROM messages WHERE group_id = $1 AND status = $2;

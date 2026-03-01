@@ -13,6 +13,33 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countMessagesByGroup = `-- name: CountMessagesByGroup :one
+SELECT COUNT(*)::integer as count FROM messages WHERE group_id = $1
+`
+
+func (q *Queries) CountMessagesByGroup(ctx context.Context, groupID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countMessagesByGroup, groupID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countMessagesByGroupAndStatus = `-- name: CountMessagesByGroupAndStatus :one
+SELECT COUNT(*)::integer as count FROM messages WHERE group_id = $1 AND status = $2
+`
+
+type CountMessagesByGroupAndStatusParams struct {
+	GroupID pgtype.UUID   `json:"group_id"`
+	Status  MessageStatus `json:"status"`
+}
+
+func (q *Queries) CountMessagesByGroupAndStatus(ctx context.Context, arg CountMessagesByGroupAndStatusParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countMessagesByGroupAndStatus, arg.GroupID, arg.Status)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const enqueueMessage = `-- name: EnqueueMessage :one
 INSERT INTO messages (user_id, group_id, sender, recipients, subject, headers, body, status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued')
@@ -166,6 +193,59 @@ func (q *Queries) GetQueuedMessages(ctx context.Context, limit int32) ([]Message
 	return items, nil
 }
 
+const listMessagesByGroupAndStatusPaginated = `-- name: ListMessagesByGroupAndStatusPaginated :many
+SELECT id, sender, recipients, subject, headers, body, status, provider_id, enqueued_at, processed_at, storage_ref, group_id, user_id FROM messages
+WHERE group_id = $1 AND status = $2
+ORDER BY enqueued_at DESC
+LIMIT $3 OFFSET $4
+`
+
+type ListMessagesByGroupAndStatusPaginatedParams struct {
+	GroupID pgtype.UUID   `json:"group_id"`
+	Status  MessageStatus `json:"status"`
+	Limit   int32         `json:"limit"`
+	Offset  int32         `json:"offset"`
+}
+
+func (q *Queries) ListMessagesByGroupAndStatusPaginated(ctx context.Context, arg ListMessagesByGroupAndStatusPaginatedParams) ([]Message, error) {
+	rows, err := q.db.Query(ctx, listMessagesByGroupAndStatusPaginated,
+		arg.GroupID,
+		arg.Status,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Message
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.Sender,
+			&i.Recipients,
+			&i.Subject,
+			&i.Headers,
+			&i.Body,
+			&i.Status,
+			&i.ProviderID,
+			&i.EnqueuedAt,
+			&i.ProcessedAt,
+			&i.StorageRef,
+			&i.GroupID,
+			&i.UserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMessagesByGroupID = `-- name: ListMessagesByGroupID :many
 SELECT id, sender, recipients, subject, headers, body, status, provider_id, enqueued_at, processed_at, storage_ref, group_id, user_id FROM messages WHERE group_id = $1 ORDER BY enqueued_at DESC LIMIT $2
 `
@@ -177,6 +257,53 @@ type ListMessagesByGroupIDParams struct {
 
 func (q *Queries) ListMessagesByGroupID(ctx context.Context, arg ListMessagesByGroupIDParams) ([]Message, error) {
 	rows, err := q.db.Query(ctx, listMessagesByGroupID, arg.GroupID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Message
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.Sender,
+			&i.Recipients,
+			&i.Subject,
+			&i.Headers,
+			&i.Body,
+			&i.Status,
+			&i.ProviderID,
+			&i.EnqueuedAt,
+			&i.ProcessedAt,
+			&i.StorageRef,
+			&i.GroupID,
+			&i.UserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMessagesByGroupPaginated = `-- name: ListMessagesByGroupPaginated :many
+SELECT id, sender, recipients, subject, headers, body, status, provider_id, enqueued_at, processed_at, storage_ref, group_id, user_id FROM messages
+WHERE group_id = $1
+ORDER BY enqueued_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListMessagesByGroupPaginatedParams struct {
+	GroupID pgtype.UUID `json:"group_id"`
+	Limit   int32       `json:"limit"`
+	Offset  int32       `json:"offset"`
+}
+
+func (q *Queries) ListMessagesByGroupPaginated(ctx context.Context, arg ListMessagesByGroupPaginatedParams) ([]Message, error) {
+	rows, err := q.db.Query(ctx, listMessagesByGroupPaginated, arg.GroupID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

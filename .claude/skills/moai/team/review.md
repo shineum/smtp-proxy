@@ -1,3 +1,30 @@
+---
+name: moai-workflow-team-review
+description: >
+  Multi-perspective code review using parallel review teammates.
+  Four reviewers analyze security, performance, quality, and UX simultaneously.
+  Findings are consolidated and deduplicated into a prioritized report.
+  Use when comprehensive multi-angle code review is needed.
+user-invocable: false
+metadata:
+  version: "2.5.0"
+  category: "workflow"
+  status: "active"
+  updated: "2026-02-21"
+  tags: "review, team, security, performance, quality, ux, parallel"
+
+# MoAI Extension: Progressive Disclosure
+progressive_disclosure:
+  enabled: true
+  level1_tokens: 100
+  level2_tokens: 3000
+
+# MoAI Extension: Triggers
+triggers:
+  keywords: ["team review", "multi-perspective review", "parallel review"]
+  agents: ["team-quality"]
+  phases: ["review"]
+---
 # Workflow: Team Review - Multi-Perspective Code Review
 
 Purpose: Review code changes from multiple perspectives simultaneously. Each reviewer focuses on a specific quality dimension.
@@ -119,8 +146,14 @@ After all reviews complete:
    SendMessage(type: "shutdown_request", recipient: "quality-reviewer", content: "Review complete, shutting down")
    SendMessage(type: "shutdown_request", recipient: "ux-reviewer", content: "Review complete, shutting down")
    ```
-2. TeamDelete to clean up resources
-3. Optionally create fix tasks for critical issues
+2. Clean up GLM env vars and restore Claude-only operation:
+   ```bash
+   moai cc
+   ```
+   This safely removes GLM env vars while preserving ANTHROPIC_AUTH_TOKEN and other settings.
+   Do NOT manually Read/Write settings.local.json — use the CLI command which handles JSON merging correctly.
+3. TeamDelete to clean up resources
+4. Optionally create fix tasks for critical issues
 
 ## Fallback
 

@@ -1,3 +1,30 @@
+---
+name: moai-workflow-team-debug
+description: >
+  Debug complex issues through parallel competing hypothesis investigation.
+  Each teammate explores a different theory independently using haiku model.
+  Evidence is synthesized to identify root cause before fix implementation.
+  Use when debugging issues with multiple potential root causes.
+user-invocable: false
+metadata:
+  version: "2.5.0"
+  category: "workflow"
+  status: "active"
+  updated: "2026-02-21"
+  tags: "debug, team, hypothesis, investigation, parallel"
+
+# MoAI Extension: Progressive Disclosure
+progressive_disclosure:
+  enabled: true
+  level1_tokens: 100
+  level2_tokens: 3000
+
+# MoAI Extension: Triggers
+triggers:
+  keywords: ["debug team", "hypothesis", "investigation", "parallel debug"]
+  agents: ["expert-debug"]
+  phases: ["fix"]
+---
 # Workflow: Team Debug - Investigation Team
 
 Purpose: Debug complex issues through parallel competing hypothesis investigation. Each teammate explores a different theory independently.
@@ -65,8 +92,14 @@ After all investigations complete:
 ## Phase 4: Cleanup
 
 1. Shutdown all investigation teammates
-2. TeamDelete to clean up resources
-3. Report diagnosis and fix to user
+2. Clean up GLM env vars and restore Claude-only operation:
+   ```bash
+   moai cc
+   ```
+   This safely removes GLM env vars while preserving ANTHROPIC_AUTH_TOKEN and other settings.
+   Do NOT manually Read/Write settings.local.json — use the CLI command which handles JSON merging correctly.
+3. TeamDelete to clean up resources
+4. Report diagnosis and fix to user
 
 ## Fallback
 

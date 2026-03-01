@@ -3,17 +3,16 @@ name: moai-workflow-sync
 description: >
   Synchronizes documentation with code changes, verifies project quality,
   and finalizes pull requests. Third step of the Plan-Run-Sync workflow.
-  Includes SPEC divergence analysis and project document updates.
+  Includes deep code review with auto-fix, coverage analysis with test generation,
+  SPEC divergence analysis, project document updates, and Context Memory generation.
   Use when documentation sync, PR creation, or quality verification is needed.
-license: Apache-2.0
-compatibility: Designed for Claude Code
 user-invocable: false
 metadata:
-  version: "1.1.0"
+  version: "3.3.0"
   category: "workflow"
   status: "active"
-  updated: "2026-02-03"
-  tags: "sync, documentation, pull-request, quality, verification, pr"
+  updated: "2026-02-25"
+  tags: "sync, documentation, pull-request, quality, verification, pr, context-memory"
 
 # MoAI Extension: Progressive Disclosure
 progressive_disclosure:
@@ -54,9 +53,55 @@ Synchronize documentation with code changes, verify project quality, and finaliz
 - status: Read-only health check. Quick project health report with no changes.
 - project: Project-wide documentation updates. Milestone completion and periodic sync use case.
 
+### Project Mode Details (ENHANCED)
+
+The `project` mode performs comprehensive project-wide synchronization:
+
+**When to use:**
+- After completing a milestone or major feature
+- Before releasing a new version
+- Periodic maintenance (weekly/monthly)
+- After significant refactoring
+- When `.moai/project/` documents are outdated
+
+**What project mode does:**
+
+1. **Full Project Scan** (vs. auto mode's selective scan):
+   - Scans ALL source files (not just changed files)
+   - Checks ALL SPEC documents for updates needed
+   - Verifies ALL project documentation consistency
+   - Validates ALL language files for MX tag coverage
+
+2. **SPEC Document Update Detection**:
+   - Compares implementation against SPEC requirements
+   - Detects implemented features not documented in SPEC
+   - Detects SPEC requirements not yet implemented
+   - Flags SPEC documents requiring updates
+
+3. **Project Document Updates**:
+   - Updates `.moai/project/tech.md` when new dependencies/technologies added
+   - Updates `.moai/project/structure.md` when architecture changes
+   - Updates `.moai/project/product.md` when new features added
+   - Updates `.moai/project/codemaps/` when architecture changes detected (delegates to codemaps workflow)
+   - Updates README.md to reflect current project state
+
+4. **Comprehensive Quality Verification**:
+   - Runs full test suite (all languages)
+   - Lint check for ALL source files
+   - Type check for ALL source files
+   - MX tag validation for ALL source files
+
+**Output for project mode:**
+- Complete project health report
+- All SPEC documents requiring updates
+- All project documents requiring updates
+- Recommendations for improvements
+- Full language breakdown of code quality metrics
+
 ## Supported Flags
 
 - --merge: After sync, auto-merge PR and clean up branch. Worktree/branch environment is auto-detected from git context.
+- --skip-mx: Skip MX tag validation and annotation during sync.
 
 ## Context Loading
 
@@ -67,6 +112,7 @@ Before execution, load these essential files:
 - .moai/config/sections/language.yaml (git_commit_messages setting)
 - .moai/specs/ directory listing (SPEC documents for sync)
 - .moai/project/ directory listing (project documents for conditional update)
+- .moai/project/codemaps/ directory listing (architecture maps for conditional update)
 - README.md (current project documentation)
 
 Pre-execution commands: git status, git diff, git branch, git log, find .moai/specs.
@@ -160,11 +206,28 @@ If any tests fail, use AskUserQuestion:
 - Continue: Proceed with sync despite failures
 - Abort: Stop sync, fix tests first (exit to Phase 4 graceful exit)
 
-#### Step 0.5.4: Code Review
+#### Step 0.5.4: Deep Code Review with Auto-Fix
 
 Agent: manager-quality subagent
 
-Invoke regardless of project language. Execute TRUST 5 quality validation and generate comprehensive quality report.
+Invoke regardless of project language. Execute multi-perspective code review beyond basic TRUST 5 validation:
+
+Review Perspectives:
+- Security: OWASP Top 10 compliance, injection risks, secrets exposure, dependency vulnerabilities
+- Performance: Algorithmic complexity, query efficiency (N+1), memory patterns, concurrency safety
+- Quality: TRUST 5 compliance, error handling completeness, naming conventions, code consistency
+- UX: User flow integrity, error states, accessibility (WCAG/ARIA), breaking changes in public interfaces
+
+Auto-Fix Behavior:
+- If critical issues found: Delegate auto-fix to expert-debug or appropriate expert subagent
+- Re-run review after fix to verify resolution
+- Maximum 3 auto-fix iterations for critical issues before escalating to user
+- Warnings and suggestions are logged in report but do not block pipeline
+
+Output:
+- Review report with findings by severity (critical, warning, suggestion)
+- @MX tag compliance status (integrated with Phase 0.6)
+- Auto-fix log if corrections were applied
 
 #### LSP Quality Gates
 
@@ -177,7 +240,155 @@ The sync phase enforces LSP-based quality gates as configured in quality.yaml:
 
 Aggregate all results into a quality report showing status for test-runner, linter, type-checker, and code-review. Determine overall status (PASS or WARN).
 
+### Phase 0.6: MX Tag Validation (Multi-Language)
+
+Purpose: Ensure code has appropriate @MX annotations for AI agent context. Supports all 16 MoAI-ADK languages.
+
+Skip if `--skip-mx` flag is provided.
+
+#### Step 0.6.1: Language Detection for Modified Files
+
+Detect languages present in modified files:
+
+| Language | Indicator Files | File Patterns | Comment Prefix |
+|----------|----------------|---------------|----------------|
+| Go | go.mod | *.go | `//` |
+| Python | pyproject.toml | *.py | `#` |
+| TypeScript | tsconfig.json | *.ts, *.tsx | `//` |
+| JavaScript | package.json | *.js, *.jsx | `//` |
+| Rust | Cargo.toml | *.rs | `//` |
+| Java | pom.xml | *.java | `//` |
+| Kotlin | build.gradle.kts | *.kt | `//` |
+| C# | .csproj | *.cs | `//` |
+| Ruby | Gemfile | *.rb | `#` |
+| PHP | composer.json | *.php | `//` |
+| Elixir | mix.exs | *.ex, *.exs | `#` |
+| C++ | CMakeLists.txt | *.cpp, *.h | `//` |
+| Scala | build.sbt | *.scala | `//` |
+| R | DESCRIPTION | *.R, *.r | `#` |
+| Flutter | pubspec.yaml | *.dart | `//` |
+| Swift | Package.swift | *.swift | `//` |
+
+#### Step 0.6.2: Scan Modified Files
+
+- Get list of files changed since last sync (git diff)
+- For each modified source file, check for @MX tags
+- Identify functions/code blocks that should have tags but don't
+
+#### Step 0.6.3: Add Missing Tags (Language-Aware)
+
+For modified files missing @MX tags, use language-specific patterns:
+
+**Backend Languages (Go, Python, Rust, Java, Kotlin, C#, Ruby, PHP, Elixir, C++, Scala)**:
+1. **fan_in >= 3**: Add `@MX:ANCHOR` for functions/methods with many callers
+2. **Language-specific WARN patterns**:
+   - Go: `go func`, `go ` (goroutines without context)
+   - Python: `async def`, `threading` (async/threading patterns)
+   - Rust: `async fn`, `unsafe ` (async/unsafe blocks)
+   - Java: `new Thread`, `Executor` (thread usage)
+   - Kotlin: `GlobalScope`, `runBlocking` (coroutine issues)
+   - C#: `Task.Run`, `Thread.` (async/threading)
+   - Ruby: `Thread.new` (thread creation)
+   - PHP: `async ` (async patterns)
+   - Elixir: `Task.async`, `spawn` (async/process)
+   - C++: `std::thread`, `new ` (thread/memory)
+   - Scala: `Future.`, `new Thread` (async/thread)
+3. **magic constants**: Add `@MX:NOTE` for unexplained values
+4. **missing tests**: Add `@MX:TODO` for untested public functions
+
+**Frontend Languages (TypeScript, JavaScript)**:
+1. **fan_in >= 3**: Add `@MX:ANCHOR` for functions with many callers
+2. **Promise chains**: Add `@MX:WARN` for Promise.all without error handling
+3. **async/await**: Add `@MX:WARN` for async functions without try/catch
+4. **magic constants**: Add `@MX:NOTE` for unexplained values
+5. **missing tests**: Add `@MX:TODO` for untested functions
+
+**Data Science Languages (R, Flutter/Dart)**:
+1. **fan_in >= 3**: Add `@MX:ANCHOR` for functions with many callers
+2. **Language-specific WARN patterns**:
+   - R: `parallel::` (parallel processing)
+   - Flutter: `Isolate.`, `Future.` (async/isolate patterns)
+3. **magic constants**: Add `@MX:NOTE` for unexplained values
+4. **missing tests**: Add `@MX:TODO` for untested functions
+
+**Mobile (Swift)**:
+1. **fan_in >= 3**: Add `@MX:ANCHOR` for functions with many callers
+2. **Swift-specific WARN**: `Task.`, `DispatchQueue` (async/concurrency)
+3. **magic constants**: Add `@MX:NOTE` for unexplained values
+4. **missing tests**: Add `@MX:TODO` for untested functions
+
+#### Step 0.6.4: Generate Tag Report
+
+Include in sync report:
+- Files scanned: N (by language)
+- Tags added: N (by type, by language)
+- Files requiring attention (high complexity, missing documentation)
+
+#### MX Tag Integration
+
+When MX tags are added during sync:
+- Changes are included in the same commit as documentation updates
+- Tag additions are noted in the PR description
+- Report summarizes tag changes by category
+
 Status mode early exit: If mode is "status", display quality report and exit. No further phases execute.
+
+### Phase 0.7: Coverage Analysis and Test Generation
+
+Purpose: Measure test coverage, identify gaps, and generate missing tests to meet coverage targets before documentation sync.
+
+#### Step 0.7.1: Coverage Measurement
+
+Agent: expert-testing subagent
+
+Measure current coverage using language-specific tools:
+- Go: `go test -coverprofile=coverage.out -covermode=atomic ./...` then `go tool cover -func=coverage.out`
+- Python: `pytest --cov --cov-report=json`
+- TypeScript/JavaScript: `vitest run --coverage` or `jest --coverage --json`
+- Rust: `cargo llvm-cov --json`
+
+Output: Overall coverage percentage, per-file coverage, per-function data.
+
+#### Step 0.7.2: Gap Analysis
+
+Agent: expert-testing subagent
+
+Identify files below the coverage target (from quality.yaml test_coverage_target, default 85%).
+
+Prioritize gaps by risk:
+- P1 (Critical): Public API functions, high fan_in (>=3), functions with @MX:ANCHOR
+- P2 (High): Business logic, error handling paths
+- P3 (Medium): Internal utilities, helper functions
+- P4 (Low): Generated code, configuration, trivial getters/setters
+
+#### Step 0.7.3: Test Generation
+
+Agent: expert-testing subagent
+
+Generate missing tests for P1 and P2 gaps:
+- Follow development_mode for test style (TDD: table-driven tests, DDD: characterization tests)
+- Include edge cases and error scenarios
+- Follow existing test patterns in the codebase
+- Respect file naming conventions (*_test.go, *.test.ts, test_*.py)
+
+#### Step 0.7.4: Verification
+
+After test generation:
+- Run the full test suite to ensure no regressions
+- Re-measure coverage to confirm improvement
+- Compare before/after coverage percentages
+
+Behavior:
+- If coverage target met: Proceed to Phase 1
+- If coverage target not met after test generation: Log remaining gaps and proceed (do not block pipeline)
+
+#### Step 0.7.5: Coverage Report
+
+Include in sync quality report:
+- Before/after coverage percentages
+- Tests generated (count and file list)
+- Remaining gaps if target not fully met
+- Coverage by package/module breakdown
 
 ### Phase 1: Analysis and Planning
 
@@ -324,6 +535,7 @@ Tasks for manager-docs:
 - If new dependencies added: Update tech.md with new technology stack entries and rationale
 - If new features implemented: Update product.md with new feature descriptions and use cases
 - If architectural changes: Update structure.md with revised architecture patterns
+- If architectural changes: Regenerate .moai/project/codemaps/ via codemaps workflow (workflows/codemaps.md) when significant structural changes (new directories, dependency graph changes, or module reorganization) are detected
 
 Constraints:
 - Only update sections relevant to detected changes (do not regenerate entire files)
@@ -378,6 +590,205 @@ Agent: manager-git subagent
 - Create single commit with descriptive message listing synchronized documents, project repairs, and SPEC updates
 - Commit message language follows `language.git_commit_messages` setting
 - Verify commit with git log
+
+#### Step 3.1.1: Context Memory Generation in Git Commits
+
+Purpose: Embed structured context within git commit operations to enable seamless session resumption across development cycles.
+
+**Context Collection Process:**
+
+1. **Decision Tracking**: Gather all decisions made during the sync phase
+   - Documentation choices and rationale
+   - SPEC update approach and divergence handling
+   - Project improvement selections
+   - Quality trade-offs accepted or deferred
+
+2. **Constraint Discovery**: Record any constraints identified
+   - Formatting requirements discovered
+   - API documentation standards applied
+   - Platform-specific considerations
+   - Technology limitations encountered
+
+3. **Gotcha Documentation**: Note issues found during documentation review
+   - Outdated references in existing documentation
+   - Missing API documentation sections
+   - Inconsistencies between code and docs
+   - Breaking changes requiring user notification
+
+4. **Pattern Usage**: Document patterns applied during sync
+   - Documentation templates used
+   - Code-to-doc mapping strategies
+   - Mermaid diagram patterns for architecture
+   - README.md structure improvements
+
+**Commit Format for Sync Phase:**
+
+All sync commits MUST include structured context using this format:
+
+```
+docs(sync): [brief description of changes]
+
+## SPEC Reference
+SPEC: SPEC-XXX
+Phase: SYNC
+Timestamp: ISO-8601 timestamp
+
+## Context (AI-Developer Memory)
+- Decision: [documentation decision 1]
+- Decision: [documentation decision 2]
+- Pattern: [pattern 1 applied]
+- Pattern: [pattern 2 applied]
+- Constraint: [constraint discovered]
+- Gotcha: [issue found and how resolved]
+
+## Affected Areas
+- Documents Updated: [count]
+- SPEC Status: [completed|in-progress]
+- Coverage Impact: [change or percentage]
+```
+
+**Session Boundary Tag Creation:**
+
+After successful commit, create a session boundary tag to enable `/moai context` reconstruction:
+
+```
+git tag -a "moai/SPEC-{ID}/sync-complete" \
+  -m "Sync phase completed
+SPEC: SPEC-XXX
+Docs updated: N files
+Coverage verified: XX%
+Context embedded in: [commit hash]
+Next action: Feature complete or /moai plan for next SPEC"
+```
+
+Tag naming convention: `moai/SPEC-{ID}/sync-complete`
+
+**Context Memory Integration:**
+
+The embedded context enables:
+
+1. **Session Resumption**: When resuming development, `/moai context` retrieves this information automatically
+2. **Decision History**: Future SPECs build on documented decisions
+3. **Pattern Reuse**: Similar documentation patterns are recognized and applied
+4. **Cross-Session Continuity**: Context persists across individual AI sessions
+
+**Implementation Details:**
+
+- Commit message MUST include complete decision/pattern documentation
+- Session boundary tag MUST be created after successful push
+- Context metadata saved to `.moai/memory/sync-context-{SPEC-ID}.json` for quick access
+- Tag message MUST reference the commit hash for traceability
+
+#### Step 3.1.5: Local CI Mirror Validation (Pre-PR Gate)
+
+Purpose: Replicate CI checks locally before pushing and creating a PR to catch failures fast, without waiting for slow remote CI. Windows-specific tests are skipped (cannot run locally).
+
+**Trigger condition**: Only run when a PR is about to be created (github_flow feature branch, gitflow feature/release/hotfix). Skip for `main_direct` strategy and direct pushes to main/develop.
+
+##### Step 3.1.5.1: Discover CI Configuration
+
+Read `.github/workflows/` to auto-detect CI jobs:
+- If `ci.yml` (or any CI file) exists: parse jobs, steps, and commands
+- If no CI config found: skip this phase entirely, log "No CI config detected"
+
+Build a local execution plan mapping each CI job to its local equivalent:
+
+| CI Job | CI Runner | Local Equivalent | Skippable |
+|--------|-----------|-----------------|-----------|
+| test (ubuntu) | ubuntu-latest | Local OS tests | No (run on current OS) |
+| test (macos) | macos-latest | Local OS tests | No (identical on macOS) |
+| test (windows) | windows-latest | **SKIP** | Yes — cannot run locally |
+| lint | ubuntu-latest | Local golangci-lint | No |
+| build (cross-compile) | ubuntu-latest | Local cross-compile | No |
+
+##### Step 3.1.5.2: Run Local Equivalents in Parallel
+
+**Go project** (detected via `go.mod`):
+
+Launch all checks in parallel:
+
+```bash
+# Check 1: go vet (mirrors CI step)
+go vet ./...
+
+# Check 2: Tests with race detector (mirrors CI test job)
+go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+# Check 3: golangci-lint (mirrors CI lint job)
+# Auto-detect if golangci-lint is available
+which golangci-lint && golangci-lint run --timeout=5m \
+  || echo "SKIP: golangci-lint not installed (run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6)"
+
+# Check 4: Cross-compile all CI targets (mirrors CI build job)
+# Run all 5 targets in parallel — CGO_ENABLED=0 for all
+GOOS=linux   GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o /tmp/ci-build-linux-amd64     ./cmd/moai/ &
+GOOS=linux   GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o /tmp/ci-build-linux-arm64     ./cmd/moai/ &
+GOOS=darwin  GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o /tmp/ci-build-darwin-amd64    ./cmd/moai/ &
+GOOS=darwin  GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o /tmp/ci-build-darwin-arm64    ./cmd/moai/ &
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o /tmp/ci-build-windows-amd64.exe ./cmd/moai/ &
+wait
+```
+
+**Python project** (detected via `pyproject.toml`):
+
+```bash
+pytest --tb=short
+ruff check . && ruff format --check .
+mypy . --ignore-missing-imports
+```
+
+**TypeScript/JavaScript project** (detected via `package.json`):
+
+```bash
+npm test -- --run
+npm run lint
+npm run build
+```
+
+**Other languages**: Run the standard test + lint + build commands discovered from CI config.
+
+**Cross-platform build targets**: If CI config shows `strategy.matrix` with multiple `os` or `GOOS/GOARCH` values, replicate all cross-compile targets using the local toolchain.
+
+##### Step 3.1.5.3: Skipped Checks Report
+
+Always report what was skipped and why:
+
+```
+CI Mirror: Skipped checks
+- test (windows-latest): Cannot run Windows tests locally — will be verified by remote CI
+- lint: golangci-lint not installed — install with: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
+```
+
+##### Step 3.1.5.4: Evaluate Results
+
+**All checks pass**: Proceed to Step 3.2 automatically. Log "Local CI mirror: PASS".
+
+**Any check fails**: Present failure summary via AskUserQuestion:
+
+- Fix now — delegate to expert-debug subagent with failure details, then re-run CI mirror
+- Push anyway — proceed to Step 3.2 with warning embedded in PR description
+- Abort — exit sync workflow, preserve commit (allow local fix and re-run)
+
+**golangci-lint not installed**: Treat as warning (not failure). Proceed to Step 3.2 with a note in the PR description: "Local lint check skipped: golangci-lint not installed."
+
+##### Step 3.1.5.5: Embed Results in PR Description
+
+Pass CI mirror results to Step 3.2 for inclusion in the PR body:
+
+```markdown
+## Local CI Mirror Results
+| Check | Status | Notes |
+|-------|--------|-------|
+| go vet | ✅ Pass | |
+| go test -race (macOS) | ✅ Pass | Coverage: 87% |
+| golangci-lint | ✅ Pass | |
+| build linux/amd64 | ✅ Pass | |
+| build linux/arm64 | ✅ Pass | |
+| build darwin/amd64 | ✅ Pass | |
+| build darwin/arm64 | ✅ Pass | |
+| build windows/amd64 | ✅ Pass | |
+| test (windows) | ⏭ Skipped | Cannot run locally |
+```
 
 #### Step 3.2: Push and Deliver (Strategy-Aware)
 
@@ -513,7 +924,7 @@ Tool: AskUserQuestion with options tailored to delivery result:
 
 The sync phase always uses sub-agent mode (manager-docs), even when --team is active for other phases. Documentation synchronization requires sequential consistency and a single authoritative view of project state.
 
-For rationale and details, see workflows/team-sync.md.
+For rationale and details, see team/sync.md.
 
 ---
 
@@ -533,14 +944,15 @@ When user aborts at any decision point:
 All of the following must be verified:
 
 - Phase 0: Deployment readiness verified (tests, migrations, env changes, backward compatibility)
-- Phase 0.5: Quality verification completed (tests, linter, type checker, code review)
+- Phase 0.5: Quality verification completed (tests, linter, type checker, deep code review with auto-fix)
+- Phase 0.7: Coverage analysis completed (measurement, gap analysis, test generation, verification)
 - Phase 1: Prerequisites verified, project analyzed, divergence analysis completed, sync plan approved by user
 - Phase 2: Safety backup created and verified, documents synchronized, SPEC documents updated per lifecycle level, project documents updated (if applicable), quality verified, SPEC status updated
-- Phase 3: Changes committed, delivered per git_workflow strategy (PR created for github_flow/gitflow, direct push for main_direct), auto-merge executed (if flagged and PR exists)
+- Phase 3: Changes committed, local CI mirror validated (Step 3.1.5: vet + test-race + lint + cross-compile — Windows skipped), delivered per git_workflow strategy (PR created for github_flow/gitflow, direct push for main_direct), auto-merge executed (if flagged and PR exists)
 - Phase 4: Completion report displayed with delivery result, appropriate next steps presented based on strategy and context
 
 ---
 
-Version: 3.1.0
-Updated: 2026-02-13
-Source: Extracted from .claude/commands/moai/3-sync.md v3.4.0. Added SPEC divergence analysis, project document updates, SPEC lifecycle awareness, team mode section, LSP quality gates, strategy-aware git delivery, and deployment readiness check (Phase 0) with test verification, migration detection, environment changes, and backward compatibility assessment.
+Version: 3.4.0
+Updated: 2026-02-25
+Source: Extracted from .claude/commands/moai/3-sync.md v3.4.0. Added deep code review with 4-perspective analysis and auto-fix (Phase 0.5.4 enhanced), coverage analysis with test generation (Phase 0.7 new), SPEC divergence analysis, project document updates, SPEC lifecycle awareness, team mode section, LSP quality gates, strategy-aware git delivery, deployment readiness check, and Context Memory generation in git commits (Step 3.1.1 new) for seamless session resumption and decision tracking across development cycles.

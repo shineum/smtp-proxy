@@ -4,14 +4,12 @@ description: >
   Full autonomous plan-run-sync pipeline. Default workflow when no subcommand
   is specified. Handles parallel exploration, SPEC generation, DDD/TDD
   implementation with optional auto-fix loop, and documentation sync.
-license: Apache-2.0
-compatibility: Designed for Claude Code
 user-invocable: false
 metadata:
-  version: "2.0.0"
+  version: "2.6.0"
   category: "workflow"
   status: "active"
-  updated: "2026-02-07"
+  updated: "2026-02-23"
   tags: "moai, autonomous, pipeline, plan-run-sync, default"
 
 # MoAI Extension: Progressive Disclosure
@@ -32,6 +30,8 @@ triggers:
 Purpose: Full autonomous workflow. User provides a goal, MoAI autonomously executes plan -> run -> sync pipeline. This is the default workflow when no subcommand is specified.
 
 Flow: Explore -> Plan -> Run -> Sync -> Done
+
+For phase overview, token budgets, and phase transitions, see: @.claude/rules/moai/workflow/spec-workflow.md
 
 ## Supported Flags
 
@@ -58,38 +58,43 @@ Flow: Explore -> Plan -> Run -> Sync -> Done
 
 ```yaml
 constitution:
-  development_mode: hybrid    # ddd, tdd, or hybrid
-  hybrid_settings:
-    new_features: tdd        # New code uses TDD
-    legacy_refactoring: ddd  # Existing code uses DDD
+  development_mode: tdd    # or ddd
 ```
 
 **Routing Logic**:
 
-| Feature Type | Mode: ddd | Mode: tdd | Mode: hybrid |
-|--------------|-----------|-----------|--------------|
-| **New package/module** (no existing file) | DDD* | TDD | TDD |
-| **New feature in existing file** | DDD | TDD | TDD |
-| **Refactoring existing code** | DDD | Use DDD for this part | DDD |
-| **Bug fix in existing code** | DDD | TDD | DDD |
+| Feature Type | Mode: ddd | Mode: tdd |
+|--------------|-----------|-----------|
+| **New package/module** (no existing file) | DDD* | TDD |
+| **New feature in existing file** | DDD | TDD |
+| **Refactoring existing code** | DDD | TDD (with brownfield pre-RED analysis) |
+| **Bug fix in existing code** | DDD | TDD |
 
-*DDD adapts for greenfield (ANALYZE requirements → PRESERVE with spec tests → IMPROVE)
+*DDD adapts for greenfield (ANALYZE requirements -> PRESERVE with spec tests -> IMPROVE)
 
 **Agent Selection**:
 - **TDD cycle**: `manager-tdd` subagent (RED-GREEN-REFACTOR)
 - **DDD cycle**: `manager-ddd` subagent (ANALYZE-PRESERVE-IMPROVE)
 
+For methodology details, see: @.claude/rules/moai/workflow/workflow-modes.md
+
 ## Phase 0: Parallel Exploration
 
 Launch three agents simultaneously in a single response for 2-3x speedup (15-30s vs 45-90s).
 
-Agent 1 - Explore (subagent_type Explore):
-- Codebase analysis for task context
-- Relevant files, architecture patterns, existing implementations
+Agent 1 - Explore (subagent_type Explore, produces research.md):
+- If .moai/project/codemaps/ exists: Use as architecture baseline to accelerate exploration (skip redundant scanning)
+- Read target code areas IN DEPTH — understand deeply how each module works, its intricacies and side effects
+- Study cross-module interactions IN GREAT DETAIL — trace data flow, identify implicit contracts
+- Search for REFERENCE IMPLEMENTATIONS — find similar patterns in the codebase that can guide the new feature
+- Document findings with specific file paths and line references
+- Output: research.md artifact with architecture analysis, reference implementations, risks, and constraints
 
 Agent 2 - Research (subagent_type Explore with WebSearch/WebFetch focus):
 - External documentation and best practices
 - API docs, library documentation, similar implementations
+- Reference implementations from open-source projects that align with project conventions
+- Documented design patterns relevant to the feature being implemented
 
 Agent 3 - Quality (subagent_type manager-quality):
 - Current project quality assessment
@@ -97,8 +102,9 @@ Agent 3 - Quality (subagent_type manager-quality):
 
 After all agents complete:
 - Collect outputs from each agent response
-- Extract key findings from Explore (files, patterns), Research (external knowledge), Quality (coverage baseline)
-- Synthesize into unified exploration report
+- Extract key findings from Explore (research.md with files, patterns, reference implementations), Research (external knowledge, documented patterns), Quality (coverage baseline)
+- Synthesize into unified exploration report including research.md artifact
+- Save research.md to .moai/specs/SPEC-{ID}/research.md when SPEC ID is determined
 - Generate execution plan with files to create/modify and test strategy
 
 Error handling: If any agent fails, continue with results from successful agents. Note missing information in plan.
@@ -120,14 +126,25 @@ User approval checkpoint via AskUserQuestion:
 - Output: EARS-format SPEC document at .moai/specs/SPEC-XXX/spec.md
 - Includes requirements, acceptance criteria, technical approach
 
+## Phase 1.5: Plan Annotation Cycle (1-6 iterations)
+
+After SPEC generation and before implementation:
+1. Present SPEC document and research.md to user for review
+2. User adds inline annotations/corrections to plan
+3. MoAI delegates to manager-spec: "Address all inline notes. DO NOT implement any code."
+4. Repeat until user approves (maximum 6 iterations)
+5. Track iteration count: "Annotation cycle {N}/6"
+
+This iterative refinement catches architectural misunderstandings before implementation begins.
+
 ## Phase 2: Implementation (TDD or DDD based on development_mode)
 
 [HARD] Agent delegation mandate: ALL implementation tasks MUST be delegated to specialized agents. NEVER execute implementation directly, even after auto compact.
 
 [HARD] Methodology selection based on `.moai/config/sections/quality.yaml`:
 
-- **New features** (per hybrid_settings.new_features): Use `manager-tdd` (RED-GREEN-REFACTOR)
-- **Legacy refactoring** (per hybrid_settings.legacy_refactoring): Use `manager-ddd` (ANALYZE-PRESERVE-IMPROVE)
+- **development_mode: tdd** (default): Use `manager-tdd` (RED-GREEN-REFACTOR)
+- **development_mode: ddd**: Use `manager-ddd` (ANALYZE-PRESERVE-IMPROVE)
 
 Expert agent selection (for domain-specific work):
 - Backend logic: expert-backend subagent
@@ -163,42 +180,20 @@ When --team flag is provided or auto-selected (based on complexity thresholds in
 - Phase 3 sync: Always sub-agent mode (manager-docs)
 
 For team orchestration details:
-- Plan phase: See workflows/team-plan.md
-- Run phase: See workflows/team-run.md
-- Sync rationale: See workflows/team-sync.md
+- Plan phase: See team/plan.md
+- Run phase: See team/run.md
+- Sync rationale: See team/sync.md
 
 Mode selection:
 - --team: Force team mode for all applicable phases
 - --solo: Force sub-agent mode
 - No flag (default): System auto-selects based on complexity thresholds (domains >= 3, files >= 10, or score >= 7)
 
-## Task Tracking
-
-[HARD] Task management tools mandatory for all task tracking:
-- When issues discovered: TaskCreate with pending status
-- Before starting work: TaskUpdate with in_progress status
-- After completing work: TaskUpdate with completed status
-- Never output TODO lists as text
-
-## Safe Development Protocol
-
-All implementation follows CLAUDE.md Section 7 Safe Development Protocol:
-- Approach-first: Explain approach before writing code
-- Multi-file decomposition: Split work when modifying 3+ files
-- Post-implementation review: List potential issues and suggest tests
-- Reproduction-first: Write failing test before fixing bugs
-
-## Completion Markers
-
-AI must add a marker when work is complete:
-- `<moai>DONE</moai>` - Task complete
-- `<moai>COMPLETE</moai>` - Full completion
-
 ## Execution Summary
 
 1. Parse arguments (extract flags: --loop, --max, --sequential, --branch, --pr, --resume, --team, --solo)
 2. If --resume with SPEC ID: Load existing SPEC and continue from last state
-3. Detect development_mode from quality.yaml (hybrid/ddd/tdd)
+3. Detect development_mode from quality.yaml (ddd/tdd)
 4. **Team mode decision**: Read workflow.yaml team settings and determine execution mode
    - If `--team` flag: Force team mode (requires workflow.team.enabled: true AND CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 env var)
    - If `--solo` flag: Force sub-agent mode (skip team mode entirely)
@@ -208,12 +203,14 @@ AI must add a marker when work is complete:
 6. Routing decision (single-domain direct delegation vs full workflow)
 7. TaskCreate for discovered tasks
 8. User confirmation via AskUserQuestion
-9. **Phase 1 (Plan)**: If team mode → Read workflows/team-plan.md and follow team orchestration. Else → manager-spec sub-agent
-10. **Phase 2 (Run)**: If team mode → Read workflows/team-run.md and follow team orchestration. Else → manager-tdd (new features) OR manager-ddd (legacy refactoring) sub-agent
-11. **Phase 3 (Sync)**: Always manager-docs sub-agent (sync phase never uses team mode)
-12. Terminate with completion marker
+9. **Phase 0.5 (Research)**: Save research.md from Phase 0 Explore findings to SPEC directory
+10. **Phase 1 (Plan)**: If team mode -> Read team/plan.md and follow team orchestration. Else -> manager-spec sub-agent
+11. **Phase 1.5 (Annotate)**: Run annotation cycle (1-6 iterations) until user approves plan
+12. **Phase 2 (Run)**: If team mode -> Read team/run.md and follow team orchestration. Else -> manager-tdd or manager-ddd sub-agent (per quality.yaml development_mode)
+13. **Phase 3 (Sync)**: Always manager-docs sub-agent (sync phase never uses team mode)
+14. Terminate with completion marker
 
 ---
 
-Version: 2.0.0
-Source: Renamed from alfred.md. Unified plan->run->sync pipeline. Added SPEC/project document update in sync phase.
+Version: 2.6.0
+Source: SPEC-MOAI-001. Integrated research pattern with deep codebase analysis, reference implementations, and annotation cycle for plan refinement.

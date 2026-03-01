@@ -5,14 +5,12 @@ description: >
   repeats until all issues are resolved or max iterations reached.
   Includes memory pressure detection and snapshot-based resume.
   Use when iterative error resolution or continuous fixing is needed.
-license: Apache-2.0
-compatibility: Designed for Claude Code
 user-invocable: false
 metadata:
-  version: "2.0.0"
+  version: "2.5.0"
   category: "workflow"
   status: "active"
-  updated: "2026-02-07"
+  updated: "2026-02-21"
   tags: "loop, iterative, auto-fix, diagnostics, testing, coverage"
 
 # MoAI Extension: Progressive Disclosure
@@ -76,9 +74,20 @@ If --sequential flag: Run LSP, then AST-grep, then Tests, then Coverage sequenti
 Step 4 - Completion Condition Check:
 - Conditions: Zero errors AND all tests passing AND coverage meets threshold
 - If all conditions met: Prompt user to add completion marker or continue
+- If only coverage below target (zero errors + tests passing): Auto-route to coverage workflow (workflows/coverage.md) for intelligent gap analysis and test generation instead of blind looping. Coverage workflow identifies P1-P4 priority gaps and generates targeted tests.
 
 Step 5 - Task Generation:
 - [HARD] TaskCreate for all newly discovered issues with pending status
+
+Step 5.5 - Pre-Fix MX Context Scan:
+- Scan files with newly discovered issues for existing @MX tags
+- @MX:ANCHOR functions: Pass as "do not break" constraints to fix agents
+- @MX:WARN zones: Pass danger context; ensure fix does not worsen the warned condition
+- @MX:NOTE context: Provide business logic understanding before modification
+- @MX:TODO items: Match against current issues for resolution tracking
+- Output: MX context map included in Step 6 fix agent prompts
+- Skip if no @MX tags found in target files
+- See @.claude/rules/moai/workflow/mx-tag-protocol.md for tag type definitions
 
 Step 6 - Fix Execution:
 - [HARD] Before each fix: TaskUpdate to change item to in_progress
@@ -100,6 +109,16 @@ Fix levels applied per --auto setting:
 Step 7 - Verification:
 - [HARD] After each fix: TaskUpdate to change item to completed
 
+Step 7.5 - MX Tag Check:
+- After fixes applied, scan modified files for MX tag requirements
+- Add missing tags for modified functions:
+  - New exported functions: Add @MX:NOTE or @MX:ANCHOR if fan_in >= 3
+  - Dangerous patterns introduced: Add @MX:WARN with @MX:REASON
+  - Unresolved issues: Keep @MX:TODO
+- Remove resolved @MX:TODO tags for fixed issues
+- Generate MX_TAG_REPORT with tags added/removed/updated
+- See @.claude/rules/moai/workflow/mx-tag-protocol.md for tag rules
+
 Step 8 - Snapshot Save:
 - Save iteration snapshot to $CLAUDE_PROJECT_DIR/.moai/cache/loop-snapshots/
 - Increment iteration counter
@@ -116,6 +135,36 @@ The loop exits when any of these conditions are met:
 - Max iterations reached (displays remaining issues)
 - Memory pressure threshold exceeded (saves checkpoint)
 - User interruption (state auto-saved)
+
+Pre-exit clean sweep (when exiting with success):
+- Before final report, run clean workflow (workflows/clean.md) scan on all modified files
+- Remove dead code exposed by fixes (unused imports, orphaned functions)
+- Skip if no dead code detected or if --errors flag was set
+
+## MX Tag Integration
+
+Each iteration includes MX tag management:
+
+**Tag Updates During Loop:**
+- Fix resolves an issue: Remove corresponding @MX:TODO
+- Fix introduces new code: Add appropriate @MX tags
+- Fix changes function signature: Re-evaluate @MX:ANCHOR
+- Fix adds complexity: Add @MX:WARN if threshold exceeded
+
+**Tag Types for Fixes:**
+| Fix Type | MX Action |
+|----------|-----------|
+| Bug fix (resolved) | Remove @MX:TODO |
+| New function added | Add @MX:NOTE or @MX:ANCHOR |
+| Refactoring | Update @MX:NOTE, check ANCHOR |
+| Security fix | Add @MX:NOTE with security context |
+
+**MX Tag Report:**
+After each iteration, include MX_TAG_REPORT section:
+- Tags Added: List new tags with file:line
+- Tags Removed: List resolved TODOs
+- Tags Updated: List modified tags
+- Attention Required: WARN tags requiring review
 
 ## Snapshot Management
 
@@ -159,11 +208,11 @@ All fixes within the loop follow CLAUDE.md Section 7 Safe Development Protocol:
 2. If --resume: Load state from specified snapshot and continue
 3. Detect project language from indicator files
 4. Initialize iteration counter and memory tracking (start time)
-5. Loop: Execute per-iteration cycle (Steps 1-9)
+5. Loop: Execute per-iteration cycle (Steps 1-9, including Step 5.5 MX Context Scan)
 6. On exit: Report final summary with evidence
 7. If memory checkpoint created: Display resume instructions
 
 ---
 
-Version: 2.0.0
-Source: loop.md command v2.2.0
+Version: 2.1.0
+Source: loop.md command v2.3.0. Added Step 5.5 Pre-Fix MX Context Scan for context-aware iterative fixing.

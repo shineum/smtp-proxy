@@ -5,14 +5,12 @@ description: >
   Finds LSP errors, linting issues, and type errors, classifies by severity,
   applies safe fixes via agent delegation, and reports results.
   Use when fixing errors, linting issues, or running diagnostics.
-license: Apache-2.0
-compatibility: Designed for Claude Code
 user-invocable: false
 metadata:
-  version: "2.0.0"
+  version: "2.5.0"
   category: "workflow"
   status: "active"
-  updated: "2026-02-07"
+  updated: "2026-02-21"
   tags: "fix, auto-fix, lsp, linting, diagnostics, errors, type-check"
 
 # MoAI Extension: Progressive Disclosure
@@ -87,6 +85,27 @@ Issues classified into four levels:
 - Level 3 (Review): User approval required. Examples: logic changes, API modifications
 - Level 4 (Manual): Auto-fix not allowed. Examples: security vulnerabilities, architecture changes
 
+## Phase 2.5: Pre-Fix MX Context Scan
+
+Before applying fixes, scan target files for existing @MX tags to understand context and constraints:
+
+**Scan Target:** All files with classified issues (from Phase 2 results).
+
+**MX Context Extraction:**
+- @MX:ANCHOR functions: Flag as critical path. Pass fan_in context to fix agent. Warn that signature changes may break multiple callers.
+- @MX:WARN zones: Pass danger context to fix agent. Ensure fix does not worsen the warned condition.
+- @MX:NOTE context: Pass business logic context to fix agent to prevent fixing symptoms while breaking intent.
+- @MX:TODO items: Check if any classified issues match existing TODOs (enables removal upon fix).
+
+**Output:** MX context map passed to Phase 3 agents as part of the fix prompt. Each fix agent receives:
+- List of @MX:ANCHOR functions in the target file (do not break these contracts)
+- List of @MX:WARN zones (approach with caution)
+- Relevant @MX:NOTE context (understand before modifying)
+
+**Skip Condition:** If no @MX tags found in target files, proceed directly to Phase 3.
+
+See @.claude/rules/moai/workflow/mx-tag-protocol.md for tag type definitions.
+
 ## Phase 3: Auto-Fix
 
 [HARD] Agent delegation mandate: ALL fix tasks MUST be delegated to specialized agents. NEVER execute fixes directly.
@@ -109,6 +128,54 @@ If --dry flag: Display preview of all classified issues and exit without changes
 - Re-run affected diagnostics on modified files
 - Confirm fixes resolved the targeted issues
 - Detect any regressions introduced by fixes
+
+## Phase 4.5: MX Tag Update
+
+After fixes are verified, update @MX tags for modified files:
+
+**Tag Actions by Fix Level:**
+| Fix Level | MX Action |
+|-----------|-----------|
+| Level 1 (formatting) | No tag changes typically needed |
+| Level 2 (rename, type) | Update @MX:NOTE if signature changed |
+| Level 3 (logic, API) | Add @MX:NOTE for new logic, re-evaluate ANCHOR |
+| Level 4 (manual) | Requires @MX:WARN with @MX:REASON if security-related |
+
+**Specific Actions:**
+- Bug fix applied: Remove corresponding @MX:TODO if exists
+- New code introduced: Add appropriate @MX tags per protocol
+- Function signature changed: Re-evaluate @MX:ANCHOR (fan_in may change)
+- Complexity increased: Add @MX:WARN if cyclomatic complexity >= 15
+- Dangerous pattern introduced: Add @MX:WARN with @MX:REASON
+
+**MX Tag Report Generation:**
+Generate MX_TAG_REPORT section in fix report:
+```markdown
+## MX Tag Report
+
+### Tags Added (N)
+- file:line: @MX:NOTE: [description]
+
+### Tags Removed (N)
+- file:line: @MX:TODO (resolved)
+
+### Tags Updated (N)
+- file:line: @MX:ANCHOR (fan_in updated)
+
+### Attention Required
+- Files with new @MX:WARN requiring review
+```
+
+See @.claude/rules/moai/workflow/mx-tag-protocol.md for complete tag rules.
+
+## Phase 4.6: Dead Code Cleanup (Optional)
+
+After fixes are applied and verified, scan for dead code exposed by the fixes:
+
+- Delegate to clean workflow (workflows/clean.md) for comprehensive dead code analysis
+- Targets: Files modified during fix phase that may now have unused imports, orphaned functions, or unreferenced variables
+- Skip condition: --errors flag was set (errors-only mode skips cleanup) or no dead code detected
+- Clean workflow applies safe removal with test verification
 
 ## Task Tracking
 
@@ -146,7 +213,7 @@ When --team flag is provided, fix delegates to a team-based debugging workflow u
 
 Team composition: 3 hypothesis agents (haiku) exploring different root causes in parallel.
 
-For detailed team orchestration steps, see workflows/team-debug.md.
+For detailed team orchestration steps, see team/debug.md.
 
 Fallback: If team mode is unavailable, standard single-agent fix workflow continues.
 
@@ -163,15 +230,17 @@ Team Prerequisites:
 4. Execute parallel scan (LSP + AST-grep + Linter)
 5. Aggregate results and remove duplicates
 6. Classify into Levels 1-4
-7. TaskCreate for all discovered issues
-8. If --dry: Display preview and exit
-9. Apply Level 1-2 fixes via agent delegation
-10. Request approval for Level 3 fixes via AskUserQuestion
-11. Verify fixes by re-running diagnostics
-12. Save snapshot to $CLAUDE_PROJECT_DIR/.moai/cache/fix-snapshots/
-13. Report with evidence (file:line changes)
+7. Scan target files for @MX tags (Phase 2.5: Pre-Fix MX Context Scan)
+8. TaskCreate for all discovered issues
+9. If --dry: Display preview and exit
+10. Apply Level 1-2 fixes via agent delegation (with MX context)
+11. Request approval for Level 3 fixes via AskUserQuestion
+12. Verify fixes by re-running diagnostics
+13. Update @MX tags for modified files (Phase 4.5)
+14. Save snapshot to $CLAUDE_PROJECT_DIR/.moai/cache/fix-snapshots/
+15. Report with evidence (file:line changes)
 
 ---
 
-Version: 2.0.0
-Source: fix.md command v2.2.0
+Version: 2.1.0
+Source: fix.md command v2.3.0. Added Phase 2.5 Pre-Fix MX Context Scan for context-aware fixing.

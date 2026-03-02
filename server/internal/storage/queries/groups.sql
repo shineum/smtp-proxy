@@ -10,7 +10,7 @@ SELECT * FROM groups WHERE id = $1;
 SELECT * FROM groups WHERE name = $1;
 
 -- name: ListGroups :many
-SELECT * FROM groups ORDER BY created_at DESC;
+SELECT * FROM groups WHERE status != 'deleted' ORDER BY created_at DESC;
 
 -- name: UpdateGroup :one
 UPDATE groups

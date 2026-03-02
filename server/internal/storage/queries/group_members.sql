@@ -15,7 +15,7 @@ SELECT * FROM group_members WHERE group_id = $1 ORDER BY created_at ASC;
 -- name: ListGroupsByUserID :many
 SELECT g.* FROM groups g
 JOIN group_members gm ON g.id = gm.group_id
-WHERE gm.user_id = $1
+WHERE gm.user_id = $1 AND g.status != 'deleted'
 ORDER BY gm.created_at ASC;
 
 -- name: UpdateGroupMemberRole :one
@@ -38,5 +38,5 @@ SELECT gm.id, gm.group_id, gm.user_id, gm.role, gm.created_at,
        g.name as group_name, g.group_type
 FROM group_members gm
 JOIN groups g ON gm.group_id = g.id
-WHERE gm.user_id = $1
+WHERE gm.user_id = $1 AND g.status != 'deleted'
 ORDER BY gm.created_at;

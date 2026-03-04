@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -83,6 +84,7 @@ type createServiceAccountRequest struct {
 	Username       string   `json:"username"`
 	Email          string   `json:"email,omitempty"`
 	AllowedDomains []string `json:"allowed_domains,omitempty"`
+	ProviderID     string   `json:"provider_id"`
 }
 
 // requireGroupRole checks that the caller has one of the allowed roles in the specified group.
@@ -579,6 +581,32 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			return
 		}
 
+		if req.ProviderID == "" {
+			respondError(w, http.StatusBadRequest, "provider_id is required")
+			return
+		}
+
+		providerUUID, err := uuid.Parse(req.ProviderID)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid provider_id format")
+			return
+		}
+
+		// Verify provider exists, is enabled, and belongs to this group
+		provider, err := queries.GetProviderByID(r.Context(), providerUUID)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "provider not found")
+			return
+		}
+		if !provider.Enabled {
+			respondError(w, http.StatusBadRequest, "provider is not enabled")
+			return
+		}
+		if provider.GroupID != groupID {
+			respondError(w, http.StatusBadRequest, "provider does not belong to this group")
+			return
+		}
+
 		email := req.Email
 		if email == "" {
 			email = req.Username + "@smtp.internal"
@@ -615,6 +643,7 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			Username:       sql.NullString{String: req.Username, Valid: true},
 			ApiKey:         sql.NullString{String: apiKey, Valid: true},
 			AllowedDomains: domainsJSON,
+			ProviderID:     pgtype.UUID{Bytes: providerUUID, Valid: true},
 		})
 		if err != nil {
 			respondError(w, http.StatusConflict, "username already in use")

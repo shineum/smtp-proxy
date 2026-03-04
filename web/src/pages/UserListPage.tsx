@@ -7,7 +7,7 @@ import {
   Checkbox,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
-import { fetchUsers, createUser, deleteUser, updateUserStatus, fetchGroups } from '../api/resources';
+import { fetchUsers, createUser, deleteUser, updateUserStatus, fetchGroups, fetchProviders } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
 
 export default function UserListPage() {
@@ -15,7 +15,7 @@ export default function UserListPage() {
   const queryClient = useQueryClient();
   const { me, isSystemAdmin } = useAuth();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [form, setForm] = useState({ email: '', password: '', account_type: 'user', username: '', role: 'member', group_id: '', password_disabled: true });
+  const [form, setForm] = useState({ email: '', password: '', account_type: 'user', username: '', role: 'member', group_id: '', password_disabled: true, provider_id: '' });
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['users'],
@@ -26,6 +26,12 @@ export default function UserListPage() {
     queryKey: ['groups'],
     queryFn: fetchGroups,
     enabled: isCreateOpen,
+  });
+
+  const { data: providers } = useQuery({
+    queryKey: ['providers'],
+    queryFn: fetchProviders,
+    enabled: isCreateOpen && form.account_type === 'smtp',
   });
 
   const currentGroupId = me?.current_group.group_id || '';
@@ -43,7 +49,7 @@ export default function UserListPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setIsCreateOpen(false);
-      setForm({ email: '', password: '', account_type: 'user', username: '', role: 'member', group_id: '', password_disabled: true });
+      setForm({ email: '', password: '', account_type: 'user', username: '', role: 'member', group_id: '', password_disabled: true, provider_id: '' });
     },
   });
 
@@ -58,7 +64,7 @@ export default function UserListPage() {
   });
 
   const isSmtp = form.account_type === 'smtp';
-  const canCreate = isSmtp ? !!form.username : (!!form.email && (form.password_disabled || !!form.password));
+  const canCreate = isSmtp ? (!!form.username && !!form.provider_id) : (!!form.email && (form.password_disabled || !!form.password));
 
   if (isLoading) return <PageSection><Spinner size="xl" /></PageSection>;
 
@@ -124,7 +130,7 @@ export default function UserListPage() {
       >
         <Form>
           <FormGroup label="Account Type" fieldId="user-type">
-            <FormSelect id="user-type" value={form.account_type} onChange={(_e, v) => setForm({ ...form, account_type: v, email: '', username: '' })}>
+            <FormSelect id="user-type" value={form.account_type} onChange={(_e, v) => setForm({ ...form, account_type: v, email: '', username: '', provider_id: '' })}>
               <FormSelectOption value="user" label="Team Member" />
               <FormSelectOption value="smtp" label="SMTP Account" />
             </FormSelect>
@@ -133,6 +139,14 @@ export default function UserListPage() {
             <>
               <FormGroup label="Username" isRequired fieldId="user-username">
                 <TextInput id="user-username" value={form.username} onChange={(_e, v) => setForm({ ...form, username: v })} isRequired />
+              </FormGroup>
+              <FormGroup label="Provider" isRequired fieldId="user-provider">
+                <FormSelect id="user-provider" value={form.provider_id} onChange={(_e, v) => setForm({ ...form, provider_id: v })}>
+                  <FormSelectOption value="" label="Select a provider" isPlaceholder />
+                  {providers?.filter(p => p.enabled).map((p) => (
+                    <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.provider_type})`} />
+                  ))}
+                </FormSelect>
               </FormGroup>
               <FormGroup label="Email (optional)" fieldId="user-email">
                 <TextInput id="user-email" value={form.email} onChange={(_e, v) => setForm({ ...form, email: v })} placeholder="defaults to username@smtp.internal" />

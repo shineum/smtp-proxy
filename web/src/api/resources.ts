@@ -28,7 +28,7 @@ export const removeMember = async (groupId: string, userId: string): Promise<voi
 // Service accounts (group-scoped)
 export const createServiceAccount = async (
   groupId: string,
-  data: { username: string; email?: string; allowed_domains?: string[] }
+  data: { username: string; email?: string; allowed_domains?: string[]; provider_id: string }
 ): Promise<User> => (await api.post(`/groups/${groupId}/service-accounts`, data)).data;
 
 // Activity logs

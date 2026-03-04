@@ -19,6 +19,7 @@ export interface User {
   status: string;
   allowed_domains?: string[];
   api_key?: string;
+  provider_id?: string;
   password_disabled: boolean;
   last_login?: string;
   created_at: string;

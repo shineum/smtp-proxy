@@ -5,14 +5,14 @@ import {
   Card, CardBody, DescriptionList, DescriptionListGroup,
   DescriptionListTerm, DescriptionListDescription, Label, Spinner,
   Button, Modal, ModalVariant, Form, FormGroup, TextInput,
-  ClipboardCopy,
+  FormSelect, FormSelectOption, ClipboardCopy,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import { useState } from 'react';
 import {
   fetchGroup, fetchGroupMembers, fetchActivityLogs,
   addGroupMember, removeMember, updateMemberRole,
-  createServiceAccount,
+  createServiceAccount, fetchProviders,
 } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
 import type { User } from '../types/api';
@@ -28,6 +28,7 @@ export default function GroupDetailPage() {
   const [saUsername, setSaUsername] = useState('');
   const [saEmail, setSaEmail] = useState('');
   const [saDomains, setSaDomains] = useState('');
+  const [saProviderId, setSaProviderId] = useState('');
   const [createdSA, setCreatedSA] = useState<User | null>(null);
 
   // Add member state
@@ -56,6 +57,12 @@ export default function GroupDetailPage() {
     enabled: !!id && activeTab === 2,
   });
 
+  const { data: providers } = useQuery({
+    queryKey: ['providers'],
+    queryFn: fetchProviders,
+    enabled: isCreateSAOpen,
+  });
+
   const createSAMutation = useMutation({
     mutationFn: () => {
       const domains = saDomains.trim() ? saDomains.split(',').map(d => d.trim()).filter(Boolean) : undefined;
@@ -63,6 +70,7 @@ export default function GroupDetailPage() {
         username: saUsername,
         email: saEmail || undefined,
         allowed_domains: domains,
+        provider_id: saProviderId,
       });
     },
     onSuccess: (data) => {
@@ -71,6 +79,7 @@ export default function GroupDetailPage() {
       setSaUsername('');
       setSaEmail('');
       setSaDomains('');
+      setSaProviderId('');
     },
   });
 
@@ -242,7 +251,7 @@ export default function GroupDetailPage() {
         actions={createdSA ? [
           <Button key="close" onClick={() => { setIsCreateSAOpen(false); setCreatedSA(null); }}>Close</Button>,
         ] : [
-          <Button key="create" onClick={() => createSAMutation.mutate()} isDisabled={!saUsername || createSAMutation.isPending}>
+          <Button key="create" onClick={() => createSAMutation.mutate()} isDisabled={!saUsername || !saProviderId || createSAMutation.isPending}>
             {createSAMutation.isPending ? 'Creating...' : 'Create'}
           </Button>,
           <Button key="cancel" variant="link" onClick={() => setIsCreateSAOpen(false)}>Cancel</Button>,
@@ -259,6 +268,14 @@ export default function GroupDetailPage() {
           <Form>
             <FormGroup label="Username" isRequired fieldId="sa-username">
               <TextInput id="sa-username" value={saUsername} onChange={(_e, v) => setSaUsername(v)} isRequired />
+            </FormGroup>
+            <FormGroup label="Provider" isRequired fieldId="sa-provider">
+              <FormSelect id="sa-provider" value={saProviderId} onChange={(_e, v) => setSaProviderId(v)}>
+                <FormSelectOption value="" label="Select a provider" isPlaceholder />
+                {providers?.filter(p => p.enabled).map((p) => (
+                  <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.provider_type})`} />
+                ))}
+              </FormSelect>
             </FormGroup>
             <FormGroup label="Email (optional, defaults to username@smtp.internal)" fieldId="sa-email">
               <TextInput id="sa-email" value={saEmail} onChange={(_e, v) => setSaEmail(v)} />

@@ -12,7 +12,7 @@ import { useState, useEffect } from 'react';
 import {
   fetchGroup, fetchGroupMembers, fetchActivityLogs,
   addGroupMember, removeMember, updateMemberRole,
-  createServiceAccount, fetchProviders,
+  createServiceAccount, fetchProviders, updateGroup,
 } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
 import type { User } from '../types/api';
@@ -35,6 +35,11 @@ export default function GroupDetailPage() {
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [addMemberUserId, setAddMemberUserId] = useState('');
   const [addMemberRole, setAddMemberRole] = useState('member');
+
+  // Edit group state
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editMonthlyLimit, setEditMonthlyLimit] = useState(0);
 
   const callerRole = me?.memberships?.find(m => m.group_id === id)?.role;
   const isOwnerOrAdmin = isSystemAdmin || callerRole === 'owner' || callerRole === 'admin';
@@ -112,6 +117,20 @@ export default function GroupDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['group-members', id] }),
   });
 
+  const editGroupMutation = useMutation({
+    mutationFn: () => updateGroup(id!, { name: editName, monthly_limit: editMonthlyLimit }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group', id] });
+      setIsEditOpen(false);
+    },
+  });
+
+  const openEditModal = () => {
+    setEditName(group?.name || '');
+    setEditMonthlyLimit(group?.monthly_limit || 0);
+    setIsEditOpen(true);
+  };
+
   if (isLoading || !group) return <PageSection><Spinner size="xl" /></PageSection>;
 
   const serviceAccounts = members?.filter(m => m.email?.endsWith('@smtp.internal') || false) || [];
@@ -119,9 +138,14 @@ export default function GroupDetailPage() {
 
   return (
     <PageSection>
-      <Title headingLevel="h1" size="lg" style={{ marginBottom: '1rem' }}>
-        Group: {group.name}
-      </Title>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+        <Title headingLevel="h1" size="lg">
+          Group: {group.name}
+        </Title>
+        {isOwnerOrAdmin && (
+          <Button variant="secondary" size="sm" onClick={openEditModal}>Edit</Button>
+        )}
+      </div>
 
       <Tabs activeKey={activeTab} onSelect={(_e, k) => setActiveTab(k as number)}>
         <Tab eventKey={0} title={<TabTitleText>Details</TabTitleText>}>
@@ -321,6 +345,32 @@ export default function GroupDetailPage() {
           </FormGroup>
           {addMemberMutation.isError && (
             <p style={{ color: 'red' }}>Failed to add member. User may not exist or is already a member.</p>
+          )}
+        </Form>
+      </Modal>
+
+      {/* Edit Group Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        title="Edit Group"
+        isOpen={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        actions={[
+          <Button key="save" onClick={() => editGroupMutation.mutate()} isDisabled={!editName || editGroupMutation.isPending}>
+            {editGroupMutation.isPending ? 'Saving...' : 'Save'}
+          </Button>,
+          <Button key="cancel" variant="link" onClick={() => setIsEditOpen(false)}>Cancel</Button>,
+        ]}
+      >
+        <Form>
+          <FormGroup label="Name" isRequired fieldId="edit-name">
+            <TextInput id="edit-name" value={editName} onChange={(_e, v) => setEditName(v)} isRequired />
+          </FormGroup>
+          <FormGroup label="Monthly Limit (0 = unlimited)" fieldId="edit-monthly-limit">
+            <TextInput id="edit-monthly-limit" type="number" value={String(editMonthlyLimit)} onChange={(_e, v) => setEditMonthlyLimit(Number(v) || 0)} />
+          </FormGroup>
+          {editGroupMutation.isError && (
+            <p style={{ color: 'red' }}>Failed to update group.</p>
           )}
         </Form>
       </Modal>

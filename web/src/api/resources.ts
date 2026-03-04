@@ -93,3 +93,7 @@ export const fetchMessages = async (page = 1, pageSize = 20, status?: string): P
   (await api.get('/messages', { params: { page, page_size: pageSize, status } })).data;
 export const fetchMessage = async (id: string): Promise<MessageDetail> =>
   (await api.get(`/messages/${id}`)).data;
+
+// DLQ
+export const reprocessDLQ = async (messageIds: string[]): Promise<{ reprocessed: number; total: number }> =>
+  (await api.post('/dlq/reprocess', { message_ids: messageIds })).data;

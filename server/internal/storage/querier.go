@@ -53,6 +53,7 @@ type Querier interface {
 	GetGroupMemberByUserAndGroup(ctx context.Context, arg GetGroupMemberByUserAndGroupParams) (GroupMember, error)
 	GetMessageByID(ctx context.Context, id uuid.UUID) (Message, error)
 	GetProviderByID(ctx context.Context, id uuid.UUID) (EspProvider, error)
+	GetGlobalStdoutProvider(ctx context.Context) (EspProvider, error)
 	GetStdoutProviderByGroupID(ctx context.Context, groupID uuid.UUID) (EspProvider, error)
 	IsProviderAccessible(ctx context.Context, arg IsProviderAccessibleParams) (bool, error)
 	ListAccessibleProviders(ctx context.Context, groupID uuid.UUID) ([]EspProvider, error)

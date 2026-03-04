@@ -58,6 +58,7 @@ type mockQuerier struct {
 	deleteProviderFn       func(ctx context.Context, id uuid.UUID) error
 	isProviderAccessibleFn     func(arg storage.IsProviderAccessibleParams) (bool, error)
 	listAccessibleProvidersFn  func(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error)
+	getGlobalStdoutProviderFn  func() (storage.EspProvider, error)
 
 	// Routing Rule methods
 	createRoutingRuleFn      func(ctx context.Context, arg storage.CreateRoutingRuleParams) (storage.RoutingRule, error)
@@ -313,6 +314,19 @@ func (m *mockQuerier) GetProviderByID(ctx context.Context, id uuid.UUID) (storag
 		return m.getProviderByIDFn(ctx, id)
 	}
 	return storage.EspProvider{}, nil
+}
+
+func (m *mockQuerier) GetGlobalStdoutProvider(_ context.Context) (storage.EspProvider, error) {
+	if m.getGlobalStdoutProviderFn != nil {
+		return m.getGlobalStdoutProviderFn()
+	}
+	return storage.EspProvider{
+		ID:         uuid.MustParse("00000000-0000-0000-0000-000000000099"),
+		Name:       "stdout",
+		ProviderType: storage.ProviderTypeStdout,
+		Enabled:    true,
+		Visibility: storage.ProviderVisibilityGlobal,
+	}, nil
 }
 
 func (m *mockQuerier) GetStdoutProviderByGroupID(ctx context.Context, groupID uuid.UUID) (storage.EspProvider, error) {

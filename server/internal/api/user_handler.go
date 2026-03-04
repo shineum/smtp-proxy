@@ -250,10 +250,10 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 					return
 				}
 			} else if req.AccountType == "smtp" {
-				// Default to the group's stdout provider
-				stdoutProvider, err := queries.GetStdoutProviderByGroupID(r.Context(), groupID)
+				// Default to the global stdout provider
+				stdoutProvider, err := queries.GetGlobalStdoutProvider(r.Context())
 				if err != nil {
-					respondError(w, http.StatusBadRequest, "no default provider available for this group")
+					respondError(w, http.StatusBadRequest, "no default stdout provider available")
 					return
 				}
 				providerPgID = pgtype.UUID{Bytes: stdoutProvider.ID, Valid: true}

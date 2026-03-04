@@ -176,6 +176,13 @@ export interface ActivityLog {
   created_at: string;
 }
 
+export interface ProviderAccess {
+  provider_id: string;
+  group_id: string;
+  granted_at: string;
+  granted_by?: string;
+}
+
 export interface ApiError {
   error: string;
   details?: string[];

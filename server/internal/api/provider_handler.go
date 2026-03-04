@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -336,6 +337,157 @@ func DeleteProviderHandler(queries storage.Querier) http.HandlerFunc {
 		}
 
 		if err := queries.DeleteProvider(r.Context(), id); err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// ListProviderAccessHandler handles GET /api/v1/providers/{id}/access.
+// Lists groups that have been granted access to a shared provider.
+func ListProviderAccessHandler(queries storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid provider ID format")
+			return
+		}
+
+		// Only the owning group or system admin can view access list
+		provider, err := queries.GetProviderByID(r.Context(), id)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "provider not found")
+			return
+		}
+		callerGroupType := auth.GroupTypeFromContext(r.Context())
+		if provider.GroupID != groupID && callerGroupType != "system" {
+			respondError(w, http.StatusForbidden, "access denied")
+			return
+		}
+
+		accessList, err := queries.ListProviderAccess(r.Context(), id)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, accessList)
+	}
+}
+
+type grantAccessRequest struct {
+	GroupID string `json:"group_id"`
+}
+
+// GrantProviderAccessHandler handles POST /api/v1/providers/{id}/access.
+// Grants a group access to a shared provider.
+func GrantProviderAccessHandler(queries storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		idStr := chi.URLParam(r, "id")
+		providerID, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid provider ID format")
+			return
+		}
+
+		// Only the owning group's admin/owner or system admin can grant access
+		provider, err := queries.GetProviderByID(r.Context(), providerID)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "provider not found")
+			return
+		}
+		callerGroupType := auth.GroupTypeFromContext(r.Context())
+		if provider.GroupID != groupID && callerGroupType != "system" {
+			respondError(w, http.StatusForbidden, "only the owning group or system admin can grant access")
+			return
+		}
+		if _, err := requireGroupRole(queries, r, provider.GroupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
+			return
+		}
+
+		var req grantAccessRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		targetGroupID, err := uuid.Parse(req.GroupID)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid group_id format")
+			return
+		}
+
+		callerUserID := auth.UserFromContext(r.Context())
+		if err := queries.GrantProviderAccess(r.Context(), storage.GrantProviderAccessParams{
+			ProviderID: providerID,
+			GroupID:    targetGroupID,
+			GrantedBy:  pgtype.UUID{Bytes: callerUserID, Valid: callerUserID != uuid.Nil},
+		}); err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// RevokeProviderAccessHandler handles DELETE /api/v1/providers/{id}/access/{groupId}.
+// Revokes a group's access to a shared provider.
+func RevokeProviderAccessHandler(queries storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		providerID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid provider ID format")
+			return
+		}
+		targetGroupID, err := uuid.Parse(chi.URLParam(r, "groupId"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid group ID format")
+			return
+		}
+
+		// Only the owning group's admin/owner or system admin can revoke access
+		provider, err := queries.GetProviderByID(r.Context(), providerID)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "provider not found")
+			return
+		}
+		callerGroupType := auth.GroupTypeFromContext(r.Context())
+		if provider.GroupID != groupID && callerGroupType != "system" {
+			respondError(w, http.StatusForbidden, "only the owning group or system admin can revoke access")
+			return
+		}
+		if _, err := requireGroupRole(queries, r, provider.GroupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
+			return
+		}
+
+		if err := queries.RevokeProviderAccess(r.Context(), storage.RevokeProviderAccessParams{
+			ProviderID: providerID,
+			GroupID:    targetGroupID,
+		}); err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}

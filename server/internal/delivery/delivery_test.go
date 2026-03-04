@@ -180,6 +180,9 @@ func (m *mockQuerier) DeleteProvider(_ context.Context, _ uuid.UUID) error { ret
 func (m *mockQuerier) GetProviderByID(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
 	return storage.EspProvider{}, nil
 }
+func (m *mockQuerier) GetGlobalStdoutProvider(_ context.Context) (storage.EspProvider, error) {
+	return storage.EspProvider{}, nil
+}
 func (m *mockQuerier) GetStdoutProviderByGroupID(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
 	return storage.EspProvider{}, nil
 }

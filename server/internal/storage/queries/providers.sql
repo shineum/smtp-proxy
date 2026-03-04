@@ -31,6 +31,9 @@ RETURNING *;
 -- name: GetStdoutProviderByGroupID :one
 SELECT * FROM esp_providers WHERE group_id = $1 AND provider_type = 'stdout' LIMIT 1;
 
+-- name: GetGlobalStdoutProvider :one
+SELECT * FROM esp_providers WHERE provider_type = 'stdout' AND visibility = 'global' AND enabled = true LIMIT 1;
+
 -- name: DeleteProvider :exec
 DELETE FROM esp_providers WHERE id = $1;
 

@@ -162,16 +162,6 @@ func CreateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 			})
 		}
 
-		// Auto-create stdout provider for the new group (global visibility)
-		_, _ = queries.CreateProvider(r.Context(), storage.CreateProviderParams{
-			GroupID:      group.ID,
-			Name:         "stdout",
-			ProviderType: storage.ProviderTypeStdout,
-			SmtpConfig:   []byte("{}"),
-			Enabled:      true,
-			Visibility:   storage.ProviderVisibilityGlobal,
-		})
-
 		if auditLogger != nil {
 			auditLogger.LogAdminAction(r.Context(), r, auth.AuditActionCreateGroup, "group", group.ID.String(), map[string]interface{}{
 				"name": req.Name,
@@ -609,10 +599,10 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 				return
 			}
 		} else {
-			// Default to the group's stdout provider
-			stdoutProvider, err := queries.GetStdoutProviderByGroupID(r.Context(), groupID)
+			// Default to the global stdout provider
+			stdoutProvider, err := queries.GetGlobalStdoutProvider(r.Context())
 			if err != nil {
-				respondError(w, http.StatusBadRequest, "no default provider available for this group")
+				respondError(w, http.StatusBadRequest, "no default stdout provider available")
 				return
 			}
 			providerUUID = stdoutProvider.ID

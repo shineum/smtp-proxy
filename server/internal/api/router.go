@@ -107,6 +107,9 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			r.Put("/{id}", UpdateProviderHandler(cfg.Queries))
 			r.Delete("/{id}", DeleteProviderHandler(cfg.Queries))
 			r.Get("/{id}/health", ProviderHealthHandler(cfg.Queries))
+			r.Get("/{id}/access", ListProviderAccessHandler(cfg.Queries))
+			r.Post("/{id}/access", GrantProviderAccessHandler(cfg.Queries))
+			r.Delete("/{id}/access/{groupId}", RevokeProviderAccessHandler(cfg.Queries))
 		})
 
 		// Routing Rules

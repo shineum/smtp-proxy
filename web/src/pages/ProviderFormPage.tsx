@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PageSection, Title, Card, CardBody,
   Form, FormGroup, TextInput, FormSelect, FormSelectOption,
-  Switch, Button, ActionGroup, Spinner,
+  Switch, Button, ActionGroup, Spinner, Label,
 } from '@patternfly/react-core';
-import { fetchProvider, createProvider, updateProvider } from '../api/resources';
+import {
+  fetchProvider, createProvider, updateProvider,
+  fetchProviderAccess, grantProviderAccess, revokeProviderAccess,
+  fetchGroups,
+} from '../api/resources';
 
 interface SmtpConfig {
   host: string;
@@ -121,6 +125,38 @@ export default function ProviderFormPage() {
     }
   };
 
+  const queryClient = useQueryClient();
+  const [grantGroupId, setGrantGroupId] = useState('');
+
+  const { data: accessList } = useQuery({
+    queryKey: ['provider-access', id],
+    queryFn: () => fetchProviderAccess(id!),
+    enabled: isEdit && visibility === 'shared',
+  });
+
+  const { data: allGroups } = useQuery({
+    queryKey: ['groups'],
+    queryFn: fetchGroups,
+    enabled: isEdit && visibility === 'shared',
+  });
+
+  const grantMutation = useMutation({
+    mutationFn: () => grantProviderAccess(id!, grantGroupId),
+    onSuccess: () => {
+      setGrantGroupId('');
+      queryClient.invalidateQueries({ queryKey: ['provider-access', id] });
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (groupId: string) => revokeProviderAccess(id!, groupId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['provider-access', id] }),
+  });
+
+  const grantableGroups = allGroups?.filter(
+    (g) => g.id !== existing?.group_id && !accessList?.some((a) => a.group_id === g.id)
+  ) ?? [];
+
   const saveMutation = useMutation({
     mutationFn: () => {
       const payload = buildPayload();
@@ -228,6 +264,52 @@ export default function ProviderFormPage() {
                   <FormGroup label="Sending Domain" isRequired fieldId="mg-domain">
                     <TextInput id="mg-domain" value={apiKey.domain} onChange={(_e, v) => setApiKey({ ...apiKey, domain: v })} isRequired />
                   </FormGroup>
+                )}
+              </>
+            )}
+
+            {isEdit && visibility === 'shared' && (
+              <>
+                <Title headingLevel="h3" size="md" style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>
+                  Group Access
+                </Title>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <FormSelect
+                    id="grant-group"
+                    value={grantGroupId}
+                    onChange={(_e, v) => setGrantGroupId(v)}
+                    style={{ maxWidth: '300px' }}
+                  >
+                    <FormSelectOption value="" label="-- Select group --" isDisabled />
+                    {grantableGroups.map((g) => (
+                      <FormSelectOption key={g.id} value={g.id} label={g.name} />
+                    ))}
+                  </FormSelect>
+                  <Button
+                    variant="secondary"
+                    isDisabled={!grantGroupId || grantMutation.isPending}
+                    onClick={() => grantMutation.mutate()}
+                  >
+                    Grant
+                  </Button>
+                </div>
+                {accessList && accessList.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    {accessList.map((a) => {
+                      const groupName = allGroups?.find((g) => g.id === a.group_id)?.name ?? a.group_id;
+                      return (
+                        <Label
+                          key={a.group_id}
+                          color="blue"
+                          onClose={() => revokeMutation.mutate(a.group_id)}
+                        >
+                          {groupName}
+                        </Label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p style={{ color: '#6a6e73' }}>No groups have been granted access yet.</p>
                 )}
               </>
             )}

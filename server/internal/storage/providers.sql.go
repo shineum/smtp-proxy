@@ -99,6 +99,28 @@ func (q *Queries) GetStdoutProviderByGroupID(ctx context.Context, groupID uuid.U
 	return i, err
 }
 
+const getGlobalStdoutProvider = `-- name: GetGlobalStdoutProvider :one
+SELECT id, name, provider_type, api_key, smtp_config, enabled, created_at, updated_at, group_id, visibility FROM esp_providers WHERE provider_type = 'stdout' AND visibility = 'global' AND enabled = true LIMIT 1
+`
+
+func (q *Queries) GetGlobalStdoutProvider(ctx context.Context) (EspProvider, error) {
+	row := q.db.QueryRow(ctx, getGlobalStdoutProvider)
+	var i EspProvider
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ProviderType,
+		&i.ApiKey,
+		&i.SmtpConfig,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.GroupID,
+		&i.Visibility,
+	)
+	return i, err
+}
+
 const deleteProvider = `-- name: DeleteProvider :exec
 DELETE FROM esp_providers WHERE id = $1
 `

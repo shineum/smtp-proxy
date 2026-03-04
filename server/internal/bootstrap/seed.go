@@ -12,6 +12,34 @@ import (
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
+// ensureGlobalStdoutProvider creates the global stdout provider owned by the
+// system group if it does not already exist. Migration 017 attempts this at
+// schema-migration time, but the system group is created later (here in
+// SeedSystemAdmin), so on first boot the migration finds no system group.
+func ensureGlobalStdoutProvider(ctx context.Context, queries storage.Querier, log zerolog.Logger, systemGroupID storage.Group) error {
+	_, err := queries.GetGlobalStdoutProvider(ctx)
+	if err == nil {
+		return nil // already exists
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+
+	_, err = queries.CreateProvider(ctx, storage.CreateProviderParams{
+		GroupID:      systemGroupID.ID,
+		Name:         "stdout",
+		ProviderType: storage.ProviderTypeStdout,
+		SmtpConfig:   []byte("{}"),
+		Enabled:      true,
+		Visibility:   storage.ProviderVisibilityGlobal,
+	})
+	if err != nil {
+		return err
+	}
+	log.Info().Msg("global stdout provider created")
+	return nil
+}
+
 // SeedSystemAdmin ensures a system group and admin user exist.
 // It is idempotent: if the system group already has members, it returns immediately.
 //
@@ -34,6 +62,11 @@ func SeedSystemAdmin(ctx context.Context, queries storage.Querier, log zerolog.L
 		}
 		if len(members) > 0 {
 			log.Info().Msg("system admin already exists, skipping seed")
+
+			// Ensure global stdout provider exists (may be missing on first boot).
+			if provErr := ensureGlobalStdoutProvider(ctx, queries, log, group); provErr != nil {
+				log.Warn().Err(provErr).Msg("failed to ensure global stdout provider")
+			}
 
 			// REQ-AUTH-002: Update password if provided.
 			if password != "" {
@@ -86,6 +119,11 @@ func SeedSystemAdmin(ctx context.Context, queries storage.Querier, log zerolog.L
 	})
 	if err != nil {
 		return err
+	}
+
+	// Ensure global stdout provider exists for development/testing.
+	if provErr := ensureGlobalStdoutProvider(ctx, queries, log, group); provErr != nil {
+		log.Warn().Err(provErr).Msg("failed to ensure global stdout provider")
 	}
 
 	log.Info().

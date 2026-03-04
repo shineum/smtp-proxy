@@ -26,6 +26,7 @@ type Querier interface {
 	CreateGroup(ctx context.Context, arg CreateGroupParams) (Group, error)
 	CreateGroupMember(ctx context.Context, arg CreateGroupMemberParams) (GroupMember, error)
 	CreateProvider(ctx context.Context, arg CreateProviderParams) (EspProvider, error)
+	GrantProviderAccess(ctx context.Context, arg GrantProviderAccessParams) error
 	CreateRoutingRule(ctx context.Context, arg CreateRoutingRuleParams) (RoutingRule, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
@@ -53,6 +54,9 @@ type Querier interface {
 	GetMessageByID(ctx context.Context, id uuid.UUID) (Message, error)
 	GetProviderByID(ctx context.Context, id uuid.UUID) (EspProvider, error)
 	GetStdoutProviderByGroupID(ctx context.Context, groupID uuid.UUID) (EspProvider, error)
+	IsProviderAccessible(ctx context.Context, arg IsProviderAccessibleParams) (bool, error)
+	ListAccessibleProviders(ctx context.Context, groupID uuid.UUID) ([]EspProvider, error)
+	ListProviderAccess(ctx context.Context, providerID uuid.UUID) ([]ProviderGroupAccess, error)
 	GetQueuedMessages(ctx context.Context, limit int32) ([]Message, error)
 	GetRoutingRuleByID(ctx context.Context, id uuid.UUID) (RoutingRule, error)
 	GetSessionByID(ctx context.Context, id uuid.UUID) (Session, error)
@@ -88,6 +92,7 @@ type Querier interface {
 	UpdateGroupStatus(ctx context.Context, arg UpdateGroupStatusParams) (Group, error)
 	UpdateMessageStatus(ctx context.Context, arg UpdateMessageStatusParams) error
 	UpdatePasswordDisabled(ctx context.Context, arg UpdatePasswordDisabledParams) (User, error)
+	RevokeProviderAccess(ctx context.Context, arg RevokeProviderAccessParams) error
 	UpdateProvider(ctx context.Context, arg UpdateProviderParams) (EspProvider, error)
 	UpdateRoutingRule(ctx context.Context, arg UpdateRoutingRuleParams) (RoutingRule, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)

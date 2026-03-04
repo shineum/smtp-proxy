@@ -55,7 +55,9 @@ type mockQuerier struct {
 	getStdoutProviderByGroupIDFn   func(ctx context.Context, groupID uuid.UUID) (storage.EspProvider, error)
 	listProvidersByGroupFn         func(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error)
 	updateProviderFn      func(ctx context.Context, arg storage.UpdateProviderParams) (storage.EspProvider, error)
-	deleteProviderFn      func(ctx context.Context, id uuid.UUID) error
+	deleteProviderFn       func(ctx context.Context, id uuid.UUID) error
+	isProviderAccessibleFn     func(arg storage.IsProviderAccessibleParams) (bool, error)
+	listAccessibleProvidersFn  func(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error)
 
 	// Routing Rule methods
 	createRoutingRuleFn      func(ctx context.Context, arg storage.CreateRoutingRuleParams) (storage.RoutingRule, error)
@@ -324,6 +326,32 @@ func (m *mockQuerier) ListProvidersByGroupID(ctx context.Context, groupID uuid.U
 	if m.listProvidersByGroupFn != nil {
 		return m.listProvidersByGroupFn(ctx, groupID)
 	}
+	return nil, nil
+}
+
+func (m *mockQuerier) ListAccessibleProviders(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error) {
+	if m.listAccessibleProvidersFn != nil {
+		return m.listAccessibleProvidersFn(ctx, groupID)
+	}
+	return nil, nil
+}
+
+func (m *mockQuerier) IsProviderAccessible(_ context.Context, arg storage.IsProviderAccessibleParams) (bool, error) {
+	if m.isProviderAccessibleFn != nil {
+		return m.isProviderAccessibleFn(arg)
+	}
+	return true, nil
+}
+
+func (m *mockQuerier) GrantProviderAccess(_ context.Context, _ storage.GrantProviderAccessParams) error {
+	return nil
+}
+
+func (m *mockQuerier) RevokeProviderAccess(_ context.Context, _ storage.RevokeProviderAccessParams) error {
+	return nil
+}
+
+func (m *mockQuerier) ListProviderAccess(_ context.Context, _ uuid.UUID) ([]storage.ProviderGroupAccess, error) {
 	return nil, nil
 }
 
@@ -664,6 +692,7 @@ func testProvider() storage.EspProvider {
 		ApiKey:       sql.NullString{String: "sg-key-123", Valid: true},
 		SmtpConfig:   []byte(`{}`),
 		Enabled:      true,
+		Visibility:   storage.ProviderVisibilityPrivate,
 		CreatedAt:    pgtype.Timestamptz{Valid: true},
 		UpdatedAt:    pgtype.Timestamptz{Valid: true},
 	}

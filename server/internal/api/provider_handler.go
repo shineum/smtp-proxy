@@ -18,6 +18,7 @@ type providerRequest struct {
 	APIKey       *string         `json:"api_key"`
 	SMTPConfig   json.RawMessage `json:"smtp_config"`
 	Enabled      bool            `json:"enabled"`
+	Visibility   string          `json:"visibility"`
 }
 
 // providerResponse is the JSON response for a provider.
@@ -28,6 +29,7 @@ type providerResponse struct {
 	ProviderType string          `json:"provider_type"`
 	SMTPConfig   json.RawMessage `json:"smtp_config"`
 	Enabled      bool            `json:"enabled"`
+	Visibility   string          `json:"visibility"`
 	CreatedAt    string          `json:"created_at"`
 	UpdatedAt    string          `json:"updated_at"`
 }
@@ -47,6 +49,7 @@ func toProviderResponse(p storage.EspProvider) providerResponse {
 		ProviderType: string(p.ProviderType),
 		SMTPConfig:   smtpConfig,
 		Enabled:      p.Enabled,
+		Visibility:   string(p.Visibility),
 		CreatedAt:    timestampToTime(p.CreatedAt).Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:    timestampToTime(p.UpdatedAt).Format("2006-01-02T15:04:05Z07:00"),
 	}
@@ -62,6 +65,12 @@ var validProviderTypes = map[string]storage.ProviderType{
 	"stdout":   storage.ProviderTypeStdout,
 }
 
+var validVisibilities = map[string]storage.ProviderVisibility{
+	"private": storage.ProviderVisibilityPrivate,
+	"shared":  storage.ProviderVisibilityShared,
+	"global":  storage.ProviderVisibilityGlobal,
+}
+
 // CreateProviderHandler handles POST /api/v1/providers.
 // Creates a new ESP provider for the authenticated user's group.
 func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
@@ -69,6 +78,12 @@ func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
 		groupID := auth.GroupIDFromContext(r.Context())
 		if groupID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		// Require owner or admin role for provider management
+		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
 			return
 		}
 
@@ -83,6 +98,24 @@ func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
 		if !ok {
 			respondError(w, http.StatusBadRequest, "invalid provider_type")
 			return
+		}
+
+		// Determine visibility: default to private, only system admin can set global
+		visibility := storage.ProviderVisibilityPrivate
+		if req.Visibility != "" {
+			v, ok := validVisibilities[req.Visibility]
+			if !ok {
+				respondError(w, http.StatusBadRequest, "invalid visibility: must be private, shared, or global")
+				return
+			}
+			if v == storage.ProviderVisibilityGlobal {
+				callerGroupType := auth.GroupTypeFromContext(r.Context())
+				if callerGroupType != "system" {
+					respondError(w, http.StatusForbidden, "only system admins can create global providers")
+					return
+				}
+			}
+			visibility = v
 		}
 
 		// Build api_key as sql.NullString
@@ -104,6 +137,7 @@ func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
 			ApiKey:       apiKey,
 			SmtpConfig:   smtpConfig,
 			Enabled:      req.Enabled,
+			Visibility:   visibility,
 		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
@@ -115,7 +149,7 @@ func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
 }
 
 // ListProvidersHandler handles GET /api/v1/providers.
-// Lists all providers for the authenticated user's group.
+// Lists all providers accessible to the authenticated user's group.
 func ListProvidersHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
@@ -124,7 +158,7 @@ func ListProvidersHandler(queries storage.Querier) http.HandlerFunc {
 			return
 		}
 
-		providers, err := queries.ListProvidersByGroupID(r.Context(), groupID)
+		providers, err := queries.ListAccessibleProviders(r.Context(), groupID)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -142,6 +176,12 @@ func ListProvidersHandler(queries storage.Querier) http.HandlerFunc {
 // GetProviderHandler handles GET /api/v1/providers/{id}.
 func GetProviderHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
 		if err != nil {
@@ -155,6 +195,16 @@ func GetProviderHandler(queries storage.Querier) http.HandlerFunc {
 			return
 		}
 
+		// Check access: owner group or accessible via visibility
+		accessible, err := queries.IsProviderAccessible(r.Context(), storage.IsProviderAccessibleParams{
+			ID:      id,
+			GroupID: groupID,
+		})
+		if err != nil || !accessible {
+			respondError(w, http.StatusForbidden, "access denied to this provider")
+			return
+		}
+
 		respondJSON(w, http.StatusOK, toProviderResponse(provider))
 	}
 }
@@ -162,10 +212,34 @@ func GetProviderHandler(queries storage.Querier) http.HandlerFunc {
 // UpdateProviderHandler handles PUT /api/v1/providers/{id}.
 func UpdateProviderHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
+			return
+		}
+
+		// Only the owning group can update a provider
+		existing, err := queries.GetProviderByID(r.Context(), id)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "provider not found")
+			return
+		}
+		callerGroupType := auth.GroupTypeFromContext(r.Context())
+		if existing.GroupID != groupID && callerGroupType != "system" {
+			respondError(w, http.StatusForbidden, "only the owning group or system admin can update a provider")
+			return
+		}
+
+		// Require owner or admin role
+		if _, err := requireGroupRole(queries, r, existing.GroupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
 			return
 		}
 
@@ -180,6 +254,21 @@ func UpdateProviderHandler(queries storage.Querier) http.HandlerFunc {
 		if !ok {
 			respondError(w, http.StatusBadRequest, "invalid provider_type")
 			return
+		}
+
+		// Determine visibility
+		visibility := existing.Visibility
+		if req.Visibility != "" {
+			v, ok := validVisibilities[req.Visibility]
+			if !ok {
+				respondError(w, http.StatusBadRequest, "invalid visibility: must be private, shared, or global")
+				return
+			}
+			if v == storage.ProviderVisibilityGlobal && callerGroupType != "system" {
+				respondError(w, http.StatusForbidden, "only system admins can set global visibility")
+				return
+			}
+			visibility = v
 		}
 
 		// Build api_key as sql.NullString
@@ -201,6 +290,7 @@ func UpdateProviderHandler(queries storage.Querier) http.HandlerFunc {
 			ApiKey:       apiKey,
 			SmtpConfig:   smtpConfig,
 			Enabled:      req.Enabled,
+			Visibility:   visibility,
 		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
@@ -214,10 +304,34 @@ func UpdateProviderHandler(queries storage.Querier) http.HandlerFunc {
 // DeleteProviderHandler handles DELETE /api/v1/providers/{id}.
 func DeleteProviderHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
+			return
+		}
+
+		// Only the owning group can delete a provider
+		existing, err := queries.GetProviderByID(r.Context(), id)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "provider not found")
+			return
+		}
+		callerGroupType := auth.GroupTypeFromContext(r.Context())
+		if existing.GroupID != groupID && callerGroupType != "system" {
+			respondError(w, http.StatusForbidden, "only the owning group or system admin can delete a provider")
+			return
+		}
+
+		// Require owner or admin role
+		if _, err := requireGroupRole(queries, r, existing.GroupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
 			return
 		}
 

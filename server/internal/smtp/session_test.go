@@ -221,6 +221,21 @@ func (m *mockQuerier) GetProviderByID(_ context.Context, _ uuid.UUID) (storage.E
 func (m *mockQuerier) GetStdoutProviderByGroupID(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
 	return storage.EspProvider{}, nil
 }
+func (m *mockQuerier) ListAccessibleProviders(_ context.Context, _ uuid.UUID) ([]storage.EspProvider, error) {
+	return nil, nil
+}
+func (m *mockQuerier) IsProviderAccessible(_ context.Context, _ storage.IsProviderAccessibleParams) (bool, error) {
+	return true, nil
+}
+func (m *mockQuerier) GrantProviderAccess(_ context.Context, _ storage.GrantProviderAccessParams) error {
+	return nil
+}
+func (m *mockQuerier) RevokeProviderAccess(_ context.Context, _ storage.RevokeProviderAccessParams) error {
+	return nil
+}
+func (m *mockQuerier) ListProviderAccess(_ context.Context, _ uuid.UUID) ([]storage.ProviderGroupAccess, error) {
+	return nil, nil
+}
 
 func (m *mockQuerier) GetQueuedMessages(_ context.Context, _ int32) ([]storage.Message, error) {
 	return nil, nil

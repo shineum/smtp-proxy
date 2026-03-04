@@ -72,6 +72,7 @@ export interface Provider {
   provider_type: string;
   smtp_config: Record<string, unknown>;
   enabled: boolean;
+  visibility: 'private' | 'shared' | 'global';
   created_at: string;
   updated_at: string;
 }

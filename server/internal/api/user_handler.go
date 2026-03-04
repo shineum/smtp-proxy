@@ -238,12 +238,15 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 				return
 			}
 
-			// For SMTP accounts, verify provider belongs to the same group
+			// For SMTP accounts, verify provider is accessible to this group
 			if req.ProviderID != "" {
 				pid, _ := uuid.Parse(req.ProviderID)
-				esp, _ := queries.GetProviderByID(r.Context(), pid)
-				if esp.GroupID != groupID {
-					respondError(w, http.StatusBadRequest, "provider does not belong to the specified group")
+				accessible, accessErr := queries.IsProviderAccessible(r.Context(), storage.IsProviderAccessibleParams{
+					ID:      pid,
+					GroupID: groupID,
+				})
+				if accessErr != nil || !accessible {
+					respondError(w, http.StatusBadRequest, "provider not accessible to the specified group")
 					return
 				}
 			} else if req.AccountType == "smtp" {

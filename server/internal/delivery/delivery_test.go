@@ -192,6 +192,21 @@ func (m *mockQuerier) ListProvidersByGroupID(ctx context.Context, groupID uuid.U
 func (m *mockQuerier) UpdateProvider(_ context.Context, _ storage.UpdateProviderParams) (storage.EspProvider, error) {
 	return storage.EspProvider{}, nil
 }
+func (m *mockQuerier) ListAccessibleProviders(_ context.Context, _ uuid.UUID) ([]storage.EspProvider, error) {
+	return nil, nil
+}
+func (m *mockQuerier) IsProviderAccessible(_ context.Context, _ storage.IsProviderAccessibleParams) (bool, error) {
+	return true, nil
+}
+func (m *mockQuerier) GrantProviderAccess(_ context.Context, _ storage.GrantProviderAccessParams) error {
+	return nil
+}
+func (m *mockQuerier) RevokeProviderAccess(_ context.Context, _ storage.RevokeProviderAccessParams) error {
+	return nil
+}
+func (m *mockQuerier) ListProviderAccess(_ context.Context, _ uuid.UUID) ([]storage.ProviderGroupAccess, error) {
+	return nil, nil
+}
 
 // RoutingRule methods.
 func (m *mockQuerier) CreateRoutingRule(_ context.Context, _ storage.CreateRoutingRuleParams) (storage.RoutingRule, error) {

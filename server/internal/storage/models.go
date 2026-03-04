@@ -187,6 +187,26 @@ type DeliveryLog struct {
 	GroupID           pgtype.UUID        `json:"group_id"`
 }
 
+type ProviderVisibility string
+
+const (
+	ProviderVisibilityPrivate ProviderVisibility = "private"
+	ProviderVisibilityShared  ProviderVisibility = "shared"
+	ProviderVisibilityGlobal  ProviderVisibility = "global"
+)
+
+func (e *ProviderVisibility) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ProviderVisibility(s)
+	case string:
+		*e = ProviderVisibility(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ProviderVisibility: %T", src)
+	}
+	return nil
+}
+
 type EspProvider struct {
 	ID           uuid.UUID          `json:"id"`
 	Name         string             `json:"name"`
@@ -197,6 +217,14 @@ type EspProvider struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	GroupID      uuid.UUID          `json:"group_id"`
+	Visibility   ProviderVisibility `json:"visibility"`
+}
+
+type ProviderGroupAccess struct {
+	ProviderID uuid.UUID          `json:"provider_id"`
+	GroupID    uuid.UUID          `json:"group_id"`
+	GrantedAt  pgtype.Timestamptz `json:"granted_at"`
+	GrantedBy  pgtype.UUID        `json:"granted_by"`
 }
 
 type Group struct {

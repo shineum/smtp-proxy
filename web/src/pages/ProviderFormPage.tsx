@@ -37,6 +37,7 @@ export default function ProviderFormPage() {
   const [name, setName] = useState('');
   const [providerType, setProviderType] = useState('smtp');
   const [enabled, setEnabled] = useState(true);
+  const [visibility, setVisibility] = useState('private');
   const [smtp, setSmtp] = useState<SmtpConfig>({ host: '', port: '587', username: '', password: '', encryption: 'starttls' });
   const [msgraph, setMsgraph] = useState<MsGraphConfig>({ tenant_id: '', client_id: '', client_secret: '', user_id: '' });
   const [apiKey, setApiKey] = useState<ApiKeyConfig>({ api_key: '', region: 'us-east-1', domain: '' });
@@ -52,6 +53,7 @@ export default function ProviderFormPage() {
       setName(existing.name);
       setProviderType(existing.provider_type);
       setEnabled(existing.enabled);
+      setVisibility(existing.visibility || 'private');
       const cfg = existing.smtp_config || {};
       setSmtp({
         host: (cfg.host as string) || '',
@@ -104,7 +106,7 @@ export default function ProviderFormPage() {
         smtpConfig = { api_key: apiKey.api_key, domain: apiKey.domain };
         break;
     }
-    return { name, provider_type: providerType, enabled, smtp_config: smtpConfig };
+    return { name, provider_type: providerType, enabled, visibility, smtp_config: smtpConfig };
   };
 
   const isFormValid = (): boolean => {
@@ -153,6 +155,13 @@ export default function ProviderFormPage() {
             </FormGroup>
             <FormGroup label="Enabled" fieldId="provider-enabled">
               <Switch id="provider-enabled" isChecked={enabled} onChange={(_e, v) => setEnabled(v)} />
+            </FormGroup>
+            <FormGroup label="Visibility" fieldId="provider-visibility">
+              <FormSelect id="provider-visibility" value={visibility} onChange={(_e, v) => setVisibility(v)}>
+                <FormSelectOption value="private" label="Private (owner group only)" />
+                <FormSelectOption value="shared" label="Shared (granted groups)" />
+                <FormSelectOption value="global" label="Global (all groups)" />
+              </FormSelect>
             </FormGroup>
 
             {providerType === 'smtp' && (

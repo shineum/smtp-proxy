@@ -162,13 +162,14 @@ func CreateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 			})
 		}
 
-		// Auto-create stdout provider for the new group
+		// Auto-create stdout provider for the new group (global visibility)
 		_, _ = queries.CreateProvider(r.Context(), storage.CreateProviderParams{
 			GroupID:      group.ID,
 			Name:         "stdout",
 			ProviderType: storage.ProviderTypeStdout,
 			SmtpConfig:   []byte("{}"),
 			Enabled:      true,
+			Visibility:   storage.ProviderVisibilityGlobal,
 		})
 
 		if auditLogger != nil {
@@ -598,18 +599,13 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 				return
 			}
 
-			// Verify provider exists, is enabled, and belongs to this group
-			provider, err := queries.GetProviderByID(r.Context(), providerUUID)
-			if err != nil {
-				respondError(w, http.StatusBadRequest, "provider not found")
-				return
-			}
-			if !provider.Enabled {
-				respondError(w, http.StatusBadRequest, "provider is not enabled")
-				return
-			}
-			if provider.GroupID != groupID {
-				respondError(w, http.StatusBadRequest, "provider does not belong to this group")
+			// Verify provider is accessible to this group (owner, shared, or global)
+			accessible, err := queries.IsProviderAccessible(r.Context(), storage.IsProviderAccessibleParams{
+				ID:      providerUUID,
+				GroupID: groupID,
+			})
+			if err != nil || !accessible {
+				respondError(w, http.StatusBadRequest, "provider not found or not accessible to this group")
 				return
 			}
 		} else {

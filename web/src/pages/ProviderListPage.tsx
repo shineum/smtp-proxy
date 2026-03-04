@@ -46,6 +46,7 @@ export default function ProviderListPage() {
           <Tr>
             <Th>Name</Th>
             <Th>Type</Th>
+            <Th>Visibility</Th>
             <Th>Enabled</Th>
             <Th>Health (24h)</Th>
             <Th>Created</Th>
@@ -59,6 +60,7 @@ export default function ProviderListPage() {
               <Tr key={p.id} isClickable onRowClick={() => navigate(`/providers/${p.id}`)}>
                 <Td>{p.name}</Td>
                 <Td><Label>{p.provider_type}</Label></Td>
+                <Td><Label color={p.visibility === 'global' ? 'blue' : p.visibility === 'shared' ? 'cyan' : 'grey'}>{p.visibility || 'private'}</Label></Td>
                 <Td><Label color={p.enabled ? 'green' : 'grey'}>{p.enabled ? 'Yes' : 'No'}</Label></Td>
                 <Td>
                   {health ? (

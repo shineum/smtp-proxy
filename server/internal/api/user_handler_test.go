@@ -236,6 +236,10 @@ func TestCreateUserHandler_SMTPAccount_ProviderMustBelongToGroup(t *testing.T) {
 			// Provider belongs to a different group
 			return storage.EspProvider{ID: providerID, GroupID: otherGroupID, Enabled: true}, nil
 		},
+		isProviderAccessibleFn: func(arg storage.IsProviderAccessibleParams) (bool, error) {
+			// Provider is not accessible to the requesting group
+			return false, nil
+		},
 	}
 
 	body := `{"account_type":"smtp","username":"smtp-bot","group_id":"` + groupID.String() + `","provider_id":"` + providerID.String() + `"}`

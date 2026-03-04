@@ -31,6 +31,11 @@ export const createServiceAccount = async (
   data: { username: string; email?: string; allowed_domains?: string[]; provider_id?: string }
 ): Promise<User> => (await api.post(`/groups/${groupId}/service-accounts`, data)).data;
 
+export const updateServiceAccount = async (
+  groupId: string, userId: string,
+  data: { allowed_domains?: string[]; provider_id?: string }
+): Promise<User> => (await api.patch(`/groups/${groupId}/service-accounts/${userId}`, data)).data;
+
 // Activity logs
 export const fetchActivityLogs = async (groupId: string, limit = 50, offset = 0): Promise<ActivityLog[]> =>
   (await api.get(`/groups/${groupId}/activity`, { params: { limit, offset } })).data;

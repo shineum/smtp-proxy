@@ -12,7 +12,8 @@ import { useState, useEffect } from 'react';
 import {
   fetchGroup, fetchGroupMembers, fetchActivityLogs,
   addGroupMember, removeMember, updateMemberRole,
-  createServiceAccount, fetchProviders, updateGroup,
+  createServiceAccount, updateServiceAccount, fetchUser,
+  fetchProviders, updateGroup,
 } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
 import type { User } from '../types/api';
@@ -30,6 +31,12 @@ export default function GroupDetailPage() {
   const [saDomains, setSaDomains] = useState('');
   const [saProviderId, setSaProviderId] = useState('');
   const [createdSA, setCreatedSA] = useState<User | null>(null);
+
+  // Edit service account state
+  const [isEditSAOpen, setIsEditSAOpen] = useState(false);
+  const [editSAUserId, setEditSAUserId] = useState('');
+  const [editSADomains, setEditSADomains] = useState('');
+  const [editSAProviderId, setEditSAProviderId] = useState('');
 
   // Add member state
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
@@ -65,7 +72,7 @@ export default function GroupDetailPage() {
   const { data: providers } = useQuery({
     queryKey: ['providers'],
     queryFn: fetchProviders,
-    enabled: isCreateSAOpen,
+    enabled: isCreateSAOpen || isEditSAOpen,
   });
 
   // Auto-select stdout provider as default when providers load
@@ -124,6 +131,33 @@ export default function GroupDetailPage() {
       setIsEditOpen(false);
     },
   });
+
+  const editSAMutation = useMutation({
+    mutationFn: () => {
+      const domains = editSADomains.trim() ? editSADomains.split(',').map(d => d.trim()).filter(Boolean) : [];
+      return updateServiceAccount(id!, editSAUserId, {
+        allowed_domains: domains,
+        provider_id: editSAProviderId || undefined,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['group-members', id] });
+      setIsEditSAOpen(false);
+    },
+  });
+
+  const openEditSAModal = async (userId: string) => {
+    setEditSAUserId(userId);
+    try {
+      const user = await fetchUser(userId);
+      setEditSADomains(user.allowed_domains?.join(', ') || '');
+      setEditSAProviderId(user.provider_id || '');
+    } catch {
+      setEditSADomains('');
+      setEditSAProviderId('');
+    }
+    setIsEditSAOpen(true);
+  };
 
   const openEditModal = () => {
     setEditName(group?.name || '');
@@ -239,9 +273,14 @@ export default function GroupDetailPage() {
                       <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
                       {isOwnerOrAdmin && (
                         <Td>
-                          <Button variant="danger" size="sm" onClick={() => { if (confirm('Remove this service account?')) removeMemberMutation.mutate(m.user_id); }}>
-                            Remove
-                          </Button>
+                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <Button variant="secondary" size="sm" onClick={() => openEditSAModal(m.user_id)}>
+                              Edit
+                            </Button>
+                            <Button variant="danger" size="sm" onClick={() => { if (confirm('Remove this service account?')) removeMemberMutation.mutate(m.user_id); }}>
+                              Remove
+                            </Button>
+                          </div>
                         </Td>
                       )}
                     </Tr>
@@ -371,6 +410,37 @@ export default function GroupDetailPage() {
           </FormGroup>
           {editGroupMutation.isError && (
             <p style={{ color: 'red' }}>Failed to update group.</p>
+          )}
+        </Form>
+      </Modal>
+
+      {/* Edit Service Account Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        title="Edit Service Account"
+        isOpen={isEditSAOpen}
+        onClose={() => setIsEditSAOpen(false)}
+        actions={[
+          <Button key="save" onClick={() => editSAMutation.mutate()} isDisabled={editSAMutation.isPending}>
+            {editSAMutation.isPending ? 'Saving...' : 'Save'}
+          </Button>,
+          <Button key="cancel" variant="link" onClick={() => setIsEditSAOpen(false)}>Cancel</Button>,
+        ]}
+      >
+        <Form>
+          <FormGroup label="Allowed Domains (comma-separated)" fieldId="edit-sa-domains">
+            <TextInput id="edit-sa-domains" value={editSADomains} onChange={(_e, v) => setEditSADomains(v)} placeholder="example.com, other.com" />
+          </FormGroup>
+          <FormGroup label="Provider" fieldId="edit-sa-provider">
+            <FormSelect id="edit-sa-provider" value={editSAProviderId} onChange={(_e, v) => setEditSAProviderId(v)}>
+              <FormSelectOption value="" label="Select a provider" isPlaceholder />
+              {providers?.filter(p => p.enabled).map((p) => (
+                <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.provider_type})`} />
+              ))}
+            </FormSelect>
+          </FormGroup>
+          {editSAMutation.isError && (
+            <p style={{ color: 'red' }}>Failed to update service account.</p>
           )}
         </Form>
       </Modal>

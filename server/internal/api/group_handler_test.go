@@ -529,3 +529,121 @@ func TestRemoveGroupMemberHandler_LastOwner(t *testing.T) {
 		t.Fatalf("expected status 409, got %d", rec.Code)
 	}
 }
+
+func TestUpdateServiceAccountHandler_Success(t *testing.T) {
+	grp := testGroup()
+	saUser := testUser()
+	saUser.AccountType = "smtp"
+	saUser.Email = "svc@smtp.internal"
+	member := testGroupMember()
+	member.UserID = saUser.ID
+
+	updatedUser := saUser
+	updatedUser.AllowedDomains = []byte(`["example.com"]`)
+
+	mock := &mockQuerier{
+		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
+			return member, nil
+		},
+		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+			return saUser, nil
+		},
+		updateUserFn: func(ctx context.Context, arg storage.UpdateUserParams) (storage.User, error) {
+			return updatedUser, nil
+		},
+		isProviderAccessibleFn: func(arg storage.IsProviderAccessibleParams) (bool, error) {
+			return true, nil
+		},
+		updateUserProviderFn: func(ctx context.Context, arg storage.UpdateUserProviderParams) (storage.User, error) {
+			return updatedUser, nil
+		},
+	}
+
+	body := `{"allowed_domains":["example.com"],"provider_id":"00000000-0000-0000-0000-000000000002"}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+grp.ID.String()+"/service-accounts/"+saUser.ID.String(), strings.NewReader(body))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("uid", saUser.ID.String())
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler := UpdateServiceAccountHandler(mock, nil)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateServiceAccountHandler_Forbidden(t *testing.T) {
+	grp := testGroup()
+	callerID := uuid.MustParse("00000000-0000-0000-0000-000000000050")
+	saUserID := uuid.MustParse("00000000-0000-0000-0000-000000000051")
+
+	mock := &mockQuerier{
+		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
+			if arg.UserID == callerID {
+				return storage.GroupMember{Role: "member"}, nil
+			}
+			return storage.GroupMember{}, errNotFound
+		},
+	}
+
+	body := `{"allowed_domains":["example.com"]}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+grp.ID.String()+"/service-accounts/"+saUserID.String(), strings.NewReader(body))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("uid", saUserID.String())
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	ctx = setJWTContext(ctx, callerID, grp.ID, "member", "company")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler := UpdateServiceAccountHandler(mock, nil)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateServiceAccountHandler_NotSMTP(t *testing.T) {
+	grp := testGroup()
+	humanUser := testUser()
+	humanUser.AccountType = "user"
+	member := testGroupMember()
+	member.UserID = humanUser.ID
+
+	mock := &mockQuerier{
+		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
+			return member, nil
+		},
+		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+			return humanUser, nil
+		},
+	}
+
+	body := `{"allowed_domains":["example.com"]}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+grp.ID.String()+"/service-accounts/"+humanUser.ID.String(), strings.NewReader(body))
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("uid", humanUser.ID.String())
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler := UpdateServiceAccountHandler(mock, nil)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}

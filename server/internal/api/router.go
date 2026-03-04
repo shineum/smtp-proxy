@@ -81,6 +81,7 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 
 				// Service accounts (group-scoped)
 				r.Post("/service-accounts", CreateServiceAccountHandler(cfg.Queries, cfg.AuditLogger))
+				r.Patch("/service-accounts/{uid}", UpdateServiceAccountHandler(cfg.Queries, cfg.AuditLogger))
 
 				// Activity logs
 				r.Get("/activity", ListActivityLogsHandler(cfg.Queries))

@@ -553,6 +553,122 @@ func RemoveGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLo
 	}
 }
 
+// updateServiceAccountRequest is the JSON body for PATCH /api/v1/groups/{id}/service-accounts/{uid}.
+type updateServiceAccountRequest struct {
+	AllowedDomains []string `json:"allowed_domains,omitempty"`
+	ProviderID     string   `json:"provider_id,omitempty"`
+}
+
+// UpdateServiceAccountHandler handles PATCH /api/v1/groups/{id}/service-accounts/{uid}.
+// Updates allowed_domains and/or provider_id for an SMTP service account.
+// Requires owner or admin role in the group.
+func UpdateServiceAccountHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		groupID, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid group ID format")
+			return
+		}
+
+		uidStr := chi.URLParam(r, "uid")
+		userID, err := uuid.Parse(uidStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
+			return
+		}
+
+		// Verify user belongs to this group
+		_, err = queries.GetGroupMemberByUserAndGroup(r.Context(), storage.GetGroupMemberByUserAndGroupParams{
+			UserID:  userID,
+			GroupID: groupID,
+		})
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user is not a member of this group")
+			return
+		}
+
+		// Verify user is an SMTP service account
+		user, err := queries.GetUserByID(r.Context(), userID)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		if user.AccountType != "smtp" {
+			respondError(w, http.StatusBadRequest, "user is not a service account")
+			return
+		}
+
+		var req updateServiceAccountRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		// Update allowed_domains if provided
+		if req.AllowedDomains != nil {
+			var domainsJSON []byte
+			if len(req.AllowedDomains) > 0 {
+				domainsJSON, err = json.Marshal(req.AllowedDomains)
+				if err != nil {
+					respondError(w, http.StatusInternalServerError, "internal server error")
+					return
+				}
+			}
+			user, err = queries.UpdateUser(r.Context(), storage.UpdateUserParams{
+				ID:             user.ID,
+				Email:          user.Email,
+				Status:         user.Status,
+				AllowedDomains: domainsJSON,
+			})
+			if err != nil {
+				respondError(w, http.StatusInternalServerError, "failed to update allowed domains")
+				return
+			}
+		}
+
+		// Update provider_id if provided
+		if req.ProviderID != "" {
+			providerUUID, err := uuid.Parse(req.ProviderID)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "invalid provider_id format")
+				return
+			}
+
+			accessible, err := queries.IsProviderAccessible(r.Context(), storage.IsProviderAccessibleParams{
+				ID:      providerUUID,
+				GroupID: groupID,
+			})
+			if err != nil || !accessible {
+				respondError(w, http.StatusBadRequest, "provider not found or not accessible to this group")
+				return
+			}
+
+			user, err = queries.UpdateUserProvider(r.Context(), storage.UpdateUserProviderParams{
+				ID:         user.ID,
+				ProviderID: pgtype.UUID{Bytes: providerUUID, Valid: true},
+			})
+			if err != nil {
+				respondError(w, http.StatusInternalServerError, "failed to update provider")
+				return
+			}
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "admin.update_service_account", "user", user.ID.String(), map[string]interface{}{
+				"group_id": groupID.String(),
+			})
+		}
+
+		respondJSON(w, http.StatusOK, toUserResponse(user))
+	}
+}
+
 // CreateServiceAccountHandler handles POST /api/v1/groups/{id}/service-accounts.
 // Creates an SMTP service account and adds it to the group.
 // Requires owner or admin role in the group.

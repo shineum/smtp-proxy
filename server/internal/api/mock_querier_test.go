@@ -26,8 +26,9 @@ type mockQuerier struct {
 	getUserByUsernameFn func(ctx context.Context, username sql.NullString) (storage.User, error)
 	getUserByAPIKeyFn  func(ctx context.Context, apiKey sql.NullString) (storage.User, error)
 	listUsersFn        func(ctx context.Context) ([]storage.User, error)
-	updateUserFn       func(ctx context.Context, arg storage.UpdateUserParams) (storage.User, error)
-	updateUserStatusFn func(ctx context.Context, arg storage.UpdateUserStatusParams) (storage.User, error)
+	updateUserFn         func(ctx context.Context, arg storage.UpdateUserParams) (storage.User, error)
+	updateUserProviderFn func(ctx context.Context, arg storage.UpdateUserProviderParams) (storage.User, error)
+	updateUserStatusFn   func(ctx context.Context, arg storage.UpdateUserStatusParams) (storage.User, error)
 	deleteUserFn       func(ctx context.Context, id uuid.UUID) error
 
 	// Group methods
@@ -149,7 +150,10 @@ func (m *mockQuerier) UpdatePasswordDisabled(_ context.Context, _ storage.Update
 	return storage.User{}, nil
 }
 
-func (m *mockQuerier) UpdateUserProvider(_ context.Context, _ storage.UpdateUserProviderParams) (storage.User, error) {
+func (m *mockQuerier) UpdateUserProvider(ctx context.Context, arg storage.UpdateUserProviderParams) (storage.User, error) {
+	if m.updateUserProviderFn != nil {
+		return m.updateUserProviderFn(ctx, arg)
+	}
 	return storage.User{}, nil
 }
 

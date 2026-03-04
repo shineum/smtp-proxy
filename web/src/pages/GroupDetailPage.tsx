@@ -8,7 +8,7 @@ import {
   FormSelect, FormSelectOption, ClipboardCopy,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   fetchGroup, fetchGroupMembers, fetchActivityLogs,
   addGroupMember, removeMember, updateMemberRole,
@@ -63,6 +63,15 @@ export default function GroupDetailPage() {
     enabled: isCreateSAOpen,
   });
 
+  // Auto-select stdout provider as default when providers load
+  useEffect(() => {
+    if (providers && !saProviderId) {
+      const stdout = providers.find(p => p.provider_type === 'stdout' && p.enabled);
+      if (stdout) setSaProviderId(stdout.id);
+    }
+  }, [providers]);
+
+
   const createSAMutation = useMutation({
     mutationFn: () => {
       const domains = saDomains.trim() ? saDomains.split(',').map(d => d.trim()).filter(Boolean) : undefined;
@@ -70,7 +79,7 @@ export default function GroupDetailPage() {
         username: saUsername,
         email: saEmail || undefined,
         allowed_domains: domains,
-        provider_id: saProviderId,
+        provider_id: saProviderId || undefined,
       });
     },
     onSuccess: (data) => {
@@ -251,7 +260,7 @@ export default function GroupDetailPage() {
         actions={createdSA ? [
           <Button key="close" onClick={() => { setIsCreateSAOpen(false); setCreatedSA(null); }}>Close</Button>,
         ] : [
-          <Button key="create" onClick={() => createSAMutation.mutate()} isDisabled={!saUsername || !saProviderId || createSAMutation.isPending}>
+          <Button key="create" onClick={() => createSAMutation.mutate()} isDisabled={!saUsername || createSAMutation.isPending}>
             {createSAMutation.isPending ? 'Creating...' : 'Create'}
           </Button>,
           <Button key="cancel" variant="link" onClick={() => setIsCreateSAOpen(false)}>Cancel</Button>,
@@ -269,7 +278,7 @@ export default function GroupDetailPage() {
             <FormGroup label="Username" isRequired fieldId="sa-username">
               <TextInput id="sa-username" value={saUsername} onChange={(_e, v) => setSaUsername(v)} isRequired />
             </FormGroup>
-            <FormGroup label="Provider" isRequired fieldId="sa-provider">
+            <FormGroup label="Provider (defaults to stdout)" fieldId="sa-provider">
               <FormSelect id="sa-provider" value={saProviderId} onChange={(_e, v) => setSaProviderId(v)}>
                 <FormSelectOption value="" label="Select a provider" isPlaceholder />
                 {providers?.filter(p => p.enabled).map((p) => (

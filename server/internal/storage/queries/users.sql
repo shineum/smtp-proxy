@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (email, password_hash, account_type, username, api_key, allowed_domains, password_disabled)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO users (email, password_hash, account_type, username, api_key, allowed_domains, password_disabled, provider_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: GetUserByID :one
@@ -62,5 +62,11 @@ ORDER BY u.created_at DESC;
 -- name: UpdatePasswordDisabled :one
 UPDATE users
 SET password_disabled = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- name: UpdateUserProvider :one
+UPDATE users
+SET provider_id = $2, updated_at = NOW()
 WHERE id = $1
 RETURNING *;

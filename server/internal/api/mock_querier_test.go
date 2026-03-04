@@ -51,8 +51,9 @@ type mockQuerier struct {
 
 	// Provider methods
 	createProviderFn      func(ctx context.Context, arg storage.CreateProviderParams) (storage.EspProvider, error)
-	getProviderByIDFn     func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error)
-	listProvidersByGroupFn func(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error)
+	getProviderByIDFn              func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error)
+	getStdoutProviderByGroupIDFn   func(ctx context.Context, groupID uuid.UUID) (storage.EspProvider, error)
+	listProvidersByGroupFn         func(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error)
 	updateProviderFn      func(ctx context.Context, arg storage.UpdateProviderParams) (storage.EspProvider, error)
 	deleteProviderFn      func(ctx context.Context, id uuid.UUID) error
 
@@ -134,6 +135,10 @@ func (m *mockQuerier) UpdateUser(ctx context.Context, arg storage.UpdateUserPara
 }
 
 func (m *mockQuerier) UpdatePasswordDisabled(_ context.Context, _ storage.UpdatePasswordDisabledParams) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) UpdateUserProvider(_ context.Context, _ storage.UpdateUserProviderParams) (storage.User, error) {
 	return storage.User{}, nil
 }
 
@@ -306,6 +311,13 @@ func (m *mockQuerier) GetProviderByID(ctx context.Context, id uuid.UUID) (storag
 		return m.getProviderByIDFn(ctx, id)
 	}
 	return storage.EspProvider{}, nil
+}
+
+func (m *mockQuerier) GetStdoutProviderByGroupID(ctx context.Context, groupID uuid.UUID) (storage.EspProvider, error) {
+	if m.getStdoutProviderByGroupIDFn != nil {
+		return m.getStdoutProviderByGroupIDFn(ctx, groupID)
+	}
+	return storage.EspProvider{}, errNotFound
 }
 
 func (m *mockQuerier) ListProvidersByGroupID(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error) {

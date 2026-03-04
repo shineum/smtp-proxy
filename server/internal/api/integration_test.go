@@ -574,6 +574,7 @@ func TestSMTPAccountCreation_WithGroupMembership(t *testing.T) {
 
 	callerUserID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	groupID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	providerID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
 
 	var createdUser storage.User
 	var createdMembership bool
@@ -596,6 +597,7 @@ func TestSMTPAccountCreation_WithGroupMembership(t *testing.T) {
 				AccountType: arg.AccountType,
 				Status:      "active",
 				ApiKey:      arg.ApiKey,
+				ProviderID:  arg.ProviderID,
 				CreatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 				UpdatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			}
@@ -619,10 +621,20 @@ func TestSMTPAccountCreation_WithGroupMembership(t *testing.T) {
 			}
 			return storage.User{}, errNotFound
 		},
+		getProviderByIDFn: func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error) {
+			if id == providerID {
+				return storage.EspProvider{
+					ID:      providerID,
+					GroupID: groupID,
+					Enabled: true,
+				}, nil
+			}
+			return storage.EspProvider{}, errNotFound
+		},
 	}
 
-	// Step 1: Create SMTP user with group_id
-	body := `{"email":"smtp-bot@example.com","account_type":"smtp","username":"smtp-bot","group_id":"` + groupID.String() + `","role":"member"}`
+	// Step 1: Create SMTP user with group_id and provider_id
+	body := `{"email":"smtp-bot@example.com","account_type":"smtp","username":"smtp-bot","group_id":"` + groupID.String() + `","provider_id":"` + providerID.String() + `","role":"member"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 

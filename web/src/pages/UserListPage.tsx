@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -36,6 +36,14 @@ export default function UserListPage() {
 
   const currentGroupId = me?.current_group.group_id || '';
 
+  // Auto-select stdout provider for smtp accounts when providers load
+  useEffect(() => {
+    if (providers && form.account_type === 'smtp' && !form.provider_id) {
+      const stdout = providers.find(p => p.provider_type === 'stdout' && p.enabled);
+      if (stdout) setForm(f => ({ ...f, provider_id: stdout.id }));
+    }
+  }, [providers, form.account_type]);
+
   const createMutation = useMutation({
     mutationFn: () => {
       const payload: Record<string, unknown> = { ...form };
@@ -64,7 +72,7 @@ export default function UserListPage() {
   });
 
   const isSmtp = form.account_type === 'smtp';
-  const canCreate = isSmtp ? (!!form.username && !!form.provider_id) : (!!form.email && (form.password_disabled || !!form.password));
+  const canCreate = isSmtp ? !!form.username : (!!form.email && (form.password_disabled || !!form.password));
 
   if (isLoading) return <PageSection><Spinner size="xl" /></PageSection>;
 
@@ -140,7 +148,7 @@ export default function UserListPage() {
               <FormGroup label="Username" isRequired fieldId="user-username">
                 <TextInput id="user-username" value={form.username} onChange={(_e, v) => setForm({ ...form, username: v })} isRequired />
               </FormGroup>
-              <FormGroup label="Provider" isRequired fieldId="user-provider">
+              <FormGroup label="Provider (defaults to stdout)" fieldId="user-provider">
                 <FormSelect id="user-provider" value={form.provider_id} onChange={(_e, v) => setForm({ ...form, provider_id: v })}>
                   <FormSelectOption value="" label="Select a provider" isPlaceholder />
                   {providers?.filter(p => p.enabled).map((p) => (

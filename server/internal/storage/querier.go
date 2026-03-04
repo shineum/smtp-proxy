@@ -52,6 +52,7 @@ type Querier interface {
 	GetGroupMemberByUserAndGroup(ctx context.Context, arg GetGroupMemberByUserAndGroupParams) (GroupMember, error)
 	GetMessageByID(ctx context.Context, id uuid.UUID) (Message, error)
 	GetProviderByID(ctx context.Context, id uuid.UUID) (EspProvider, error)
+	GetStdoutProviderByGroupID(ctx context.Context, groupID uuid.UUID) (EspProvider, error)
 	GetQueuedMessages(ctx context.Context, limit int32) ([]Message, error)
 	GetRoutingRuleByID(ctx context.Context, id uuid.UUID) (RoutingRule, error)
 	GetSessionByID(ctx context.Context, id uuid.UUID) (Session, error)
@@ -92,6 +93,7 @@ type Querier interface {
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 	UpdateUserLastLogin(ctx context.Context, id uuid.UUID) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
+	UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) (User, error)
 	UpdateUserStatus(ctx context.Context, arg UpdateUserStatusParams) (User, error)
 }
 

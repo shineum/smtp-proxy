@@ -201,6 +201,7 @@ services:
       SMTP_PROXY_DELIVERY_MODE: ${SMTP_PROXY_DELIVERY_MODE:-sync}
       SMTP_PROXY_AUTH_SIGNING_KEY: ${SMTP_PROXY_AUTH_SIGNING_KEY:-dev-signing-key-change-in-production}
       SMTP_PROXY_LOGGING_LEVEL: ${SMTP_PROXY_LOGGING_LEVEL:-debug}
+      SMTP_PROXY_PROVIDER_STDOUT_FALLBACK: ${SMTP_PROXY_PROVIDER_STDOUT_FALLBACK:-true}
     depends_on:
       postgres:
         condition: service_healthy

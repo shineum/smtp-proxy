@@ -28,9 +28,10 @@ var storageRetryBackoff = []time.Duration{
 	4 * time.Second,
 }
 
-// providerResolver resolves the ESP provider for a given group ID.
+// providerResolver resolves the ESP provider for message delivery.
 type providerResolver interface {
 	Resolve(ctx context.Context, groupID uuid.UUID) (provider.Provider, error)
+	ResolveByUserID(ctx context.Context, userID uuid.UUID) (provider.Provider, error)
 }
 
 // Handler implements queue.MessageHandler. It delivers messages via ESP
@@ -88,8 +89,9 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		return fmt.Errorf("get message %s: %w", msg.ID, err)
 	}
 
-	// Extract group ID as uuid.UUID for provider resolution.
+	// Extract IDs for provider resolution and logging.
 	groupID := uuid.UUID(dbMsg.GroupID.Bytes)
+	userID := uuid.UUID(dbMsg.UserID.Bytes)
 
 	// Determine message body source.
 	var body []byte
@@ -113,11 +115,17 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		}
 	}
 
-	// Resolve provider for this group.
-	p, err := h.resolver.Resolve(ctx, groupID)
+	// Resolve provider: prefer user's direct provider mapping, fall back to group-level.
+	var p provider.Provider
+	if dbMsg.UserID.Valid {
+		p, err = h.resolver.ResolveByUserID(ctx, userID)
+	} else {
+		p, err = h.resolver.Resolve(ctx, groupID)
+	}
 	if err != nil {
 		h.log.Error().Err(err).
 			Stringer("group_id", groupID).
+			Stringer("user_id", userID).
 			Str("message_id", msg.ID).
 			Msg("failed to resolve provider")
 		h.recordFailure(ctx, messageID, dbMsg.GroupID, dbMsg.UserID, "", err)

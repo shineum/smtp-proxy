@@ -32,6 +32,7 @@ type mockQuerier struct {
 	createLogParams   storage.CreateDeliveryLogParams
 	listProvidersFn   func(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error)
 	getMessageFn      func(ctx context.Context, id uuid.UUID) (storage.Message, error)
+	getUserByIDFn     func(ctx context.Context, id uuid.UUID) (storage.User, error)
 }
 
 // ActivityLog methods.
@@ -200,6 +201,9 @@ func (m *mockQuerier) DeleteProvider(_ context.Context, _ uuid.UUID) error { ret
 func (m *mockQuerier) GetProviderByID(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
 	return storage.EspProvider{}, nil
 }
+func (m *mockQuerier) GetStdoutProviderByGroupID(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
+	return storage.EspProvider{}, nil
+}
 func (m *mockQuerier) ListProvidersByGroupID(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error) {
 	if m.listProvidersFn != nil {
 		return m.listProvidersFn(ctx, groupID)
@@ -252,7 +256,10 @@ func (m *mockQuerier) GetUserByAPIKey(_ context.Context, _ sql.NullString) (stor
 func (m *mockQuerier) GetUserByEmail(_ context.Context, _ string) (storage.User, error) {
 	return storage.User{}, nil
 }
-func (m *mockQuerier) GetUserByID(_ context.Context, _ uuid.UUID) (storage.User, error) {
+func (m *mockQuerier) GetUserByID(ctx context.Context, id uuid.UUID) (storage.User, error) {
+	if m.getUserByIDFn != nil {
+		return m.getUserByIDFn(ctx, id)
+	}
 	return storage.User{}, nil
 }
 func (m *mockQuerier) GetUserByUsername(_ context.Context, _ sql.NullString) (storage.User, error) {
@@ -275,6 +282,9 @@ func (m *mockQuerier) UpdatePasswordDisabled(_ context.Context, _ storage.Update
 }
 func (m *mockQuerier) UpdateUserPassword(_ context.Context, _ storage.UpdateUserPasswordParams) error {
 	return nil
+}
+func (m *mockQuerier) UpdateUserProvider(_ context.Context, _ storage.UpdateUserProviderParams) (storage.User, error) {
+	return storage.User{}, nil
 }
 func (m *mockQuerier) UpdateUserStatus(_ context.Context, _ storage.UpdateUserStatusParams) (storage.User, error) {
 	return storage.User{}, nil
@@ -343,7 +353,7 @@ func newHandler(t *testing.T, mq *mockQuerier, store msgstore.MessageStore) *Han
 	t.Helper()
 	log := zerolog.Nop()
 	httpClient := provider.NewHTTPClient(0)
-	resolver := provider.NewResolver(mq, httpClient, log)
+	resolver := provider.NewResolver(mq, httpClient, log, true)
 	return NewHandler(resolver, mq, store, log)
 }
 
@@ -589,8 +599,8 @@ func TestHandler_HandleMessage_SendFail(t *testing.T) {
 		getMessageFn: func(_ context.Context, _ uuid.UUID) (storage.Message, error) {
 			return newTestDBMessage(groupID, userID), nil
 		},
-		listProvidersFn: func(_ context.Context, _ uuid.UUID) ([]storage.EspProvider, error) {
-			return nil, errors.New("database error")
+		getUserByIDFn: func(_ context.Context, _ uuid.UUID) (storage.User, error) {
+			return storage.User{}, errors.New("database error")
 		},
 	}
 	h := newHandler(t, mq, nil)
@@ -825,6 +835,10 @@ type mockCaptureResolver struct {
 }
 
 func (r *mockCaptureResolver) Resolve(_ context.Context, _ uuid.UUID) (provider.Provider, error) {
+	return r.provider, nil
+}
+
+func (r *mockCaptureResolver) ResolveByUserID(_ context.Context, _ uuid.UUID) (provider.Provider, error) {
 	return r.provider, nil
 }
 

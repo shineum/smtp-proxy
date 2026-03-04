@@ -218,6 +218,9 @@ func (m *mockQuerier) GetMessageByID(_ context.Context, _ uuid.UUID) (storage.Me
 func (m *mockQuerier) GetProviderByID(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
 	return storage.EspProvider{}, nil
 }
+func (m *mockQuerier) GetStdoutProviderByGroupID(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
+	return storage.EspProvider{}, nil
+}
 
 func (m *mockQuerier) GetQueuedMessages(_ context.Context, _ int32) ([]storage.Message, error) {
 	return nil, nil
@@ -397,6 +400,10 @@ func (m *mockQuerier) UpdateUserPassword(_ context.Context, _ storage.UpdateUser
 }
 
 func (m *mockQuerier) UpdateUserStatus(_ context.Context, _ storage.UpdateUserStatusParams) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) UpdateUserProvider(_ context.Context, _ storage.UpdateUserProviderParams) (storage.User, error) {
 	return storage.User{}, nil
 }
 

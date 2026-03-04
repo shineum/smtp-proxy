@@ -59,6 +59,7 @@ var validProviderTypes = map[string]storage.ProviderType{
 	"ses":      storage.ProviderTypeSes,
 	"smtp":     storage.ProviderTypeSmtp,
 	"msgraph":  storage.ProviderTypeMsgraph,
+	"stdout":   storage.ProviderTypeStdout,
 }
 
 // CreateProviderHandler handles POST /api/v1/providers.

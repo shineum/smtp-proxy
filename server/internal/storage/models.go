@@ -115,6 +115,7 @@ const (
 	ProviderTypeSes      ProviderType = "ses"
 	ProviderTypeSmtp     ProviderType = "smtp"
 	ProviderTypeMsgraph  ProviderType = "msgraph"
+	ProviderTypeStdout   ProviderType = "stdout"
 )
 
 func (e *ProviderType) Scan(src interface{}) error {
@@ -268,4 +269,5 @@ type User struct {
 	ApiKey           sql.NullString     `json:"api_key"`
 	AllowedDomains   []byte             `json:"allowed_domains"`
 	PasswordDisabled bool               `json:"password_disabled"`
+	ProviderID       pgtype.UUID        `json:"provider_id"`
 }

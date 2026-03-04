@@ -10,12 +10,13 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, password_hash, account_type, username, api_key, allowed_domains, password_disabled)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled
+INSERT INTO users (email, password_hash, account_type, username, api_key, allowed_domains, password_disabled, provider_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id
 `
 
 type CreateUserParams struct {
@@ -26,6 +27,7 @@ type CreateUserParams struct {
 	ApiKey           sql.NullString `json:"api_key"`
 	AllowedDomains   []byte         `json:"allowed_domains"`
 	PasswordDisabled bool           `json:"password_disabled"`
+	ProviderID       pgtype.UUID    `json:"provider_id"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -37,6 +39,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.ApiKey,
 		arg.AllowedDomains,
 		arg.PasswordDisabled,
+		arg.ProviderID,
 	)
 	var i User
 	err := row.Scan(
@@ -53,6 +56,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.ApiKey,
 		&i.AllowedDomains,
 		&i.PasswordDisabled,
+		&i.ProviderID,
 	)
 	return i, err
 }
@@ -67,7 +71,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 }
 
 const getUserByAPIKey = `-- name: GetUserByAPIKey :one
-SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled FROM users WHERE api_key = $1
+SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id FROM users WHERE api_key = $1
 `
 
 func (q *Queries) GetUserByAPIKey(ctx context.Context, apiKey sql.NullString) (User, error) {
@@ -87,12 +91,13 @@ func (q *Queries) GetUserByAPIKey(ctx context.Context, apiKey sql.NullString) (U
 		&i.ApiKey,
 		&i.AllowedDomains,
 		&i.PasswordDisabled,
+		&i.ProviderID,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled FROM users WHERE email = $1
+SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -112,12 +117,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.ApiKey,
 		&i.AllowedDomains,
 		&i.PasswordDisabled,
+		&i.ProviderID,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled FROM users WHERE id = $1
+SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -137,12 +143,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.ApiKey,
 		&i.AllowedDomains,
 		&i.PasswordDisabled,
+		&i.ProviderID,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled FROM users WHERE username = $1
+SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id FROM users WHERE username = $1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString) (User, error) {
@@ -162,6 +169,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString
 		&i.ApiKey,
 		&i.AllowedDomains,
 		&i.PasswordDisabled,
+		&i.ProviderID,
 	)
 	return i, err
 }
@@ -178,7 +186,7 @@ func (q *Queries) IncrementFailedAttempts(ctx context.Context, id uuid.UUID) err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled FROM users ORDER BY created_at DESC
+SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id FROM users ORDER BY created_at DESC
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -204,6 +212,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.ApiKey,
 			&i.AllowedDomains,
 			&i.PasswordDisabled,
+			&i.ProviderID,
 		); err != nil {
 			return nil, err
 		}
@@ -216,7 +225,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 }
 
 const listUsersByGroupID = `-- name: ListUsersByGroupID :many
-SELECT u.id, u.email, u.password_hash, u.status, u.failed_attempts, u.last_login, u.created_at, u.updated_at, u.username, u.account_type, u.api_key, u.allowed_domains, u.password_disabled FROM users u
+SELECT u.id, u.email, u.password_hash, u.status, u.failed_attempts, u.last_login, u.created_at, u.updated_at, u.username, u.account_type, u.api_key, u.allowed_domains, u.password_disabled, u.provider_id FROM users u
 JOIN group_members gm ON u.id = gm.user_id
 WHERE gm.group_id = $1
 ORDER BY u.created_at DESC
@@ -245,6 +254,7 @@ func (q *Queries) ListUsersByGroupID(ctx context.Context, groupID uuid.UUID) ([]
 			&i.ApiKey,
 			&i.AllowedDomains,
 			&i.PasswordDisabled,
+			&i.ProviderID,
 		); err != nil {
 			return nil, err
 		}
@@ -271,7 +281,7 @@ const updatePasswordDisabled = `-- name: UpdatePasswordDisabled :one
 UPDATE users
 SET password_disabled = $2, updated_at = NOW()
 WHERE id = $1
-RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled
+RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id
 `
 
 type UpdatePasswordDisabledParams struct {
@@ -296,6 +306,7 @@ func (q *Queries) UpdatePasswordDisabled(ctx context.Context, arg UpdatePassword
 		&i.ApiKey,
 		&i.AllowedDomains,
 		&i.PasswordDisabled,
+		&i.ProviderID,
 	)
 	return i, err
 }
@@ -304,7 +315,7 @@ const updateUser = `-- name: UpdateUser :one
 UPDATE users
 SET email = $2, status = $3, allowed_domains = $4, updated_at = NOW()
 WHERE id = $1
-RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled
+RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id
 `
 
 type UpdateUserParams struct {
@@ -336,6 +347,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.ApiKey,
 		&i.AllowedDomains,
 		&i.PasswordDisabled,
+		&i.ProviderID,
 	)
 	return i, err
 }
@@ -367,11 +379,45 @@ func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPassword
 	return err
 }
 
+const updateUserProvider = `-- name: UpdateUserProvider :one
+UPDATE users
+SET provider_id = $2, updated_at = NOW()
+WHERE id = $1
+RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id
+`
+
+type UpdateUserProviderParams struct {
+	ID         uuid.UUID   `json:"id"`
+	ProviderID pgtype.UUID `json:"provider_id"`
+}
+
+func (q *Queries) UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserProvider, arg.ID, arg.ProviderID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Status,
+		&i.FailedAttempts,
+		&i.LastLogin,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Username,
+		&i.AccountType,
+		&i.ApiKey,
+		&i.AllowedDomains,
+		&i.PasswordDisabled,
+		&i.ProviderID,
+	)
+	return i, err
+}
+
 const updateUserStatus = `-- name: UpdateUserStatus :one
 UPDATE users
 SET status = $2, updated_at = NOW()
 WHERE id = $1
-RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled
+RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id
 `
 
 type UpdateUserStatusParams struct {
@@ -396,6 +442,7 @@ func (q *Queries) UpdateUserStatus(ctx context.Context, arg UpdateUserStatusPara
 		&i.ApiKey,
 		&i.AllowedDomains,
 		&i.PasswordDisabled,
+		&i.ProviderID,
 	)
 	return i, err
 }

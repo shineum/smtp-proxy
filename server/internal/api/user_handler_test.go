@@ -157,6 +157,9 @@ func TestCreateUserHandler_SMTPAccount(t *testing.T) {
 	smtpUser.AccountType = "smtp"
 	smtpUser.ApiKey = sql.NullString{String: "generated-api-key", Valid: true}
 
+	groupID := testGroup().ID
+	providerID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+
 	mock := &mockQuerier{
 		createUserFn: func(ctx context.Context, arg storage.CreateUserParams) (storage.User, error) {
 			if arg.AccountType != "smtp" {
@@ -165,15 +168,23 @@ func TestCreateUserHandler_SMTPAccount(t *testing.T) {
 			if !arg.ApiKey.Valid {
 				t.Error("expected ApiKey to be set for smtp account")
 			}
+			if !arg.ProviderID.Valid {
+				t.Error("expected ProviderID to be set for smtp account")
+			}
 			return smtpUser, nil
+		},
+		createGroupMemberFn: func(ctx context.Context, arg storage.CreateGroupMemberParams) (storage.GroupMember, error) {
+			return testGroupMember(), nil
+		},
+		getProviderByIDFn: func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error) {
+			return storage.EspProvider{ID: providerID, GroupID: groupID, Enabled: true}, nil
 		},
 	}
 
-	body := `{"email":"smtp@example.com","account_type":"smtp","username":"smtp-bot"}`
+	body := `{"email":"smtp@example.com","account_type":"smtp","username":"smtp-bot","group_id":"` + groupID.String() + `","provider_id":"` + providerID.String() + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	groupID := testGroup().ID
 	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 	req = req.WithContext(ctx)
 
@@ -191,6 +202,55 @@ func TestCreateUserHandler_SMTPAccount(t *testing.T) {
 	}
 	if resp.ApiKey == nil {
 		t.Error("expected api_key in response for smtp account")
+	}
+}
+
+func TestCreateUserHandler_SMTPAccount_RequiresGroupAndProvider(t *testing.T) {
+	mock := &mockQuerier{}
+
+	// Missing both group_id and provider_id
+	body := `{"email":"smtp@example.com","account_type":"smtp","username":"smtp-bot"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	groupID := testGroup().ID
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler := CreateUserHandler(mock, nil)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateUserHandler_SMTPAccount_ProviderMustBelongToGroup(t *testing.T) {
+	groupID := testGroup().ID
+	providerID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	otherGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000077")
+
+	mock := &mockQuerier{
+		getProviderByIDFn: func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error) {
+			// Provider belongs to a different group
+			return storage.EspProvider{ID: providerID, GroupID: otherGroupID, Enabled: true}, nil
+		},
+	}
+
+	body := `{"account_type":"smtp","username":"smtp-bot","group_id":"` + groupID.String() + `","provider_id":"` + providerID.String() + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "system")
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler := CreateUserHandler(mock, nil)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d; body: %s", rec.Code, rec.Body.String())
 	}
 }
 

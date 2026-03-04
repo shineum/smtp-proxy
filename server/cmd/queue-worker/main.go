@@ -39,9 +39,11 @@ func main() {
 
 	queries := storage.New(db.Pool)
 
-	// Initialize provider resolver with HTTP client and stdout fallback.
+	// Initialize provider resolver with HTTP client.
+	// Allow stdout fallback only when SMTP_PROXY_PROVIDER_STDOUT_FALLBACK=true (dev/test).
 	httpClient := provider.NewHTTPClient(30 * time.Second)
-	resolver := provider.NewResolver(queries, httpClient, log)
+	stdoutFallback := os.Getenv("SMTP_PROXY_PROVIDER_STDOUT_FALLBACK") == "true"
+	resolver := provider.NewResolver(queries, httpClient, log, stdoutFallback)
 
 	// Connect to Redis.
 	redisClient := redis.NewClient(&redis.Options{

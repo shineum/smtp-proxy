@@ -15,5 +15,8 @@ SET name = $2, provider_type = $3, api_key = $4, smtp_config = $5, enabled = $6,
 WHERE id = $1
 RETURNING *;
 
+-- name: GetStdoutProviderByGroupID :one
+SELECT * FROM esp_providers WHERE group_id = $1 AND provider_type = 'stdout' LIMIT 1;
+
 -- name: DeleteProvider :exec
 DELETE FROM esp_providers WHERE id = $1;

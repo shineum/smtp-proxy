@@ -1,0 +1,2 @@
+-- Note: PostgreSQL does not support removing a value from an enum type.
+-- The 'stdout' value will remain in the enum but is harmless.

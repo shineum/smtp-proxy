@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -19,6 +20,7 @@ type createUserRequest struct {
 	AccountType      string   `json:"account_type"`
 	Username         string   `json:"username,omitempty"`
 	GroupID          string   `json:"group_id,omitempty"`
+	ProviderID       string   `json:"provider_id,omitempty"`
 	Role             string   `json:"role,omitempty"`
 	AllowedDomains   []string `json:"allowed_domains,omitempty"`
 	PasswordDisabled bool     `json:"password_disabled,omitempty"`
@@ -33,6 +35,7 @@ type userResponse struct {
 	Status           string     `json:"status"`
 	AllowedDomains   []string   `json:"allowed_domains,omitempty"`
 	ApiKey           *string    `json:"api_key,omitempty"`
+	ProviderID       *uuid.UUID `json:"provider_id,omitempty"`
 	PasswordDisabled bool       `json:"password_disabled"`
 	LastLogin        *time.Time `json:"last_login,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
@@ -59,6 +62,10 @@ func toUserResponse(u storage.User) userResponse {
 	}
 	if len(u.AllowedDomains) > 0 {
 		resp.AllowedDomains = decodeDomains(u.AllowedDomains)
+	}
+	if u.ProviderID.Valid {
+		id := uuid.UUID(u.ProviderID.Bytes)
+		resp.ProviderID = &id
 	}
 	return resp
 }
@@ -104,11 +111,15 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			errs = append(errs, "account_type must be one of: user, smtp")
 		}
 
-		// For SMTP accounts: username is required, email is optional (defaults to {username}@smtp.internal)
-		// For human users: email is required
+		// For SMTP accounts: username, group_id, and provider_id are required.
+		// Email is optional (defaults to {username}@smtp.internal).
+		// For human users: email is required.
 		if req.AccountType == "smtp" {
 			if req.Username == "" {
 				errs = append(errs, "username is required for smtp accounts")
+			}
+			if req.GroupID == "" {
+				errs = append(errs, "group_id is required for smtp accounts")
 			}
 			if req.Email == "" {
 				req.Email = req.Username + "@smtp.internal"
@@ -188,27 +199,32 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			}
 		}
 
-		user, err := queries.CreateUser(r.Context(), storage.CreateUserParams{
-			Email:            req.Email,
-			PasswordHash:     passwordHash,
-			AccountType:      req.AccountType,
-			Username:         username,
-			ApiKey:           apiKey,
-			AllowedDomains:   domainsJSON,
-			PasswordDisabled: req.PasswordDisabled,
-		})
-		if err != nil {
-			if req.AccountType == "smtp" {
-				respondError(w, http.StatusConflict, "username already in use")
-			} else {
-				respondError(w, http.StatusConflict, "email already in use")
+		// Parse and validate provider_id for SMTP accounts
+		var providerPgID pgtype.UUID
+		if req.ProviderID != "" {
+			pid, err := uuid.Parse(req.ProviderID)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "invalid provider_id format")
+				return
 			}
-			return
+			// Verify the provider exists and is enabled
+			esp, err := queries.GetProviderByID(r.Context(), pid)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "provider not found")
+				return
+			}
+			if !esp.Enabled {
+				respondError(w, http.StatusBadRequest, "provider is not enabled")
+				return
+			}
+			providerPgID = pgtype.UUID{Bytes: pid, Valid: true}
 		}
 
-		// Create group membership if group_id is provided
+		// Parse group_id early so we can validate provider belongs to the group
+		var groupID uuid.UUID
 		if req.GroupID != "" {
-			groupID, err := uuid.Parse(req.GroupID)
+			var err error
+			groupID, err = uuid.Parse(req.GroupID)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid group_id format")
 				return
@@ -222,6 +238,46 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 				return
 			}
 
+			// For SMTP accounts, verify provider belongs to the same group
+			if req.ProviderID != "" {
+				pid, _ := uuid.Parse(req.ProviderID)
+				esp, _ := queries.GetProviderByID(r.Context(), pid)
+				if esp.GroupID != groupID {
+					respondError(w, http.StatusBadRequest, "provider does not belong to the specified group")
+					return
+				}
+			} else if req.AccountType == "smtp" {
+				// Default to the group's stdout provider
+				stdoutProvider, err := queries.GetStdoutProviderByGroupID(r.Context(), groupID)
+				if err != nil {
+					respondError(w, http.StatusBadRequest, "no default provider available for this group")
+					return
+				}
+				providerPgID = pgtype.UUID{Bytes: stdoutProvider.ID, Valid: true}
+			}
+		}
+
+		user, err := queries.CreateUser(r.Context(), storage.CreateUserParams{
+			Email:            req.Email,
+			PasswordHash:     passwordHash,
+			AccountType:      req.AccountType,
+			Username:         username,
+			ApiKey:           apiKey,
+			AllowedDomains:   domainsJSON,
+			PasswordDisabled: req.PasswordDisabled,
+			ProviderID:       providerPgID,
+		})
+		if err != nil {
+			if req.AccountType == "smtp" {
+				respondError(w, http.StatusConflict, "username already in use")
+			} else {
+				respondError(w, http.StatusConflict, "email already in use")
+			}
+			return
+		}
+
+		// Create group membership if group_id is provided
+		if req.GroupID != "" {
 			_, err = queries.CreateGroupMember(r.Context(), storage.CreateGroupMemberParams{
 				GroupID: groupID,
 				UserID:  user.ID,

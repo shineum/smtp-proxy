@@ -162,6 +162,15 @@ func CreateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 			})
 		}
 
+		// Auto-create stdout provider for the new group
+		_, _ = queries.CreateProvider(r.Context(), storage.CreateProviderParams{
+			GroupID:      group.ID,
+			Name:         "stdout",
+			ProviderType: storage.ProviderTypeStdout,
+			SmtpConfig:   []byte("{}"),
+			Enabled:      true,
+		})
+
 		if auditLogger != nil {
 			auditLogger.LogAdminAction(r.Context(), r, auth.AuditActionCreateGroup, "group", group.ID.String(), map[string]interface{}{
 				"name": req.Name,
@@ -581,30 +590,36 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			return
 		}
 
-		if req.ProviderID == "" {
-			respondError(w, http.StatusBadRequest, "provider_id is required")
-			return
-		}
+		var providerUUID uuid.UUID
+		if req.ProviderID != "" {
+			providerUUID, err = uuid.Parse(req.ProviderID)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "invalid provider_id format")
+				return
+			}
 
-		providerUUID, err := uuid.Parse(req.ProviderID)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid provider_id format")
-			return
-		}
-
-		// Verify provider exists, is enabled, and belongs to this group
-		provider, err := queries.GetProviderByID(r.Context(), providerUUID)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "provider not found")
-			return
-		}
-		if !provider.Enabled {
-			respondError(w, http.StatusBadRequest, "provider is not enabled")
-			return
-		}
-		if provider.GroupID != groupID {
-			respondError(w, http.StatusBadRequest, "provider does not belong to this group")
-			return
+			// Verify provider exists, is enabled, and belongs to this group
+			provider, err := queries.GetProviderByID(r.Context(), providerUUID)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "provider not found")
+				return
+			}
+			if !provider.Enabled {
+				respondError(w, http.StatusBadRequest, "provider is not enabled")
+				return
+			}
+			if provider.GroupID != groupID {
+				respondError(w, http.StatusBadRequest, "provider does not belong to this group")
+				return
+			}
+		} else {
+			// Default to the group's stdout provider
+			stdoutProvider, err := queries.GetStdoutProviderByGroupID(r.Context(), groupID)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "no default provider available for this group")
+				return
+			}
+			providerUUID = stdoutProvider.ID
 		}
 
 		email := req.Email

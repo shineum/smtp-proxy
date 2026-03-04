@@ -451,10 +451,28 @@ func GrantProviderAccessHandler(queries storage.Querier) http.HandlerFunc {
 // Returns the list of group-user combinations using this provider.
 func ProviderUsageHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
+			return
+		}
+
+		// Only the owning group or system admin can view usage
+		provider, err := queries.GetProviderByID(r.Context(), id)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "provider not found")
+			return
+		}
+		callerGroupType := auth.GroupTypeFromContext(r.Context())
+		if provider.GroupID != groupID && callerGroupType != "system" {
+			respondError(w, http.StatusForbidden, "access denied")
 			return
 		}
 

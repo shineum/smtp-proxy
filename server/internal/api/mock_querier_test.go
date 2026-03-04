@@ -56,9 +56,10 @@ type mockQuerier struct {
 	listProvidersByGroupFn         func(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error)
 	updateProviderFn      func(ctx context.Context, arg storage.UpdateProviderParams) (storage.EspProvider, error)
 	deleteProviderFn       func(ctx context.Context, id uuid.UUID) error
-	isProviderAccessibleFn     func(arg storage.IsProviderAccessibleParams) (bool, error)
-	listAccessibleProvidersFn  func(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error)
-	getGlobalStdoutProviderFn  func() (storage.EspProvider, error)
+	isProviderAccessibleFn      func(arg storage.IsProviderAccessibleParams) (bool, error)
+	listAccessibleProvidersFn   func(ctx context.Context, groupID uuid.UUID) ([]storage.EspProvider, error)
+	getGlobalStdoutProviderFn   func() (storage.EspProvider, error)
+	listUsersByProviderIDFn     func(ctx context.Context, providerID pgtype.UUID) ([]storage.ListUsersByProviderIDRow, error)
 
 	// Routing Rule methods
 	createRoutingRuleFn      func(ctx context.Context, arg storage.CreateRoutingRuleParams) (storage.RoutingRule, error)
@@ -130,7 +131,10 @@ func (m *mockQuerier) ListUsersByGroupID(_ context.Context, _ uuid.UUID) ([]stor
 	return nil, nil
 }
 
-func (m *mockQuerier) ListUsersByProviderID(_ context.Context, _ pgtype.UUID) ([]storage.ListUsersByProviderIDRow, error) {
+func (m *mockQuerier) ListUsersByProviderID(ctx context.Context, providerID pgtype.UUID) ([]storage.ListUsersByProviderIDRow, error) {
+	if m.listUsersByProviderIDFn != nil {
+		return m.listUsersByProviderIDFn(ctx, providerID)
+	}
 	return nil, nil
 }
 

@@ -320,31 +320,35 @@ export default function ProviderFormPage() {
               </>
             )}
 
-            {isEdit && usageList && usageList.length > 0 && (
+            {isEdit && (
               <>
                 <Title headingLevel="h3" size="md" style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>
                   Usage
                 </Title>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '2px solid #d2d2d2', textAlign: 'left' }}>
-                      <th style={{ padding: '0.5rem' }}>Group</th>
-                      <th style={{ padding: '0.5rem' }}>Email</th>
-                      <th style={{ padding: '0.5rem' }}>Account Type</th>
-                      <th style={{ padding: '0.5rem' }}>Role</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usageList.map((u) => (
-                      <tr key={`${u.group_id}-${u.user_id}`} style={{ borderBottom: '1px solid #d2d2d2' }}>
-                        <td style={{ padding: '0.5rem' }}>{u.group_name}</td>
-                        <td style={{ padding: '0.5rem' }}>{u.email}</td>
-                        <td style={{ padding: '0.5rem' }}>{u.account_type}</td>
-                        <td style={{ padding: '0.5rem' }}>{u.role}</td>
+                {usageList && usageList.length > 0 ? (
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #d2d2d2', textAlign: 'left' }}>
+                        <th style={{ padding: '0.5rem' }}>Group</th>
+                        <th style={{ padding: '0.5rem' }}>Email</th>
+                        <th style={{ padding: '0.5rem' }}>Account Type</th>
+                        <th style={{ padding: '0.5rem' }}>Role</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {usageList.map((u) => (
+                        <tr key={`${u.group_id}-${u.user_id}`} style={{ borderBottom: '1px solid #d2d2d2' }}>
+                          <td style={{ padding: '0.5rem' }}>{u.group_name}</td>
+                          <td style={{ padding: '0.5rem' }}>{u.email}</td>
+                          <td style={{ padding: '0.5rem' }}>{u.account_type}</td>
+                          <td style={{ padding: '0.5rem' }}>{u.role}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p style={{ color: '#6a6e73' }}>No users assigned to this provider.</p>
+                )}
               </>
             )}
 

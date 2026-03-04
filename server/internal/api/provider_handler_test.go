@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
@@ -211,6 +212,167 @@ func TestUpdateProviderHandler(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProviderUsageHandler_Success(t *testing.T) {
+	prov := testProvider()
+	groupID := testGroup().ID
+
+	mock := &mockQuerier{
+		getProviderByIDFn: func(_ context.Context, id uuid.UUID) (storage.EspProvider, error) {
+			return prov, nil
+		},
+		listUsersByProviderIDFn: func(_ context.Context, _ pgtype.UUID) ([]storage.ListUsersByProviderIDRow, error) {
+			return []storage.ListUsersByProviderIDRow{
+				{
+					ID:          uuid.MustParse("00000000-0000-0000-0000-000000000099"),
+					Email:       "user@example.com",
+					AccountType: "user",
+					Role:        "member",
+					GroupID:     groupID,
+					GroupName:   "test-group",
+				},
+			}, nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+prov.ID.String()+"/usage", nil)
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", prov.ID.String())
+	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler := ProviderUsageHandler(mock)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp []struct {
+		UserID    string `json:"user_id"`
+		Email     string `json:"email"`
+		GroupName string `json:"group_name"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 usage row, got %d", len(resp))
+	}
+	if resp[0].Email != "user@example.com" {
+		t.Errorf("expected email user@example.com, got %s", resp[0].Email)
+	}
+}
+
+func TestProviderUsageHandler_InvalidID(t *testing.T) {
+	groupID := testGroup().ID
+
+	mock := &mockQuerier{}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/not-a-uuid/usage", nil)
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "not-a-uuid")
+	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler := ProviderUsageHandler(mock)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+}
+
+func TestProviderUsageHandler_EmptyResult(t *testing.T) {
+	prov := testProvider()
+	groupID := testGroup().ID
+
+	mock := &mockQuerier{
+		getProviderByIDFn: func(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
+			return prov, nil
+		},
+		listUsersByProviderIDFn: func(_ context.Context, _ pgtype.UUID) ([]storage.ListUsersByProviderIDRow, error) {
+			return []storage.ListUsersByProviderIDRow{}, nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+prov.ID.String()+"/usage", nil)
+	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", prov.ID.String())
+	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler := ProviderUsageHandler(mock)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var resp []interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp) != 0 {
+		t.Fatalf("expected 0 usage rows, got %d", len(resp))
+	}
+}
+
+func TestProviderUsageHandler_Unauthorized(t *testing.T) {
+	mock := &mockQuerier{}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+uuid.New().String()+"/usage", nil)
+	// No JWT context set
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", uuid.New().String())
+	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler := ProviderUsageHandler(mock)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", rec.Code)
+	}
+}
+
+func TestProviderUsageHandler_Forbidden(t *testing.T) {
+	prov := testProvider()
+	otherGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+
+	mock := &mockQuerier{
+		getProviderByIDFn: func(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
+			return prov, nil
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+prov.ID.String()+"/usage", nil)
+	ctx := setJWTContext(req.Context(), testUser().ID, otherGroupID, "admin", "organization")
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", prov.ID.String())
+	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	handler := ProviderUsageHandler(mock)
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", rec.Code)
 	}
 }
 

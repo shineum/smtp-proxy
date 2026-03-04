@@ -183,6 +183,15 @@ export interface ProviderAccess {
   granted_by?: string;
 }
 
+export interface ProviderUsage {
+  user_id: string;
+  email: string;
+  account_type: string;
+  role: string;
+  group_id: string;
+  group_name: string;
+}
+
 export interface ApiError {
   error: string;
   details?: string[];

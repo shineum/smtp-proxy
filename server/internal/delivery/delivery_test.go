@@ -265,6 +265,9 @@ func (m *mockQuerier) ListUsers(_ context.Context) ([]storage.User, error)      
 func (m *mockQuerier) ListUsersByGroupID(_ context.Context, _ uuid.UUID) ([]storage.User, error) {
 	return nil, nil
 }
+func (m *mockQuerier) ListUsersByProviderID(_ context.Context, _ pgtype.UUID) ([]storage.ListUsersByProviderIDRow, error) {
+	return nil, nil
+}
 func (m *mockQuerier) ResetFailedAttempts(_ context.Context, _ uuid.UUID) error     { return nil }
 func (m *mockQuerier) ResetMonthlySent(_ context.Context, _ uuid.UUID) error        { return nil }
 func (m *mockQuerier) UpdateUser(_ context.Context, _ storage.UpdateUserParams) (storage.User, error) {

@@ -447,6 +447,48 @@ func GrantProviderAccessHandler(queries storage.Querier) http.HandlerFunc {
 	}
 }
 
+// ProviderUsageHandler handles GET /api/v1/providers/{id}/usage.
+// Returns the list of group-user combinations using this provider.
+func ProviderUsageHandler(queries storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid provider ID format")
+			return
+		}
+
+		rows, err := queries.ListUsersByProviderID(r.Context(), pgtype.UUID{Bytes: id, Valid: true})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		type usageRow struct {
+			UserID      uuid.UUID `json:"user_id"`
+			Email       string    `json:"email"`
+			AccountType string    `json:"account_type"`
+			Role        string    `json:"role"`
+			GroupID     uuid.UUID `json:"group_id"`
+			GroupName   string    `json:"group_name"`
+		}
+
+		result := make([]usageRow, len(rows))
+		for i, r := range rows {
+			result[i] = usageRow{
+				UserID:      r.ID,
+				Email:       r.Email,
+				AccountType: r.AccountType,
+				Role:        r.Role,
+				GroupID:     r.GroupID,
+				GroupName:   r.GroupName,
+			}
+		}
+
+		respondJSON(w, http.StatusOK, result)
+	}
+}
+
 // RevokeProviderAccessHandler handles DELETE /api/v1/providers/{id}/access/{groupId}.
 // Revokes a group's access to a shared provider.
 func RevokeProviderAccessHandler(queries storage.Querier) http.HandlerFunc {

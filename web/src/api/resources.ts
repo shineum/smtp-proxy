@@ -1,6 +1,6 @@
 import api from './client';
 import type {
-  Group, GroupMember, Membership, User, Provider, ProviderHealth, ProviderAccess,
+  Group, GroupMember, Membership, User, Provider, ProviderHealth, ProviderAccess, ProviderUsage,
   RoutingRule, DashboardStats, TimeSeriesPoint,
   UsageByUser, UsageByProvider, PaginatedMessages,
   MessageDetail, ActivityLog,
@@ -66,6 +66,8 @@ export const grantProviderAccess = async (id: string, group_id: string): Promise
   { await api.post(`/providers/${id}/access`, { group_id }); };
 export const revokeProviderAccess = async (id: string, groupId: string): Promise<void> =>
   { await api.delete(`/providers/${id}/access/${groupId}`); };
+export const fetchProviderUsage = async (id: string): Promise<ProviderUsage[]> =>
+  (await api.get(`/providers/${id}/usage`)).data;
 
 // Routing Rules
 export const fetchRoutingRules = async (): Promise<RoutingRule[]> => (await api.get('/routing-rules')).data;

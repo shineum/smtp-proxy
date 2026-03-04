@@ -362,6 +362,10 @@ func (m *mockQuerier) ListUsersByGroupID(_ context.Context, _ uuid.UUID) ([]stor
 	return nil, nil
 }
 
+func (m *mockQuerier) ListUsersByProviderID(_ context.Context, _ pgtype.UUID) ([]storage.ListUsersByProviderIDRow, error) {
+	return nil, nil
+}
+
 func (m *mockQuerier) ResetFailedAttempts(_ context.Context, _ uuid.UUID) error {
 	return nil
 }

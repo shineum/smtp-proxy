@@ -85,6 +85,7 @@ type Querier interface {
 	ListSessionsByUserID(ctx context.Context, userID uuid.UUID) ([]Session, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	ListUsersByGroupID(ctx context.Context, groupID uuid.UUID) ([]User, error)
+	ListUsersByProviderID(ctx context.Context, providerID pgtype.UUID) ([]ListUsersByProviderIDRow, error)
 	ResetFailedAttempts(ctx context.Context, id uuid.UUID) error
 	ResetMonthlySent(ctx context.Context, id uuid.UUID) error
 	UpdateDeliveryLogStatus(ctx context.Context, arg UpdateDeliveryLogStatusParams) error

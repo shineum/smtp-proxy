@@ -65,6 +65,14 @@ SET password_disabled = $2, updated_at = NOW()
 WHERE id = $1
 RETURNING *;
 
+-- name: ListUsersByProviderID :many
+SELECT u.id, u.email, u.account_type, gm.role, g.id AS group_id, g.name AS group_name
+FROM users u
+JOIN group_members gm ON u.id = gm.user_id
+JOIN groups g ON gm.group_id = g.id
+WHERE u.provider_id = $1
+ORDER BY g.name, u.email;
+
 -- name: UpdateUserProvider :one
 UPDATE users
 SET provider_id = $2, updated_at = NOW()

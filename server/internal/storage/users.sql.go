@@ -266,6 +266,51 @@ func (q *Queries) ListUsersByGroupID(ctx context.Context, groupID uuid.UUID) ([]
 	return items, nil
 }
 
+const listUsersByProviderID = `-- name: ListUsersByProviderID :many
+SELECT u.id, u.email, u.account_type, gm.role, g.id AS group_id, g.name AS group_name
+FROM users u
+JOIN group_members gm ON u.id = gm.user_id
+JOIN groups g ON gm.group_id = g.id
+WHERE u.provider_id = $1
+ORDER BY g.name, u.email
+`
+
+type ListUsersByProviderIDRow struct {
+	ID          uuid.UUID `json:"id"`
+	Email       string    `json:"email"`
+	AccountType string    `json:"account_type"`
+	Role        string    `json:"role"`
+	GroupID     uuid.UUID `json:"group_id"`
+	GroupName   string    `json:"group_name"`
+}
+
+func (q *Queries) ListUsersByProviderID(ctx context.Context, providerID pgtype.UUID) ([]ListUsersByProviderIDRow, error) {
+	rows, err := q.db.Query(ctx, listUsersByProviderID, providerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUsersByProviderIDRow
+	for rows.Next() {
+		var i ListUsersByProviderIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.AccountType,
+			&i.Role,
+			&i.GroupID,
+			&i.GroupName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const resetFailedAttempts = `-- name: ResetFailedAttempts :exec
 UPDATE users
 SET failed_attempts = 0, updated_at = NOW()

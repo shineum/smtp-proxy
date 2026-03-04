@@ -9,7 +9,7 @@ import {
 import {
   fetchProvider, createProvider, updateProvider,
   fetchProviderAccess, grantProviderAccess, revokeProviderAccess,
-  fetchGroups,
+  fetchGroups, fetchProviderUsage,
 } from '../api/resources';
 
 interface SmtpConfig {
@@ -127,6 +127,12 @@ export default function ProviderFormPage() {
 
   const queryClient = useQueryClient();
   const [grantGroupId, setGrantGroupId] = useState('');
+
+  const { data: usageList } = useQuery({
+    queryKey: ['provider-usage', id],
+    queryFn: () => fetchProviderUsage(id!),
+    enabled: isEdit,
+  });
 
   const { data: accessList } = useQuery({
     queryKey: ['provider-access', id],
@@ -311,6 +317,34 @@ export default function ProviderFormPage() {
                 ) : (
                   <p style={{ color: '#6a6e73' }}>No groups have been granted access yet.</p>
                 )}
+              </>
+            )}
+
+            {isEdit && usageList && usageList.length > 0 && (
+              <>
+                <Title headingLevel="h3" size="md" style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>
+                  Usage
+                </Title>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #d2d2d2', textAlign: 'left' }}>
+                      <th style={{ padding: '0.5rem' }}>Group</th>
+                      <th style={{ padding: '0.5rem' }}>Email</th>
+                      <th style={{ padding: '0.5rem' }}>Account Type</th>
+                      <th style={{ padding: '0.5rem' }}>Role</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usageList.map((u) => (
+                      <tr key={`${u.group_id}-${u.user_id}`} style={{ borderBottom: '1px solid #d2d2d2' }}>
+                        <td style={{ padding: '0.5rem' }}>{u.group_name}</td>
+                        <td style={{ padding: '0.5rem' }}>{u.email}</td>
+                        <td style={{ padding: '0.5rem' }}>{u.account_type}</td>
+                        <td style={{ padding: '0.5rem' }}>{u.role}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </>
             )}
 

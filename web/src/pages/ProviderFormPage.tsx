@@ -148,6 +148,7 @@ export default function ProviderFormPage() {
                 <FormSelectOption value="sendgrid" label="SendGrid" />
                 <FormSelectOption value="mailgun" label="Mailgun" />
                 <FormSelectOption value="msgraph" label="Microsoft Graph" />
+                <FormSelectOption value="stdout" label="Stdout" />
               </FormSelect>
             </FormGroup>
             <FormGroup label="Enabled" fieldId="provider-enabled">

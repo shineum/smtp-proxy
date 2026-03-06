@@ -163,6 +163,8 @@ secret-*.*
 .claude/.env.local*
 .claude/local/
 .claude/plans/
+.claude/agent-memory/
+.claude/worktrees/
 
 # Skill-specific credentials
 .claude/skills/*/.env*
@@ -172,6 +174,13 @@ secret-*.*
 .claude/skills/*/*/*token*
 # Re-include legitimate skill module files containing "token" in their name
 !.claude/skills/*/modules/*token*.md
+
+# ===========================================
+# Local-Only Files (never sync via git pull)
+# ===========================================
+.moai/status_line.sh
+.moai/memory/
+.moai/worktrees/
 
 # ===========================================
 # Node.js (for docs/Nextra)
@@ -196,13 +205,11 @@ dist-ssr/
 .netlify/
 .firebase/
 
-# Frontend build output (embedded via go:embed)
-!server/internal/web/dist/.gitkeep
-
 # User Custom Patterns (preserved by moai update)
+!server/internal/web/dist/.gitkeep
 .claude/memory/
-.claude/agent-memory/
 server/bin/
+server/api-server
 go.work.sum
 *.test
 *.out

@@ -127,6 +127,7 @@ export default function ProviderFormPage() {
 
   const queryClient = useQueryClient();
   const [grantGroupId, setGrantGroupId] = useState('');
+  const [pendingGroupIds, setPendingGroupIds] = useState<string[]>([]);
 
   const { data: usageList } = useQuery({
     queryKey: ['provider-usage', id],
@@ -143,7 +144,7 @@ export default function ProviderFormPage() {
   const { data: allGroups } = useQuery({
     queryKey: ['groups'],
     queryFn: fetchGroups,
-    enabled: isEdit && visibility === 'shared',
+    enabled: visibility === 'shared',
   });
 
   const grantMutation = useMutation({
@@ -160,13 +161,22 @@ export default function ProviderFormPage() {
   });
 
   const grantableGroups = allGroups?.filter(
-    (g) => g.id !== existing?.group_id && !accessList?.some((a) => a.group_id === g.id)
+    (g) => g.id !== existing?.group_id
+      && !accessList?.some((a) => a.group_id === g.id)
+      && !pendingGroupIds.includes(g.id)
   ) ?? [];
 
   const saveMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const payload = buildPayload();
-      return isEdit ? updateProvider(id!, payload) : createProvider(payload);
+      if (isEdit) {
+        return updateProvider(id!, payload);
+      }
+      const created = await createProvider(payload);
+      if (pendingGroupIds.length > 0) {
+        await Promise.all(pendingGroupIds.map((gid) => grantProviderAccess(created.id, gid)));
+      }
+      return created;
     },
     onSuccess: () => navigate('/providers'),
   });
@@ -274,7 +284,7 @@ export default function ProviderFormPage() {
               </>
             )}
 
-            {isEdit && visibility === 'shared' && (
+            {visibility === 'shared' && (
               <>
                 <Title headingLevel="h3" size="md" style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>
                   Group Access
@@ -293,14 +303,23 @@ export default function ProviderFormPage() {
                   </FormSelect>
                   <Button
                     variant="secondary"
-                    isDisabled={!grantGroupId || grantMutation.isPending}
-                    onClick={() => grantMutation.mutate()}
+                    isDisabled={!grantGroupId}
+                    isLoading={isEdit && grantMutation.isPending}
+                    onClick={() => {
+                      if (isEdit) {
+                        grantMutation.mutate();
+                      } else {
+                        setPendingGroupIds([...pendingGroupIds, grantGroupId]);
+                        setGrantGroupId('');
+                      }
+                    }}
                   >
                     Grant
                   </Button>
                 </div>
-                {accessList && accessList.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {/* Edit mode: show persisted access list */}
+                {isEdit && accessList && accessList.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
                     {accessList.map((a) => {
                       const groupName = allGroups?.find((g) => g.id === a.group_id)?.name ?? a.group_id;
                       return (
@@ -314,8 +333,29 @@ export default function ProviderFormPage() {
                       );
                     })}
                   </div>
-                ) : (
+                )}
+                {/* Create mode: show pending groups */}
+                {!isEdit && pendingGroupIds.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    {pendingGroupIds.map((gid) => {
+                      const groupName = allGroups?.find((g) => g.id === gid)?.name ?? gid;
+                      return (
+                        <Label
+                          key={gid}
+                          color="blue"
+                          onClose={() => setPendingGroupIds(pendingGroupIds.filter((x) => x !== gid))}
+                        >
+                          {groupName}
+                        </Label>
+                      );
+                    })}
+                  </div>
+                )}
+                {isEdit && (!accessList || accessList.length === 0) && (
                   <p style={{ color: '#6a6e73' }}>No groups have been granted access yet.</p>
+                )}
+                {!isEdit && pendingGroupIds.length === 0 && (
+                  <p style={{ color: '#6a6e73' }}>Select groups to grant access on creation.</p>
                 )}
               </>
             )}

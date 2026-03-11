@@ -30,6 +30,7 @@ type mockQuerier struct {
 	updateUserProviderFn func(ctx context.Context, arg storage.UpdateUserProviderParams) (storage.User, error)
 	updateUserStatusFn   func(ctx context.Context, arg storage.UpdateUserStatusParams) (storage.User, error)
 	deleteUserFn       func(ctx context.Context, id uuid.UUID) error
+	softDeleteUserFn   func(ctx context.Context, id uuid.UUID) (storage.User, error)
 
 	// Group methods
 	createGroupFn       func(ctx context.Context, arg storage.CreateGroupParams) (storage.Group, error)
@@ -736,6 +737,37 @@ func testRoutingRule() storage.RoutingRule {
 		CreatedAt:  pgtype.Timestamptz{Valid: true},
 		UpdatedAt:  pgtype.Timestamptz{Valid: true},
 	}
+}
+
+func (m *mockQuerier) GetGroupByGroupKey(_ context.Context, _ uuid.UUID) (storage.Group, error) {
+	return storage.Group{}, nil
+}
+
+func (m *mockQuerier) GetUserByUsernameAndGroupKey(_ context.Context, _ storage.GetUserByUsernameAndGroupKeyParams) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) SoftDeleteUser(ctx context.Context, id uuid.UUID) (storage.User, error) {
+	if m.softDeleteUserFn != nil {
+		return m.softDeleteUserFn(ctx, id)
+	}
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) RestoreUser(_ context.Context, _ uuid.UUID) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) ListDeletedUsers(_ context.Context) ([]storage.User, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) PurgeDeletedUsers(_ context.Context) error {
+	return nil
+}
+
+func (m *mockQuerier) ResetUserAPIKey(_ context.Context, _ storage.ResetUserAPIKeyParams) (storage.User, error) {
+	return storage.User{}, nil
 }
 
 // Compile-time verification that mockQuerier implements storage.Querier.

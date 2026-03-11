@@ -24,6 +24,10 @@ export interface User {
   last_login?: string;
   created_at: string;
   updated_at: string;
+  home_group_id?: string;
+  display_name?: string;
+  description?: string;
+  deleted_at?: string;
 }
 
 export interface Group {
@@ -35,6 +39,9 @@ export interface Group {
   monthly_sent: number;
   created_at: string;
   updated_at: string;
+  group_key: string;
+  display_name?: string;
+  description?: string;
 }
 
 export interface GroupMember {

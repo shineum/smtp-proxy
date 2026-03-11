@@ -287,5 +287,33 @@ func (m *mockQuerier) UpdateUserProvider(_ context.Context, _ storage.UpdateUser
 	return storage.User{}, nil
 }
 
+func (m *mockQuerier) GetGroupByGroupKey(_ context.Context, _ uuid.UUID) (storage.Group, error) {
+	return storage.Group{}, nil
+}
+
+func (m *mockQuerier) GetUserByUsernameAndGroupKey(_ context.Context, _ storage.GetUserByUsernameAndGroupKeyParams) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) SoftDeleteUser(_ context.Context, _ uuid.UUID) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) RestoreUser(_ context.Context, _ uuid.UUID) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) ListDeletedUsers(_ context.Context) ([]storage.User, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) PurgeDeletedUsers(_ context.Context) error {
+	return nil
+}
+
+func (m *mockQuerier) ResetUserAPIKey(_ context.Context, _ storage.ResetUserAPIKeyParams) (storage.User, error) {
+	return storage.User{}, nil
+}
+
 // Ensure mockQuerier satisfies the Querier interface at compile time.
 var _ storage.Querier = (*mockQuerier)(nil)

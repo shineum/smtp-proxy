@@ -4,22 +4,25 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   PageSection, Title, Button, Modal, ModalVariant,
   Form, FormGroup, TextInput, FormSelect, FormSelectOption, Spinner, Label,
-  Checkbox,
+  Checkbox, ClipboardCopy, Alert,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
-import { fetchUsers, createUser, deleteUser, updateUserStatus, fetchGroups, fetchProviders } from '../api/resources';
+import { fetchUsers, createUser, deleteUser, updateUserStatus, fetchGroups, fetchProviders, fetchDeletedUsers, restoreUser, resetApiKey } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
+import type { User } from '../types/api';
 
 export default function UserListPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { me, isSystemAdmin } = useAuth();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [form, setForm] = useState({ email: '', password: '', account_type: 'user', username: '', role: 'member', group_id: '', password_disabled: true, provider_id: '' });
+  const [resetKeyResult, setResetKeyResult] = useState<User | null>(null);
 
   const { data: users, isLoading } = useQuery({
-    queryKey: ['users'],
-    queryFn: fetchUsers,
+    queryKey: showDeleted ? ['users-deleted'] : ['users'],
+    queryFn: showDeleted ? fetchDeletedUsers : fetchUsers,
   });
 
   const { data: groups } = useQuery({
@@ -71,6 +74,21 @@ export default function UserListPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => restoreUser(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users-deleted'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
+  const resetKeyMutation = useMutation({
+    mutationFn: (id: string) => resetApiKey(id),
+    onSuccess: (data) => {
+      setResetKeyResult(data);
+    },
+  });
+
   const isSmtp = form.account_type === 'smtp';
   const canCreate = isSmtp ? !!form.username : (!!form.email && (form.password_disabled || !!form.password));
 
@@ -78,10 +96,29 @@ export default function UserListPage() {
 
   return (
     <PageSection>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      <div className="page-header">
         <Title headingLevel="h1" size="lg">Users</Title>
-        <Button onClick={() => setIsCreateOpen(true)}>Create User</Button>
+        <div className="action-buttons">
+          <Button
+            variant={showDeleted ? 'primary' : 'secondary'}
+            onClick={() => setShowDeleted(!showDeleted)}
+          >
+            {showDeleted ? 'Show Active' : 'Show Deleted'}
+          </Button>
+          {!showDeleted && (
+            <Button onClick={() => setIsCreateOpen(true)}>Create User</Button>
+          )}
+        </div>
       </div>
+
+      {showDeleted && (
+        <Alert
+          variant="warning"
+          isInline
+          title="Soft-deleted users are permanently removed after 30 days"
+          style={{ marginBottom: '1rem' }}
+        />
+      )}
 
       <Table aria-label="Users table">
         <Thead>
@@ -90,34 +127,70 @@ export default function UserListPage() {
             <Th>Username</Th>
             <Th>Type</Th>
             <Th>Status</Th>
-            <Th>Last Login</Th>
+            {showDeleted ? <Th>Deleted At</Th> : <Th>Last Login</Th>}
             <Th>Actions</Th>
           </Tr>
         </Thead>
         <Tbody>
           {users?.map((u) => (
-            <Tr key={u.id} isClickable onRowClick={() => navigate(`/users/${u.id}`)}>
+            <Tr
+              key={u.id}
+              className={showDeleted ? 'deleted-row' : undefined}
+              isClickable={!showDeleted}
+              onRowClick={!showDeleted ? () => navigate(`/users/${u.id}`) : undefined}
+            >
               <Td>{u.email}</Td>
               <Td>{u.username || '-'}</Td>
               <Td><Label color={u.account_type === 'smtp' ? 'orange' : 'blue'}>{u.account_type}</Label></Td>
               <Td><Label color={u.status === 'active' ? 'green' : 'red'}>{u.status}</Label></Td>
-              <Td>{u.last_login ? new Date(u.last_login).toLocaleString() : 'Never'}</Td>
+              {showDeleted ? (
+                <Td>{u.deleted_at ? new Date(u.deleted_at).toLocaleString() : '-'}</Td>
+              ) : (
+                <Td>{u.last_login ? new Date(u.last_login).toLocaleString() : 'Never'}</Td>
+              )}
               <Td>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={(e) => { e.stopPropagation(); toggleStatusMutation.mutate({ id: u.id, status: u.status === 'active' ? 'suspended' : 'active' }); }}
-                  style={{ marginRight: '0.5rem' }}
-                >
-                  {u.status === 'active' ? 'Suspend' : 'Activate'}
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={(e) => { e.stopPropagation(); if (confirm(`Delete user "${u.email}"?`)) deleteMutation.mutate(u.id); }}
-                >
-                  Delete
-                </Button>
+                {showDeleted ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={(e) => { e.stopPropagation(); restoreMutation.mutate(u.id); }}
+                    isDisabled={restoreMutation.isPending}
+                  >
+                    Restore
+                  </Button>
+                ) : (
+                  <div className="action-buttons">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); toggleStatusMutation.mutate({ id: u.id, status: u.status === 'active' ? 'suspended' : 'active' }); }}
+                    >
+                      {u.status === 'active' ? 'Suspend' : 'Activate'}
+                    </Button>
+                    {u.account_type === 'smtp' && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm('Reset API key? The current key will be invalidated immediately.')) {
+                            resetKeyMutation.mutate(u.id);
+                          }
+                        }}
+                        isDisabled={resetKeyMutation.isPending}
+                      >
+                        Reset Key
+                      </Button>
+                    )}
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); if (confirm(`Delete user "${u.email}"?`)) deleteMutation.mutate(u.id); }}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                )}
               </Td>
             </Tr>
           ))}
@@ -203,6 +276,24 @@ export default function UserListPage() {
             </FormSelect>
           </FormGroup>
         </Form>
+      </Modal>
+
+      {/* Reset API Key Result Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        title="API Key Reset"
+        isOpen={!!resetKeyResult}
+        onClose={() => setResetKeyResult(null)}
+        actions={[
+          <Button key="close" onClick={() => setResetKeyResult(null)}>Close</Button>,
+        ]}
+      >
+        <div>
+          <p style={{ marginBottom: '1rem' }}>API key has been reset. Copy the new key below - it will not be shown again.</p>
+          <FormGroup label="New API Key" fieldId="reset-api-key">
+            <ClipboardCopy isReadOnly className="mono">{resetKeyResult?.api_key || ''}</ClipboardCopy>
+          </FormGroup>
+        </div>
       </Modal>
     </PageSection>
   );

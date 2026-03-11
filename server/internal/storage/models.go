@@ -153,6 +153,49 @@ func (ns NullProviderType) Value() (driver.Value, error) {
 	return string(ns.ProviderType), nil
 }
 
+type ProviderVisibility string
+
+const (
+	ProviderVisibilityPrivate ProviderVisibility = "private"
+	ProviderVisibilityShared  ProviderVisibility = "shared"
+	ProviderVisibilityGlobal  ProviderVisibility = "global"
+)
+
+func (e *ProviderVisibility) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ProviderVisibility(s)
+	case string:
+		*e = ProviderVisibility(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ProviderVisibility: %T", src)
+	}
+	return nil
+}
+
+type NullProviderVisibility struct {
+	ProviderVisibility ProviderVisibility `json:"provider_visibility"`
+	Valid              bool               `json:"valid"` // Valid is true if ProviderVisibility is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullProviderVisibility) Scan(value interface{}) error {
+	if value == nil {
+		ns.ProviderVisibility, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ProviderVisibility.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullProviderVisibility) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ProviderVisibility), nil
+}
+
 type ActivityLog struct {
 	ID           uuid.UUID          `json:"id"`
 	GroupID      uuid.UUID          `json:"group_id"`
@@ -187,26 +230,6 @@ type DeliveryLog struct {
 	GroupID           pgtype.UUID        `json:"group_id"`
 }
 
-type ProviderVisibility string
-
-const (
-	ProviderVisibilityPrivate ProviderVisibility = "private"
-	ProviderVisibilityShared  ProviderVisibility = "shared"
-	ProviderVisibilityGlobal  ProviderVisibility = "global"
-)
-
-func (e *ProviderVisibility) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = ProviderVisibility(s)
-	case string:
-		*e = ProviderVisibility(s)
-	default:
-		return fmt.Errorf("unsupported scan type for ProviderVisibility: %T", src)
-	}
-	return nil
-}
-
 type EspProvider struct {
 	ID           uuid.UUID          `json:"id"`
 	Name         string             `json:"name"`
@@ -220,13 +243,6 @@ type EspProvider struct {
 	Visibility   ProviderVisibility `json:"visibility"`
 }
 
-type ProviderGroupAccess struct {
-	ProviderID uuid.UUID          `json:"provider_id"`
-	GroupID    uuid.UUID          `json:"group_id"`
-	GrantedAt  pgtype.Timestamptz `json:"granted_at"`
-	GrantedBy  pgtype.UUID        `json:"granted_by"`
-}
-
 type Group struct {
 	ID           uuid.UUID          `json:"id"`
 	Name         string             `json:"name"`
@@ -237,6 +253,9 @@ type Group struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	GroupType    string             `json:"group_type"`
+	GroupKey     uuid.UUID          `json:"group_key"`
+	DisplayName  sql.NullString     `json:"display_name"`
+	Description  pgtype.Text        `json:"description"`
 }
 
 type GroupMember struct {
@@ -261,6 +280,13 @@ type Message struct {
 	StorageRef  pgtype.Text        `json:"storage_ref"`
 	GroupID     pgtype.UUID        `json:"group_id"`
 	UserID      pgtype.UUID        `json:"user_id"`
+}
+
+type ProviderGroupAccess struct {
+	ProviderID uuid.UUID          `json:"provider_id"`
+	GroupID    uuid.UUID          `json:"group_id"`
+	GrantedAt  pgtype.Timestamptz `json:"granted_at"`
+	GrantedBy  pgtype.UUID        `json:"granted_by"`
 }
 
 type RoutingRule struct {
@@ -298,4 +324,8 @@ type User struct {
 	AllowedDomains   []byte             `json:"allowed_domains"`
 	PasswordDisabled bool               `json:"password_disabled"`
 	ProviderID       pgtype.UUID        `json:"provider_id"`
+	HomeGroupID      pgtype.UUID        `json:"home_group_id"`
+	DisplayName      sql.NullString     `json:"display_name"`
+	Description      pgtype.Text        `json:"description"`
+	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
 }

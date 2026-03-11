@@ -82,6 +82,7 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 				// Service accounts (group-scoped)
 				r.Post("/service-accounts", CreateServiceAccountHandler(cfg.Queries, cfg.AuditLogger))
 				r.Patch("/service-accounts/{uid}", UpdateServiceAccountHandler(cfg.Queries, cfg.AuditLogger))
+				r.Post("/service-accounts/{uid}/reset-api-key", ResetServiceAccountAPIKeyHandler(cfg.Queries, cfg.AuditLogger))
 
 				// Activity logs
 				r.Get("/activity", ListActivityLogsHandler(cfg.Queries))
@@ -92,12 +93,15 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 		r.Route("/api/v1/users", func(r chi.Router) {
 			r.Get("/", ListUsersHandler(cfg.Queries))
 			r.Post("/", CreateUserHandler(cfg.Queries, cfg.AuditLogger))
+			r.Get("/deleted", ListDeletedUsersHandler(cfg.Queries))
 			r.Get("/{id}", GetUserHandler(cfg.Queries))
 			r.Patch("/{id}/status", UpdateUserStatusHandler(cfg.Queries, cfg.AuditLogger))
 			r.Delete("/{id}", DeleteUserHandler(cfg.Queries, cfg.AuditLogger))
+			r.Post("/{id}/restore", RestoreUserHandler(cfg.Queries, cfg.AuditLogger))
 			r.Post("/{id}/reset-password", ResetPasswordHandler(cfg.Queries, cfg.AuditLogger))
 			r.Patch("/{id}/password-disabled", UpdatePasswordDisabledHandler(cfg.Queries, cfg.AuditLogger))
 			r.Get("/{id}/memberships", ListUserMembershipsHandler(cfg.Queries))
+			r.Post("/{id}/reset-api-key", ResetAPIKeyHandler(cfg.Queries, cfg.AuditLogger))
 		})
 
 		// Providers

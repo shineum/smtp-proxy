@@ -24,6 +24,8 @@ type createUserRequest struct {
 	Role             string   `json:"role,omitempty"`
 	AllowedDomains   []string `json:"allowed_domains,omitempty"`
 	PasswordDisabled bool     `json:"password_disabled,omitempty"`
+	DisplayName      string   `json:"display_name,omitempty"`
+	Description      string   `json:"description,omitempty"`
 }
 
 // userResponse is the JSON response for a user, excluding sensitive fields.
@@ -36,8 +38,12 @@ type userResponse struct {
 	AllowedDomains   []string   `json:"allowed_domains,omitempty"`
 	ApiKey           *string    `json:"api_key,omitempty"`
 	ProviderID       *uuid.UUID `json:"provider_id,omitempty"`
+	HomeGroupID      *uuid.UUID `json:"home_group_id,omitempty"`
+	DisplayName      *string    `json:"display_name,omitempty"`
+	Description      *string    `json:"description,omitempty"`
 	PasswordDisabled bool       `json:"password_disabled"`
 	LastLogin        *time.Time `json:"last_login,omitempty"`
+	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
@@ -66,6 +72,22 @@ func toUserResponse(u storage.User) userResponse {
 	if u.ProviderID.Valid {
 		id := uuid.UUID(u.ProviderID.Bytes)
 		resp.ProviderID = &id
+	}
+	if u.HomeGroupID.Valid {
+		id := uuid.UUID(u.HomeGroupID.Bytes)
+		resp.HomeGroupID = &id
+	}
+	if u.DisplayName.Valid {
+		s := u.DisplayName.String
+		resp.DisplayName = &s
+	}
+	if u.Description.Valid {
+		s := u.Description.String
+		resp.Description = &s
+	}
+	if u.DeletedAt.Valid {
+		t := u.DeletedAt.Time
+		resp.DeletedAt = &t
 	}
 	return resp
 }
@@ -260,6 +282,11 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			}
 		}
 
+		var homeGroupPgID pgtype.UUID
+		if req.AccountType == "smtp" && groupID != uuid.Nil {
+			homeGroupPgID = pgtype.UUID{Bytes: groupID, Valid: true}
+		}
+
 		user, err := queries.CreateUser(r.Context(), storage.CreateUserParams{
 			Email:            req.Email,
 			PasswordHash:     passwordHash,
@@ -269,6 +296,9 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			AllowedDomains:   domainsJSON,
 			PasswordDisabled: req.PasswordDisabled,
 			ProviderID:       providerPgID,
+			HomeGroupID:      homeGroupPgID,
+			DisplayName:      sql.NullString{String: req.DisplayName, Valid: req.DisplayName != ""},
+			Description:      pgtype.Text{String: req.Description, Valid: req.Description != ""},
 		})
 		if err != nil {
 			if req.AccountType == "smtp" {
@@ -470,10 +500,7 @@ func DeleteUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			return
 		}
 
-		// Remove all group memberships first
-		_ = queries.DeleteGroupMembersByUserID(r.Context(), id)
-
-		if err := queries.DeleteUser(r.Context(), id); err != nil {
+		if _, err := queries.SoftDeleteUser(r.Context(), id); err != nil {
 			respondError(w, http.StatusNotFound, "user not found")
 			return
 		}
@@ -524,5 +551,93 @@ func UpdatePasswordDisabledHandler(queries storage.Querier, auditLogger *auth.Au
 		}
 
 		respondJSON(w, http.StatusOK, toUserResponse(user))
+	}
+}
+
+// RestoreUserHandler handles POST /api/v1/users/{id}/restore.
+// Restores a soft-deleted user by clearing deleted_at and setting status to active.
+func RestoreUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		user, err := queries.RestoreUser(r.Context(), id)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user not found")
+			return
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "admin.restore_user", "user", id.String(), nil)
+		}
+
+		respondJSON(w, http.StatusOK, toUserResponse(user))
+	}
+}
+
+// ListDeletedUsersHandler handles GET /api/v1/users/deleted.
+// Returns all soft-deleted users.
+func ListDeletedUsersHandler(queries storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		users, err := queries.ListDeletedUsers(r.Context())
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		resp := make([]userResponse, len(users))
+		for i, u := range users {
+			resp[i] = toUserResponse(u)
+		}
+
+		respondJSON(w, http.StatusOK, resp)
+	}
+}
+
+// ResetAPIKeyHandler handles POST /api/v1/users/{id}/reset-api-key.
+// Generates a new API key for an SMTP user account.
+func ResetAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		user, err := queries.GetUserByID(r.Context(), id)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		if user.AccountType != "smtp" {
+			respondError(w, http.StatusBadRequest, "user is not an SMTP account")
+			return
+		}
+
+		newKey, err := auth.GenerateAPIKey()
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		updated, err := queries.ResetUserAPIKey(r.Context(), storage.ResetUserAPIKeyParams{
+			ID:     id,
+			ApiKey: sql.NullString{String: newKey, Valid: true},
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to reset API key")
+			return
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "admin.reset_api_key", "user", id.String(), nil)
+		}
+
+		respondJSON(w, http.StatusOK, toUserResponseWithAPIKey(updated))
 	}
 }

@@ -136,7 +136,7 @@ func (q *Queries) ListGroupMembersByGroupID(ctx context.Context, groupID uuid.UU
 }
 
 const listGroupsByUserID = `-- name: ListGroupsByUserID :many
-SELECT g.id, g.name, g.status, g.monthly_limit, g.monthly_sent, g.allowed_ips, g.created_at, g.updated_at, g.group_type FROM groups g
+SELECT g.id, g.name, g.status, g.monthly_limit, g.monthly_sent, g.allowed_ips, g.created_at, g.updated_at, g.group_type, g.group_key, g.display_name, g.description FROM groups g
 JOIN group_members gm ON g.id = gm.group_id
 WHERE gm.user_id = $1 AND g.status != 'deleted'
 ORDER BY gm.created_at ASC
@@ -161,6 +161,9 @@ func (q *Queries) ListGroupsByUserID(ctx context.Context, userID uuid.UUID) ([]G
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GroupType,
+			&i.GroupKey,
+			&i.DisplayName,
+			&i.Description,
 		); err != nil {
 			return nil, err
 		}

@@ -1,0 +1,49 @@
+/* Global UI improvements for better readability */
+
+/* Better table readability */
+.pf-v5-c-table td {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+/* Better card spacing */
+.pf-v5-c-card {
+  margin-bottom: 16px;
+}
+
+/* Better page section padding */
+.pf-v5-c-page__main-section {
+  padding: 24px 32px;
+}
+
+/* Better description list readability */
+.pf-v5-c-description-list__term {
+  font-weight: 600;
+}
+
+/* Monospace for UUIDs and API keys */
+.mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  letter-spacing: -0.02em;
+}
+
+/* Soft delete visual indicator */
+.deleted-row td {
+  opacity: 0.6;
+}
+
+/* Better button spacing in action cells */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Page header with description */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}

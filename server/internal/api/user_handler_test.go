@@ -464,9 +464,9 @@ func TestUpdateUserStatusHandler_InvalidStatus(t *testing.T) {
 func TestDeleteUserHandler_Success(t *testing.T) {
 	deleteCalled := false
 	mock := &mockQuerier{
-		deleteUserFn: func(ctx context.Context, id uuid.UUID) error {
+		softDeleteUserFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
 			deleteCalled = true
-			return nil
+			return storage.User{}, nil
 		},
 	}
 
@@ -485,6 +485,6 @@ func TestDeleteUserHandler_Success(t *testing.T) {
 		t.Fatalf("expected status 204, got %d", rec.Code)
 	}
 	if !deleteCalled {
-		t.Error("expected DeleteUser to be called")
+		t.Error("expected SoftDeleteUser to be called")
 	}
 }

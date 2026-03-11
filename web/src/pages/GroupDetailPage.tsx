@@ -13,7 +13,7 @@ import {
   fetchGroup, fetchGroupMembers, fetchActivityLogs,
   addGroupMember, removeMember, updateMemberRole,
   createServiceAccount, updateServiceAccount, fetchUser,
-  fetchProviders, updateGroup,
+  fetchProviders, updateGroup, resetServiceAccountApiKey,
 } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
 import type { User } from '../types/api';
@@ -47,6 +47,11 @@ export default function GroupDetailPage() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editMonthlyLimit, setEditMonthlyLimit] = useState(0);
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+
+  // Reset API key state
+  const [resetKeyResult, setResetKeyResult] = useState<User | null>(null);
 
   const callerRole = me?.memberships?.find(m => m.group_id === id)?.role;
   const isOwnerOrAdmin = isSystemAdmin || callerRole === 'owner' || callerRole === 'admin';
@@ -125,7 +130,7 @@ export default function GroupDetailPage() {
   });
 
   const editGroupMutation = useMutation({
-    mutationFn: () => updateGroup(id!, { name: editName, monthly_limit: editMonthlyLimit }),
+    mutationFn: () => updateGroup(id!, { name: editName, monthly_limit: editMonthlyLimit, display_name: editDisplayName || undefined, description: editDescription || undefined }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group', id] });
       setIsEditOpen(false);
@@ -146,6 +151,13 @@ export default function GroupDetailPage() {
     },
   });
 
+  const resetKeyMutation = useMutation({
+    mutationFn: (userId: string) => resetServiceAccountApiKey(id!, userId),
+    onSuccess: (data) => {
+      setResetKeyResult(data);
+    },
+  });
+
   const openEditSAModal = async (userId: string) => {
     setEditSAUserId(userId);
     try {
@@ -162,7 +174,15 @@ export default function GroupDetailPage() {
   const openEditModal = () => {
     setEditName(group?.name || '');
     setEditMonthlyLimit(group?.monthly_limit || 0);
+    setEditDisplayName(group?.display_name || '');
+    setEditDescription(group?.description || '');
     setIsEditOpen(true);
+  };
+
+  const handleResetKey = (userId: string) => {
+    if (confirm('Reset API key? The current key will be invalidated immediately.')) {
+      resetKeyMutation.mutate(userId);
+    }
   };
 
   if (isLoading || !group) return <PageSection><Spinner size="xl" /></PageSection>;
@@ -172,9 +192,9 @@ export default function GroupDetailPage() {
 
   return (
     <PageSection>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+      <div className="page-header">
         <Title headingLevel="h1" size="lg">
-          Group: {group.name}
+          Group: {group.display_name || group.name}
         </Title>
         {isOwnerOrAdmin && (
           <Button variant="secondary" size="sm" onClick={openEditModal}>Edit</Button>
@@ -188,7 +208,27 @@ export default function GroupDetailPage() {
               <DescriptionList>
                 <DescriptionListGroup>
                   <DescriptionListTerm>ID</DescriptionListTerm>
-                  <DescriptionListDescription>{group.id}</DescriptionListDescription>
+                  <DescriptionListDescription className="mono">{group.id}</DescriptionListDescription>
+                </DescriptionListGroup>
+                {group.display_name && (
+                  <DescriptionListGroup>
+                    <DescriptionListTerm>Display Name</DescriptionListTerm>
+                    <DescriptionListDescription>{group.display_name}</DescriptionListDescription>
+                  </DescriptionListGroup>
+                )}
+                {group.description && (
+                  <DescriptionListGroup>
+                    <DescriptionListTerm>Description</DescriptionListTerm>
+                    <DescriptionListDescription>{group.description}</DescriptionListDescription>
+                  </DescriptionListGroup>
+                )}
+                <DescriptionListGroup>
+                  <DescriptionListTerm>SMTP Auth Key</DescriptionListTerm>
+                  <DescriptionListDescription>
+                    <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" className="mono">
+                      {group.group_key}
+                    </ClipboardCopy>
+                  </DescriptionListDescription>
                 </DescriptionListGroup>
                 <DescriptionListGroup>
                   <DescriptionListTerm>Type</DescriptionListTerm>
@@ -230,7 +270,7 @@ export default function GroupDetailPage() {
                       <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
                       {isOwnerOrAdmin && (
                         <Td>
-                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <div className="action-buttons">
                             {m.role !== 'admin' && (
                               <Button variant="secondary" size="sm" onClick={() => updateRoleMutation.mutate({ userId: m.user_id, role: 'admin' })}>
                                 Make Admin
@@ -273,9 +313,12 @@ export default function GroupDetailPage() {
                       <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
                       {isOwnerOrAdmin && (
                         <Td>
-                          <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <div className="action-buttons">
                             <Button variant="secondary" size="sm" onClick={() => openEditSAModal(m.user_id)}>
                               Edit
+                            </Button>
+                            <Button variant="secondary" size="sm" onClick={() => handleResetKey(m.user_id)} isDisabled={resetKeyMutation.isPending}>
+                              Reset Key
                             </Button>
                             <Button variant="danger" size="sm" onClick={() => { if (confirm('Remove this service account?')) removeMemberMutation.mutate(m.user_id); }}>
                               Remove
@@ -331,9 +374,12 @@ export default function GroupDetailPage() {
       >
         {createdSA ? (
           <div>
-            <p style={{ marginBottom: '1rem' }}>Service account created. Copy the API key below - it will not be shown again.</p>
-            <FormGroup label="API Key" fieldId="sa-api-key">
-              <ClipboardCopy isReadOnly>{createdSA.api_key || ''}</ClipboardCopy>
+            <p style={{ marginBottom: '1rem' }}>Service account created. Copy the credentials below - the API key will not be shown again.</p>
+            <FormGroup label="SMTP Login" fieldId="sa-smtp-login">
+              <ClipboardCopy isReadOnly className="mono">{`${saUsername || createdSA.username || ''}@${group.group_key}`}</ClipboardCopy>
+            </FormGroup>
+            <FormGroup label="Password (API Key)" fieldId="sa-api-key" style={{ marginTop: '0.75rem' }}>
+              <ClipboardCopy isReadOnly className="mono">{createdSA.api_key || ''}</ClipboardCopy>
             </FormGroup>
           </div>
         ) : (
@@ -405,6 +451,12 @@ export default function GroupDetailPage() {
           <FormGroup label="Name" isRequired fieldId="edit-name">
             <TextInput id="edit-name" value={editName} onChange={(_e, v) => setEditName(v)} isRequired />
           </FormGroup>
+          <FormGroup label="Display Name" fieldId="edit-display-name">
+            <TextInput id="edit-display-name" value={editDisplayName} onChange={(_e, v) => setEditDisplayName(v)} />
+          </FormGroup>
+          <FormGroup label="Description" fieldId="edit-description">
+            <TextInput id="edit-description" value={editDescription} onChange={(_e, v) => setEditDescription(v)} />
+          </FormGroup>
           <FormGroup label="Monthly Limit (0 = unlimited)" fieldId="edit-monthly-limit">
             <TextInput id="edit-monthly-limit" type="number" value={String(editMonthlyLimit)} onChange={(_e, v) => setEditMonthlyLimit(Number(v) || 0)} />
           </FormGroup>
@@ -443,6 +495,24 @@ export default function GroupDetailPage() {
             <p style={{ color: 'red' }}>Failed to update service account.</p>
           )}
         </Form>
+      </Modal>
+
+      {/* Reset API Key Result Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        title="API Key Reset"
+        isOpen={!!resetKeyResult}
+        onClose={() => setResetKeyResult(null)}
+        actions={[
+          <Button key="close" onClick={() => setResetKeyResult(null)}>Close</Button>,
+        ]}
+      >
+        <div>
+          <p style={{ marginBottom: '1rem' }}>API key has been reset. Copy the new key below - it will not be shown again.</p>
+          <FormGroup label="New API Key" fieldId="reset-api-key">
+            <ClipboardCopy isReadOnly className="mono">{resetKeyResult?.api_key || ''}</ClipboardCopy>
+          </FormGroup>
+        </div>
       </Modal>
     </PageSection>
   );

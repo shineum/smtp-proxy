@@ -19,6 +19,8 @@ import (
 type createGroupRequest struct {
 	Name         string `json:"name"`
 	MonthlyLimit int32  `json:"monthly_limit,omitempty"`
+	DisplayName  string `json:"display_name,omitempty"`
+	Description  string `json:"description,omitempty"`
 }
 
 // addMemberRequest is the JSON body for POST /api/v1/groups/{id}/members.
@@ -34,14 +36,17 @@ type updateMemberRoleRequest struct {
 
 // groupResponse is the JSON response for a group.
 type groupResponse struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	GroupType    string    `json:"group_type"`
-	Status       string    `json:"status"`
-	MonthlyLimit int32     `json:"monthly_limit"`
-	MonthlySent  int32     `json:"monthly_sent"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           uuid.UUID  `json:"id"`
+	Name         string     `json:"name"`
+	GroupType    string     `json:"group_type"`
+	Status       string     `json:"status"`
+	MonthlyLimit int32      `json:"monthly_limit"`
+	MonthlySent  int32      `json:"monthly_sent"`
+	GroupKey     uuid.UUID  `json:"group_key"`
+	DisplayName  *string    `json:"display_name,omitempty"`
+	Description  *string    `json:"description,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // groupMemberResponse is the JSON response for a group member.
@@ -57,16 +62,26 @@ type groupMemberResponse struct {
 
 // toGroupResponse converts a storage.Group to a groupResponse.
 func toGroupResponse(g storage.Group) groupResponse {
-	return groupResponse{
+	resp := groupResponse{
 		ID:           g.ID,
 		Name:         g.Name,
 		GroupType:    g.GroupType,
 		Status:       g.Status,
 		MonthlyLimit: g.MonthlyLimit,
 		MonthlySent:  g.MonthlySent,
+		GroupKey:     g.GroupKey,
 		CreatedAt:    timestampToTime(g.CreatedAt),
 		UpdatedAt:    timestampToTime(g.UpdatedAt),
 	}
+	if g.DisplayName.Valid {
+		s := g.DisplayName.String
+		resp.DisplayName = &s
+	}
+	if g.Description.Valid {
+		s := g.Description.String
+		resp.Description = &s
+	}
+	return resp
 }
 
 // toGroupMemberResponse converts a storage.GroupMember to a groupMemberResponse.
@@ -131,8 +146,10 @@ func CreateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 		}
 
 		group, err := queries.CreateGroup(r.Context(), storage.CreateGroupParams{
-			Name:      req.Name,
-			GroupType: "company",
+			Name:        req.Name,
+			GroupType:   "company",
+			DisplayName: sql.NullString{String: req.DisplayName, Valid: req.DisplayName != ""},
+			Description: pgtype.Text{String: req.Description, Valid: req.Description != ""},
 		})
 		if err != nil {
 			respondError(w, http.StatusConflict, "group name already exists")
@@ -146,6 +163,8 @@ func CreateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 				Name:         group.Name,
 				Status:       group.Status,
 				MonthlyLimit: req.MonthlyLimit,
+				DisplayName:  group.DisplayName,
+				Description:  group.Description,
 			})
 			if err != nil {
 				respondError(w, http.StatusInternalServerError, "internal server error")
@@ -626,6 +645,8 @@ func UpdateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 				Email:          user.Email,
 				Status:         user.Status,
 				AllowedDomains: domainsJSON,
+				DisplayName:    user.DisplayName,
+				Description:    user.Description,
 			})
 			if err != nil {
 				respondError(w, http.StatusInternalServerError, "failed to update allowed domains")
@@ -762,6 +783,7 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			ApiKey:         sql.NullString{String: apiKey, Valid: true},
 			AllowedDomains: domainsJSON,
 			ProviderID:     pgtype.UUID{Bytes: providerUUID, Valid: true},
+			HomeGroupID:    pgtype.UUID{Bytes: groupID, Valid: true},
 		})
 		if err != nil {
 			if strings.Contains(err.Error(), "users_username_key") {
@@ -791,5 +813,75 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 		}
 
 		respondJSON(w, http.StatusCreated, toUserResponseWithAPIKey(user))
+	}
+}
+
+// ResetServiceAccountAPIKeyHandler handles POST /api/v1/groups/{id}/service-accounts/{uid}/reset-api-key.
+// Generates a new API key for an SMTP service account in the group.
+// Requires owner or admin role.
+func ResetServiceAccountAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		groupID, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid group ID format")
+			return
+		}
+
+		uidStr := chi.URLParam(r, "uid")
+		userID, err := uuid.Parse(uidStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
+			return
+		}
+
+		// Verify user belongs to this group
+		_, err = queries.GetGroupMemberByUserAndGroup(r.Context(), storage.GetGroupMemberByUserAndGroupParams{
+			UserID:  userID,
+			GroupID: groupID,
+		})
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user is not a member of this group")
+			return
+		}
+
+		// Verify user is an SMTP service account
+		user, err := queries.GetUserByID(r.Context(), userID)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		if user.AccountType != "smtp" {
+			respondError(w, http.StatusBadRequest, "user is not a service account")
+			return
+		}
+
+		newKey, err := auth.GenerateAPIKey()
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		updated, err := queries.ResetUserAPIKey(r.Context(), storage.ResetUserAPIKeyParams{
+			ID:     userID,
+			ApiKey: sql.NullString{String: newKey, Valid: true},
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to reset API key")
+			return
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "admin.reset_api_key", "user", userID.String(), map[string]interface{}{
+				"group_id": groupID.String(),
+			})
+		}
+
+		respondJSON(w, http.StatusOK, toUserResponseWithAPIKey(updated))
 	}
 }

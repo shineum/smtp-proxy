@@ -55,6 +55,37 @@ func (q *Queries) CreateProvider(ctx context.Context, arg CreateProviderParams) 
 	return i, err
 }
 
+const deleteProvider = `-- name: DeleteProvider :exec
+DELETE FROM esp_providers WHERE id = $1
+`
+
+func (q *Queries) DeleteProvider(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteProvider, id)
+	return err
+}
+
+const getGlobalStdoutProvider = `-- name: GetGlobalStdoutProvider :one
+SELECT id, name, provider_type, api_key, smtp_config, enabled, created_at, updated_at, group_id, visibility FROM esp_providers WHERE provider_type = 'stdout' AND visibility = 'global' AND enabled = true LIMIT 1
+`
+
+func (q *Queries) GetGlobalStdoutProvider(ctx context.Context) (EspProvider, error) {
+	row := q.db.QueryRow(ctx, getGlobalStdoutProvider)
+	var i EspProvider
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.ProviderType,
+		&i.ApiKey,
+		&i.SmtpConfig,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.GroupID,
+		&i.Visibility,
+	)
+	return i, err
+}
+
 const getProviderByID = `-- name: GetProviderByID :one
 SELECT id, name, provider_type, api_key, smtp_config, enabled, created_at, updated_at, group_id, visibility FROM esp_providers WHERE id = $1
 `
@@ -99,75 +130,53 @@ func (q *Queries) GetStdoutProviderByGroupID(ctx context.Context, groupID uuid.U
 	return i, err
 }
 
-const getGlobalStdoutProvider = `-- name: GetGlobalStdoutProvider :one
-SELECT id, name, provider_type, api_key, smtp_config, enabled, created_at, updated_at, group_id, visibility FROM esp_providers WHERE provider_type = 'stdout' AND visibility = 'global' AND enabled = true LIMIT 1
+const grantProviderAccess = `-- name: GrantProviderAccess :exec
+INSERT INTO provider_group_access (provider_id, group_id, granted_by)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING
 `
 
-func (q *Queries) GetGlobalStdoutProvider(ctx context.Context) (EspProvider, error) {
-	row := q.db.QueryRow(ctx, getGlobalStdoutProvider)
-	var i EspProvider
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.ProviderType,
-		&i.ApiKey,
-		&i.SmtpConfig,
-		&i.Enabled,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.GroupID,
-		&i.Visibility,
-	)
-	return i, err
+type GrantProviderAccessParams struct {
+	ProviderID uuid.UUID   `json:"provider_id"`
+	GroupID    uuid.UUID   `json:"group_id"`
+	GrantedBy  pgtype.UUID `json:"granted_by"`
 }
 
-const deleteProvider = `-- name: DeleteProvider :exec
-DELETE FROM esp_providers WHERE id = $1
-`
-
-func (q *Queries) DeleteProvider(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteProvider, id)
+func (q *Queries) GrantProviderAccess(ctx context.Context, arg GrantProviderAccessParams) error {
+	_, err := q.db.Exec(ctx, grantProviderAccess, arg.ProviderID, arg.GroupID, arg.GrantedBy)
 	return err
 }
 
-const listProvidersByGroupID = `-- name: ListProvidersByGroupID :many
-SELECT id, name, provider_type, api_key, smtp_config, enabled, created_at, updated_at, group_id, visibility FROM esp_providers WHERE group_id = $1 ORDER BY created_at DESC
+const isProviderAccessible = `-- name: IsProviderAccessible :one
+SELECT EXISTS(
+    SELECT 1 FROM esp_providers ep
+    WHERE ep.id = $1
+    AND ep.enabled = true
+    AND (
+        ep.visibility = 'global'
+        OR ep.group_id = $2
+        OR (ep.visibility = 'shared' AND EXISTS (
+            SELECT 1 FROM provider_group_access pga
+            WHERE pga.provider_id = ep.id AND pga.group_id = $2
+        ))
+    )
+) AS accessible
 `
 
-func (q *Queries) ListProvidersByGroupID(ctx context.Context, groupID uuid.UUID) ([]EspProvider, error) {
-	rows, err := q.db.Query(ctx, listProvidersByGroupID, groupID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []EspProvider
-	for rows.Next() {
-		var i EspProvider
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.ProviderType,
-			&i.ApiKey,
-			&i.SmtpConfig,
-			&i.Enabled,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.GroupID,
-			&i.Visibility,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+type IsProviderAccessibleParams struct {
+	ID      uuid.UUID `json:"id"`
+	GroupID uuid.UUID `json:"group_id"`
+}
+
+func (q *Queries) IsProviderAccessible(ctx context.Context, arg IsProviderAccessibleParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isProviderAccessible, arg.ID, arg.GroupID)
+	var accessible bool
+	err := row.Scan(&accessible)
+	return accessible, err
 }
 
 const listAccessibleProviders = `-- name: ListAccessibleProviders :many
-SELECT ep.id, ep.name, ep.provider_type, ep.api_key, ep.smtp_config, ep.enabled, ep.created_at, ep.updated_at, ep.group_id, ep.visibility
-FROM esp_providers ep
+SELECT ep.id, ep.name, ep.provider_type, ep.api_key, ep.smtp_config, ep.enabled, ep.created_at, ep.updated_at, ep.group_id, ep.visibility FROM esp_providers ep
 WHERE ep.enabled = true
 AND (
     ep.visibility = 'global'
@@ -211,6 +220,84 @@ func (q *Queries) ListAccessibleProviders(ctx context.Context, groupID uuid.UUID
 	return items, nil
 }
 
+const listProviderAccess = `-- name: ListProviderAccess :many
+SELECT provider_id, group_id, granted_at, granted_by FROM provider_group_access WHERE provider_id = $1 ORDER BY granted_at DESC
+`
+
+func (q *Queries) ListProviderAccess(ctx context.Context, providerID uuid.UUID) ([]ProviderGroupAccess, error) {
+	rows, err := q.db.Query(ctx, listProviderAccess, providerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ProviderGroupAccess
+	for rows.Next() {
+		var i ProviderGroupAccess
+		if err := rows.Scan(
+			&i.ProviderID,
+			&i.GroupID,
+			&i.GrantedAt,
+			&i.GrantedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProvidersByGroupID = `-- name: ListProvidersByGroupID :many
+SELECT id, name, provider_type, api_key, smtp_config, enabled, created_at, updated_at, group_id, visibility FROM esp_providers WHERE group_id = $1 ORDER BY created_at DESC
+`
+
+func (q *Queries) ListProvidersByGroupID(ctx context.Context, groupID uuid.UUID) ([]EspProvider, error) {
+	rows, err := q.db.Query(ctx, listProvidersByGroupID, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []EspProvider
+	for rows.Next() {
+		var i EspProvider
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ProviderType,
+			&i.ApiKey,
+			&i.SmtpConfig,
+			&i.Enabled,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.GroupID,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeProviderAccess = `-- name: RevokeProviderAccess :exec
+DELETE FROM provider_group_access WHERE provider_id = $1 AND group_id = $2
+`
+
+type RevokeProviderAccessParams struct {
+	ProviderID uuid.UUID `json:"provider_id"`
+	GroupID    uuid.UUID `json:"group_id"`
+}
+
+func (q *Queries) RevokeProviderAccess(ctx context.Context, arg RevokeProviderAccessParams) error {
+	_, err := q.db.Exec(ctx, revokeProviderAccess, arg.ProviderID, arg.GroupID)
+	return err
+}
+
 const updateProvider = `-- name: UpdateProvider :one
 UPDATE esp_providers
 SET name = $2, provider_type = $3, api_key = $4, smtp_config = $5, enabled = $6, visibility = $7, updated_at = NOW()
@@ -252,92 +339,4 @@ func (q *Queries) UpdateProvider(ctx context.Context, arg UpdateProviderParams) 
 		&i.Visibility,
 	)
 	return i, err
-}
-
-const isProviderAccessible = `-- name: IsProviderAccessible :one
-SELECT EXISTS(
-    SELECT 1 FROM esp_providers ep
-    WHERE ep.id = $1
-    AND ep.enabled = true
-    AND (
-        ep.visibility = 'global'
-        OR ep.group_id = $2
-        OR (ep.visibility = 'shared' AND EXISTS (
-            SELECT 1 FROM provider_group_access pga
-            WHERE pga.provider_id = ep.id AND pga.group_id = $2
-        ))
-    )
-) AS accessible
-`
-
-type IsProviderAccessibleParams struct {
-	ID      uuid.UUID `json:"id"`
-	GroupID uuid.UUID `json:"group_id"`
-}
-
-func (q *Queries) IsProviderAccessible(ctx context.Context, arg IsProviderAccessibleParams) (bool, error) {
-	row := q.db.QueryRow(ctx, isProviderAccessible, arg.ID, arg.GroupID)
-	var accessible bool
-	err := row.Scan(&accessible)
-	return accessible, err
-}
-
-const grantProviderAccess = `-- name: GrantProviderAccess :exec
-INSERT INTO provider_group_access (provider_id, group_id, granted_by)
-VALUES ($1, $2, $3)
-ON CONFLICT DO NOTHING
-`
-
-type GrantProviderAccessParams struct {
-	ProviderID uuid.UUID   `json:"provider_id"`
-	GroupID    uuid.UUID   `json:"group_id"`
-	GrantedBy  pgtype.UUID `json:"granted_by"`
-}
-
-func (q *Queries) GrantProviderAccess(ctx context.Context, arg GrantProviderAccessParams) error {
-	_, err := q.db.Exec(ctx, grantProviderAccess, arg.ProviderID, arg.GroupID, arg.GrantedBy)
-	return err
-}
-
-const revokeProviderAccess = `-- name: RevokeProviderAccess :exec
-DELETE FROM provider_group_access WHERE provider_id = $1 AND group_id = $2
-`
-
-type RevokeProviderAccessParams struct {
-	ProviderID uuid.UUID `json:"provider_id"`
-	GroupID    uuid.UUID `json:"group_id"`
-}
-
-func (q *Queries) RevokeProviderAccess(ctx context.Context, arg RevokeProviderAccessParams) error {
-	_, err := q.db.Exec(ctx, revokeProviderAccess, arg.ProviderID, arg.GroupID)
-	return err
-}
-
-const listProviderAccess = `-- name: ListProviderAccess :many
-SELECT provider_id, group_id, granted_at, granted_by FROM provider_group_access WHERE provider_id = $1 ORDER BY granted_at DESC
-`
-
-func (q *Queries) ListProviderAccess(ctx context.Context, providerID uuid.UUID) ([]ProviderGroupAccess, error) {
-	rows, err := q.db.Query(ctx, listProviderAccess, providerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ProviderGroupAccess
-	for rows.Next() {
-		var i ProviderGroupAccess
-		if err := rows.Scan(
-			&i.ProviderID,
-			&i.GroupID,
-			&i.GrantedAt,
-			&i.GrantedBy,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }

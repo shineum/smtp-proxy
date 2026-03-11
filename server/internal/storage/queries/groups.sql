@@ -1,6 +1,6 @@
 -- name: CreateGroup :one
-INSERT INTO groups (name, group_type)
-VALUES ($1, $2)
+INSERT INTO groups (name, group_type, display_name, description)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: GetGroupByID :one
@@ -9,12 +9,15 @@ SELECT * FROM groups WHERE id = $1;
 -- name: GetGroupByName :one
 SELECT * FROM groups WHERE name = $1;
 
+-- name: GetGroupByGroupKey :one
+SELECT * FROM groups WHERE group_key = $1;
+
 -- name: ListGroups :many
 SELECT * FROM groups WHERE status != 'deleted' ORDER BY created_at DESC;
 
 -- name: UpdateGroup :one
 UPDATE groups
-SET name = $2, status = $3, monthly_limit = $4, updated_at = NOW()
+SET name = $2, status = $3, monthly_limit = $4, display_name = $5, description = $6, updated_at = NOW()
 WHERE id = $1
 RETURNING *;
 

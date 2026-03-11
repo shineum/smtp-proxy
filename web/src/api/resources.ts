@@ -9,9 +9,9 @@ import type {
 // Groups
 export const fetchGroups = async (): Promise<Group[]> => (await api.get('/groups')).data;
 export const fetchGroup = async (id: string): Promise<Group> => (await api.get(`/groups/${id}`)).data;
-export const createGroup = async (name: string, monthly_limit?: number): Promise<Group> =>
-  (await api.post('/groups', { name, monthly_limit })).data;
-export const updateGroup = async (id: string, data: { name?: string; monthly_limit?: number }): Promise<Group> =>
+export const createGroup = async (name: string, monthly_limit?: number, display_name?: string, description?: string): Promise<Group> =>
+  (await api.post('/groups', { name, monthly_limit, display_name, description })).data;
+export const updateGroup = async (id: string, data: { name?: string; monthly_limit?: number; display_name?: string; description?: string }): Promise<Group> =>
   (await api.put(`/groups/${id}`, data)).data;
 export const deleteGroup = async (id: string): Promise<void> => { await api.delete(`/groups/${id}`); };
 
@@ -48,6 +48,14 @@ export const createUser = async (data: Record<string, unknown>): Promise<User> =
 export const updateUserStatus = async (id: string, status: string): Promise<User> =>
   (await api.patch(`/users/${id}/status`, { status })).data;
 export const deleteUser = async (id: string): Promise<void> => { await api.delete(`/users/${id}`); };
+export const restoreUser = async (id: string): Promise<User> =>
+  (await api.post(`/users/${id}/restore`)).data;
+export const fetchDeletedUsers = async (): Promise<User[]> =>
+  (await api.get('/users/deleted')).data;
+export const resetApiKey = async (id: string): Promise<User> =>
+  (await api.post(`/users/${id}/reset-api-key`)).data;
+export const resetServiceAccountApiKey = async (groupId: string, userId: string): Promise<User> =>
+  (await api.post(`/groups/${groupId}/service-accounts/${userId}/reset-api-key`)).data;
 export const resetUserPassword = async (id: string, new_password: string): Promise<void> =>
   { await api.post(`/users/${id}/reset-password`, { new_password }); };
 export const fetchUserMemberships = async (id: string): Promise<Membership[]> =>

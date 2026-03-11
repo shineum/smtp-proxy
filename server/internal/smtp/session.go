@@ -59,8 +59,34 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 	return sasl.NewPlainServer(func(identity, username, password string) error {
 		s.log.Info().Str("username", username).Msg("auth attempt")
 
-		// Step 1: Look up user by SMTP username.
-		user, err := s.queries.GetUserByUsername(s.ctx, sql.NullString{String: username, Valid: true})
+		// Step 1: Parse username@{group_key_uuid} format.
+		atIdx := strings.LastIndex(username, "@")
+		if atIdx < 0 {
+			s.log.Warn().Str("username", username).Msg("auth failed: username must be in user@group-key format")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
+		}
+		actualUsername := username[:atIdx]
+		groupKeyStr := username[atIdx+1:]
+
+		groupKeyUUID, err := uuid.Parse(groupKeyStr)
+		if err != nil {
+			s.log.Warn().Str("username", username).Msg("auth failed: invalid group key format")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
+		}
+
+		// Step 2: Look up user by username and group key.
+		user, err := s.queries.GetUserByUsernameAndGroupKey(s.ctx, storage.GetUserByUsernameAndGroupKeyParams{
+			Username: sql.NullString{String: actualUsername, Valid: true},
+			GroupKey: groupKeyUUID,
+		})
 		if err != nil {
 			s.log.Warn().Str("username", username).Msg("auth failed: user not found")
 			return &gosmtp.SMTPError{
@@ -83,7 +109,7 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 
-		// Step 2: Verify API key (service accounts authenticate with API key as password).
+		// Step 3: Verify API key (service accounts authenticate with API key as password).
 		if !user.ApiKey.Valid || subtle.ConstantTimeCompare([]byte(user.ApiKey.String), []byte(password)) != 1 {
 			s.log.Warn().Str("username", username).Msg("auth failed: invalid API key")
 			return &gosmtp.SMTPError{
@@ -93,22 +119,12 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 
-		// Step 3: Resolve group membership (SMTP accounts belong to exactly one group).
-		groups, err := s.queries.ListGroupsByUserID(s.ctx, user.ID)
-		if err != nil || len(groups) == 0 {
-			s.log.Warn().Str("username", username).Msg("auth failed: no group membership")
-			return &gosmtp.SMTPError{
-				Code:         535,
-				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
-				Message:      "Authentication failed",
-			}
-		}
-
-		// Step 4: Check group status.
-		group, err := s.queries.GetGroupByID(s.ctx, groups[0].ID)
+		// Step 4: Get home group and verify it is active.
+		groupUUID := uuid.UUID(user.HomeGroupID.Bytes)
+		group, err := s.queries.GetGroupByID(s.ctx, groupUUID)
 		if err != nil || group.Status != "active" {
 			s.log.Warn().Str("username", username).
-				Str("group_id", groups[0].ID.String()).
+				Str("group_id", groupUUID.String()).
 				Msg("auth failed: group not active")
 			return &gosmtp.SMTPError{
 				Code:         535,

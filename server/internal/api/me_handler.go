@@ -259,6 +259,8 @@ func UpdateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 			Name:         name,
 			Status:       group.Status,
 			MonthlyLimit: monthlyLimit,
+			DisplayName:  group.DisplayName,
+			Description:  group.Description,
 		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")

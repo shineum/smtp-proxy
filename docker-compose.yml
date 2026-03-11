@@ -80,6 +80,8 @@ services:
       SMTP_PROXY_AUTH_SIGNING_KEY: ${SMTP_PROXY_AUTH_SIGNING_KEY:-dev-signing-key-change-in-production}
       SMTP_PROXY_LOGGING_LEVEL: ${SMTP_PROXY_LOGGING_LEVEL:-debug}
       # SMTP_PROXY_TLS_MODE: "none"  # Uncomment to disable TLS (when terminated by NLB/proxy)
+    volumes:
+      - message-store:/data/messages
     depends_on:
       postgres:
         condition: service_healthy
@@ -202,6 +204,8 @@ services:
       SMTP_PROXY_AUTH_SIGNING_KEY: ${SMTP_PROXY_AUTH_SIGNING_KEY:-dev-signing-key-change-in-production}
       SMTP_PROXY_LOGGING_LEVEL: ${SMTP_PROXY_LOGGING_LEVEL:-debug}
       SMTP_PROXY_PROVIDER_STDOUT_FALLBACK: ${SMTP_PROXY_PROVIDER_STDOUT_FALLBACK:-true}
+    volumes:
+      - message-store:/data/messages
     depends_on:
       postgres:
         condition: service_healthy
@@ -244,6 +248,7 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  message-store:
 
 networks:
   backend:

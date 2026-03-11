@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -763,7 +764,11 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			ProviderID:     pgtype.UUID{Bytes: providerUUID, Valid: true},
 		})
 		if err != nil {
-			respondError(w, http.StatusConflict, "username already in use")
+			if strings.Contains(err.Error(), "users_username_key") {
+				respondError(w, http.StatusConflict, "username already in use")
+			} else {
+				respondError(w, http.StatusInternalServerError, "failed to create service account")
+			}
 			return
 		}
 

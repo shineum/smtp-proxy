@@ -12,15 +12,19 @@ import (
 // AsyncService enqueues messages for background delivery
 // by the queue-worker process.
 type AsyncService struct {
-	enqueuer queue.Enqueuer
-	log      zerolog.Logger
+	enqueuer   queue.Enqueuer
+	streamName string
+	log        zerolog.Logger
 }
 
 // NewAsyncService creates an AsyncService backed by the given Enqueuer.
-func NewAsyncService(enqueuer queue.Enqueuer, log zerolog.Logger) *AsyncService {
+// streamName must match the queue worker's configured stream name so both
+// sides use the same Redis stream key.
+func NewAsyncService(enqueuer queue.Enqueuer, streamName string, log zerolog.Logger) *AsyncService {
 	return &AsyncService{
-		enqueuer: enqueuer,
-		log:      log,
+		enqueuer:   enqueuer,
+		streamName: streamName,
+		log:        log,
 	}
 }
 
@@ -28,7 +32,7 @@ func NewAsyncService(enqueuer queue.Enqueuer, log zerolog.Logger) *AsyncService 
 // The actual ESP delivery is handled asynchronously by the queue-worker process,
 // which fetches the full message body from the message store.
 func (a *AsyncService) DeliverMessage(ctx context.Context, req *Request) error {
-	msg := queue.NewIDOnlyMessage(req.MessageID.String(), req.GroupID.String(), req.GroupID.String())
+	msg := queue.NewIDOnlyMessage(req.MessageID.String(), req.GroupID.String(), a.streamName)
 
 	entryID, err := a.enqueuer.Enqueue(ctx, msg)
 	if err != nil {

@@ -57,7 +57,7 @@ func TestNewAsyncService(t *testing.T) {
 
 	// NewAsyncService accepts any queue.Enqueuer.
 	mock := &mockEnqueuer{}
-	svc := NewAsyncService(mock, log)
+	svc := NewAsyncService(mock, "smtp-proxy", log)
 	if svc == nil {
 		t.Fatal("expected non-nil AsyncService")
 	}
@@ -74,7 +74,7 @@ func TestAsyncService_DeliverMessage(t *testing.T) {
 		},
 	}
 
-	svc := NewAsyncService(mock, log)
+	svc := NewAsyncService(mock, "smtp-proxy", log)
 
 	req := &Request{
 		MessageID: uuid.New(),
@@ -96,7 +96,7 @@ func TestAsyncService_DeliverMessage(t *testing.T) {
 	if capturedMsg.AccountID != req.GroupID.String() {
 		t.Errorf("account ID (group) = %q, want %q", capturedMsg.AccountID, req.GroupID.String())
 	}
-	if capturedMsg.TenantID != req.GroupID.String() {
-		t.Errorf("tenant ID (group) = %q, want %q", capturedMsg.TenantID, req.GroupID.String())
+	if capturedMsg.TenantID != "smtp-proxy" {
+		t.Errorf("tenant ID (stream) = %q, want %q", capturedMsg.TenantID, "smtp-proxy")
 	}
 }

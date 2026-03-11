@@ -57,7 +57,7 @@ func main() {
 	defer redisClient.Close()
 
 	enqueuer := queue.NewRedisEnqueuer(redisClient)
-	deliverySvc := delivery.NewAsyncService(enqueuer, log)
+	deliverySvc := delivery.NewAsyncService(enqueuer, cfg.Queue.StreamName, log)
 	log.Info().Msg("delivery mode: async (Redis Streams)")
 
 	// Initialize message body storage.

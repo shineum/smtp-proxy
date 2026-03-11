@@ -2,6 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -14,6 +17,27 @@ func timestampToTime(ts pgtype.Timestamptz) time.Time {
 		return ts.Time
 	}
 	return time.Time{}
+}
+
+// parseAPIKeyExpiration converts an expiration preset string to a pgtype.Timestamptz.
+// Valid values: "1d", "7d", "30d", "365d", "{N}d" for custom days, or "" for no expiration.
+func parseAPIKeyExpiration(expiresIn string) (pgtype.Timestamptz, error) {
+	if expiresIn == "" {
+		return pgtype.Timestamptz{}, nil
+	}
+	expiresIn = strings.TrimSpace(expiresIn)
+	if !strings.HasSuffix(expiresIn, "d") {
+		return pgtype.Timestamptz{}, fmt.Errorf("invalid expiration format: must end with 'd' (e.g., 7d, 30d)")
+	}
+	daysStr := strings.TrimSuffix(expiresIn, "d")
+	days, err := strconv.Atoi(daysStr)
+	if err != nil || days < 1 {
+		return pgtype.Timestamptz{}, fmt.Errorf("invalid expiration: days must be a positive integer")
+	}
+	return pgtype.Timestamptz{
+		Time:  time.Now().AddDate(0, 0, days),
+		Valid: true,
+	}, nil
 }
 
 // decodeDomains unmarshals a JSON byte slice into a string slice.

@@ -30,6 +30,7 @@ export default function GroupDetailPage() {
   const [saEmail, setSaEmail] = useState('');
   const [saDomains, setSaDomains] = useState('');
   const [saProviderId, setSaProviderId] = useState('');
+  const [saKeyExpiry, setSaKeyExpiry] = useState('');
   const [createdSA, setCreatedSA] = useState<User | null>(null);
 
   // Edit service account state
@@ -52,6 +53,9 @@ export default function GroupDetailPage() {
 
   // Reset API key state
   const [resetKeyResult, setResetKeyResult] = useState<User | null>(null);
+  const [resetKeyExpiry, setResetKeyExpiry] = useState('');
+  const [isResetKeyModalOpen, setIsResetKeyModalOpen] = useState(false);
+  const [resetKeyUserId, setResetKeyUserId] = useState('');
 
   const callerRole = me?.memberships?.find(m => m.group_id === id)?.role;
   const isOwnerOrAdmin = isSystemAdmin || callerRole === 'owner' || callerRole === 'admin';
@@ -97,6 +101,7 @@ export default function GroupDetailPage() {
         email: saEmail || undefined,
         allowed_domains: domains,
         provider_id: saProviderId || undefined,
+        api_key_expires_in: saKeyExpiry || undefined,
       });
     },
     onSuccess: (data) => {
@@ -106,6 +111,7 @@ export default function GroupDetailPage() {
       setSaEmail('');
       setSaDomains('');
       setSaProviderId('');
+      setSaKeyExpiry('');
     },
   });
 
@@ -152,9 +158,12 @@ export default function GroupDetailPage() {
   });
 
   const resetKeyMutation = useMutation({
-    mutationFn: (userId: string) => resetServiceAccountApiKey(id!, userId),
+    mutationFn: ({ userId, expiresIn }: { userId: string; expiresIn?: string }) =>
+      resetServiceAccountApiKey(id!, userId, expiresIn || undefined),
     onSuccess: (data) => {
       setResetKeyResult(data);
+      setIsResetKeyModalOpen(false);
+      setResetKeyExpiry('');
     },
   });
 
@@ -180,9 +189,9 @@ export default function GroupDetailPage() {
   };
 
   const handleResetKey = (userId: string) => {
-    if (confirm('Reset API key? The current key will be invalidated immediately.')) {
-      resetKeyMutation.mutate(userId);
-    }
+    setResetKeyUserId(userId);
+    setResetKeyExpiry('');
+    setIsResetKeyModalOpen(true);
   };
 
   if (isLoading || !group) return <PageSection><Spinner size="xl" /></PageSection>;
@@ -381,6 +390,11 @@ export default function GroupDetailPage() {
             <FormGroup label="Password (API Key)" fieldId="sa-api-key" style={{ marginTop: '0.75rem' }}>
               <ClipboardCopy isReadOnly className="mono">{createdSA.api_key || ''}</ClipboardCopy>
             </FormGroup>
+            {createdSA.api_key_expires_at && (
+              <p style={{ marginTop: '0.5rem', color: 'var(--pf-v5-global--Color--200)' }}>
+                Key expires: {new Date(createdSA.api_key_expires_at).toLocaleString()}
+              </p>
+            )}
           </div>
         ) : (
           <Form>
@@ -400,6 +414,15 @@ export default function GroupDetailPage() {
             </FormGroup>
             <FormGroup label="Allowed Domains (comma-separated, optional)" fieldId="sa-domains">
               <TextInput id="sa-domains" value={saDomains} onChange={(_e, v) => setSaDomains(v)} placeholder="example.com, other.com" />
+            </FormGroup>
+            <FormGroup label="API Key Expiration" fieldId="sa-key-expiry">
+              <FormSelect id="sa-key-expiry" value={saKeyExpiry} onChange={(_e, v) => setSaKeyExpiry(v)}>
+                <FormSelectOption value="" label="No expiration" />
+                <FormSelectOption value="1d" label="1 day" />
+                <FormSelectOption value="7d" label="7 days" />
+                <FormSelectOption value="30d" label="30 days" />
+                <FormSelectOption value="365d" label="1 year" />
+              </FormSelect>
             </FormGroup>
             {createSAMutation.isError && (
               <p style={{ color: 'red' }}>Failed to create service account. Username may already be in use.</p>
@@ -497,6 +520,33 @@ export default function GroupDetailPage() {
         </Form>
       </Modal>
 
+      {/* Reset API Key Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        title="Reset API Key"
+        isOpen={isResetKeyModalOpen}
+        onClose={() => setIsResetKeyModalOpen(false)}
+        actions={[
+          <Button key="reset" variant="danger" onClick={() => resetKeyMutation.mutate({ userId: resetKeyUserId, expiresIn: resetKeyExpiry })} isDisabled={resetKeyMutation.isPending}>
+            {resetKeyMutation.isPending ? 'Resetting...' : 'Reset Key'}
+          </Button>,
+          <Button key="cancel" variant="link" onClick={() => setIsResetKeyModalOpen(false)}>Cancel</Button>,
+        ]}
+      >
+        <p style={{ marginBottom: '1rem' }}>The current API key will be invalidated immediately.</p>
+        <Form>
+          <FormGroup label="New Key Expiration" fieldId="reset-key-expiry">
+            <FormSelect id="reset-key-expiry" value={resetKeyExpiry} onChange={(_e, v) => setResetKeyExpiry(v)}>
+              <FormSelectOption value="" label="No expiration" />
+              <FormSelectOption value="1d" label="1 day" />
+              <FormSelectOption value="7d" label="7 days" />
+              <FormSelectOption value="30d" label="30 days" />
+              <FormSelectOption value="365d" label="1 year" />
+            </FormSelect>
+          </FormGroup>
+        </Form>
+      </Modal>
+
       {/* Reset API Key Result Modal */}
       <Modal
         variant={ModalVariant.small}
@@ -512,6 +562,11 @@ export default function GroupDetailPage() {
           <FormGroup label="New API Key" fieldId="reset-api-key">
             <ClipboardCopy isReadOnly className="mono">{resetKeyResult?.api_key || ''}</ClipboardCopy>
           </FormGroup>
+          {resetKeyResult?.api_key_expires_at && (
+            <p style={{ marginTop: '0.5rem', color: 'var(--pf-v5-global--Color--200)' }}>
+              Expires: {new Date(resetKeyResult.api_key_expires_at).toLocaleString()}
+            </p>
+          )}
         </div>
       </Modal>
     </PageSection>

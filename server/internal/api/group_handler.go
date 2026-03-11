@@ -97,10 +97,16 @@ func toGroupMemberResponse(gm storage.GroupMember) groupMemberResponse {
 
 // createServiceAccountRequest is the JSON body for POST /api/v1/groups/{id}/service-accounts.
 type createServiceAccountRequest struct {
-	Username       string   `json:"username"`
-	Email          string   `json:"email,omitempty"`
-	AllowedDomains []string `json:"allowed_domains,omitempty"`
-	ProviderID     string   `json:"provider_id"`
+	Username         string   `json:"username"`
+	Email            string   `json:"email,omitempty"`
+	AllowedDomains   []string `json:"allowed_domains,omitempty"`
+	ProviderID       string   `json:"provider_id"`
+	ApiKeyExpiresIn  string   `json:"api_key_expires_in,omitempty"`
+}
+
+// resetAPIKeyRequest is the JSON body for reset-api-key endpoints.
+type resetAPIKeyRequest struct {
+	ApiKeyExpiresIn string `json:"api_key_expires_in,omitempty"`
 }
 
 // requireGroupRole checks that the caller has one of the allowed roles in the specified group.
@@ -775,15 +781,23 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			}
 		}
 
+		// Parse API key expiration
+		apiKeyExpiresAt, err := parseAPIKeyExpiration(req.ApiKeyExpiresIn)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		user, err := queries.CreateUser(r.Context(), storage.CreateUserParams{
-			Email:          email,
-			PasswordHash:   passwordHash,
-			AccountType:    "smtp",
-			Username:       sql.NullString{String: req.Username, Valid: true},
-			ApiKey:         sql.NullString{String: apiKey, Valid: true},
-			AllowedDomains: domainsJSON,
-			ProviderID:     pgtype.UUID{Bytes: providerUUID, Valid: true},
-			HomeGroupID:    pgtype.UUID{Bytes: groupID, Valid: true},
+			Email:           email,
+			PasswordHash:    passwordHash,
+			AccountType:     "smtp",
+			Username:        sql.NullString{String: req.Username, Valid: true},
+			ApiKey:          sql.NullString{String: apiKey, Valid: true},
+			AllowedDomains:  domainsJSON,
+			ProviderID:      pgtype.UUID{Bytes: providerUUID, Valid: true},
+			HomeGroupID:     pgtype.UUID{Bytes: groupID, Valid: true},
+			ApiKeyExpiresAt: apiKeyExpiresAt,
 		})
 		if err != nil {
 			if strings.Contains(err.Error(), "users_username_key") {
@@ -861,6 +875,16 @@ func ResetServiceAccountAPIKeyHandler(queries storage.Querier, auditLogger *auth
 			return
 		}
 
+		var resetReq resetAPIKeyRequest
+		// Body is optional for this endpoint
+		_ = json.NewDecoder(r.Body).Decode(&resetReq)
+
+		apiKeyExpiresAt, err := parseAPIKeyExpiration(resetReq.ApiKeyExpiresIn)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		newKey, err := auth.GenerateAPIKey()
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
@@ -868,8 +892,9 @@ func ResetServiceAccountAPIKeyHandler(queries storage.Querier, auditLogger *auth
 		}
 
 		updated, err := queries.ResetUserAPIKey(r.Context(), storage.ResetUserAPIKeyParams{
-			ID:     userID,
-			ApiKey: sql.NullString{String: newKey, Valid: true},
+			ID:              userID,
+			ApiKey:          sql.NullString{String: newKey, Valid: true},
+			ApiKeyExpiresAt: apiKeyExpiresAt,
 		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "failed to reset API key")

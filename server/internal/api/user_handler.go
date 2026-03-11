@@ -26,6 +26,7 @@ type createUserRequest struct {
 	PasswordDisabled bool     `json:"password_disabled,omitempty"`
 	DisplayName      string   `json:"display_name,omitempty"`
 	Description      string   `json:"description,omitempty"`
+	ApiKeyExpiresIn  string   `json:"api_key_expires_in,omitempty"`
 }
 
 // userResponse is the JSON response for a user, excluding sensitive fields.
@@ -43,6 +44,7 @@ type userResponse struct {
 	Description      *string    `json:"description,omitempty"`
 	PasswordDisabled bool       `json:"password_disabled"`
 	LastLogin        *time.Time `json:"last_login,omitempty"`
+	ApiKeyExpiresAt  *time.Time `json:"api_key_expires_at,omitempty"`
 	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
@@ -84,6 +86,10 @@ func toUserResponse(u storage.User) userResponse {
 	if u.Description.Valid {
 		s := u.Description.String
 		resp.Description = &s
+	}
+	if u.ApiKeyExpiresAt.Valid {
+		t := u.ApiKeyExpiresAt.Time
+		resp.ApiKeyExpiresAt = &t
 	}
 	if u.DeletedAt.Valid {
 		t := u.DeletedAt.Time
@@ -287,6 +293,12 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			homeGroupPgID = pgtype.UUID{Bytes: groupID, Valid: true}
 		}
 
+		apiKeyExpiresAt, err := parseAPIKeyExpiration(req.ApiKeyExpiresIn)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		user, err := queries.CreateUser(r.Context(), storage.CreateUserParams{
 			Email:            req.Email,
 			PasswordHash:     passwordHash,
@@ -299,6 +311,7 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			HomeGroupID:      homeGroupPgID,
 			DisplayName:      sql.NullString{String: req.DisplayName, Valid: req.DisplayName != ""},
 			Description:      pgtype.Text{String: req.Description, Valid: req.Description != ""},
+			ApiKeyExpiresAt:  apiKeyExpiresAt,
 		})
 		if err != nil {
 			if req.AccountType == "smtp" {
@@ -619,6 +632,15 @@ func ResetAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 			return
 		}
 
+		var resetReq resetAPIKeyRequest
+		_ = json.NewDecoder(r.Body).Decode(&resetReq)
+
+		apiKeyExpiresAt, err := parseAPIKeyExpiration(resetReq.ApiKeyExpiresIn)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		newKey, err := auth.GenerateAPIKey()
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
@@ -626,8 +648,9 @@ func ResetAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 		}
 
 		updated, err := queries.ResetUserAPIKey(r.Context(), storage.ResetUserAPIKeyParams{
-			ID:     id,
-			ApiKey: sql.NullString{String: newKey, Valid: true},
+			ID:              id,
+			ApiKey:          sql.NullString{String: newKey, Valid: true},
+			ApiKeyExpiresAt: apiKeyExpiresAt,
 		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "failed to reset API key")

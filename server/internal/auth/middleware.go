@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -182,6 +183,12 @@ func UnifiedAuth(jwtService *JWTService, queries storage.Querier) func(http.Hand
 
 			if user.Status != "active" {
 				http.Error(w, `{"error":"account is not active"}`, http.StatusUnauthorized)
+				return
+			}
+
+			// Check API key expiration
+			if user.ApiKeyExpiresAt.Valid && time.Now().After(user.ApiKeyExpiresAt.Time) {
+				http.Error(w, `{"error":"API key expired"}`, http.StatusUnauthorized)
 				return
 			}
 

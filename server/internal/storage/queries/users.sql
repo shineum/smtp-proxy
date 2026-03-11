@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (email, password_hash, account_type, username, api_key, allowed_domains, password_disabled, provider_id, home_group_id, display_name, description)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO users (email, password_hash, account_type, username, api_key, allowed_domains, password_disabled, provider_id, home_group_id, display_name, description, api_key_expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING *;
 
 -- name: GetUserByID :one
@@ -105,6 +105,6 @@ DELETE FROM users WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - INTERVAL
 
 -- name: ResetUserAPIKey :one
 UPDATE users
-SET api_key = $2, updated_at = NOW()
+SET api_key = $2, api_key_expires_at = $3, updated_at = NOW()
 WHERE id = $1
 RETURNING *;

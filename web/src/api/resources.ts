@@ -28,7 +28,7 @@ export const removeMember = async (groupId: string, userId: string): Promise<voi
 // Service accounts (group-scoped)
 export const createServiceAccount = async (
   groupId: string,
-  data: { username: string; email?: string; allowed_domains?: string[]; provider_id?: string }
+  data: { username: string; email?: string; allowed_domains?: string[]; provider_id?: string; api_key_expires_in?: string }
 ): Promise<User> => (await api.post(`/groups/${groupId}/service-accounts`, data)).data;
 
 export const updateServiceAccount = async (
@@ -52,10 +52,10 @@ export const restoreUser = async (id: string): Promise<User> =>
   (await api.post(`/users/${id}/restore`)).data;
 export const fetchDeletedUsers = async (): Promise<User[]> =>
   (await api.get('/users/deleted')).data;
-export const resetApiKey = async (id: string): Promise<User> =>
-  (await api.post(`/users/${id}/reset-api-key`)).data;
-export const resetServiceAccountApiKey = async (groupId: string, userId: string): Promise<User> =>
-  (await api.post(`/groups/${groupId}/service-accounts/${userId}/reset-api-key`)).data;
+export const resetApiKey = async (id: string, api_key_expires_in?: string): Promise<User> =>
+  (await api.post(`/users/${id}/reset-api-key`, { api_key_expires_in })).data;
+export const resetServiceAccountApiKey = async (groupId: string, userId: string, api_key_expires_in?: string): Promise<User> =>
+  (await api.post(`/groups/${groupId}/service-accounts/${userId}/reset-api-key`, { api_key_expires_in })).data;
 export const resetUserPassword = async (id: string, new_password: string): Promise<void> =>
   { await api.post(`/users/${id}/reset-password`, { new_password }); };
 export const fetchUserMemberships = async (id: string): Promise<Membership[]> =>

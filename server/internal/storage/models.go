@@ -328,4 +328,5 @@ type User struct {
 	DisplayName      sql.NullString     `json:"display_name"`
 	Description      pgtype.Text        `json:"description"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
+	ApiKeyExpiresAt  pgtype.Timestamptz `json:"api_key_expires_at"`
 }

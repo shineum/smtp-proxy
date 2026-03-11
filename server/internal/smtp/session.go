@@ -119,6 +119,16 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 
+		// Step 3b: Check API key expiration.
+		if user.ApiKeyExpiresAt.Valid && time.Now().After(user.ApiKeyExpiresAt.Time) {
+			s.log.Warn().Str("username", username).Time("expires_at", user.ApiKeyExpiresAt.Time).Msg("auth failed: API key expired")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "API key expired",
+			}
+		}
+
 		// Step 4: Get home group and verify it is active.
 		groupUUID := uuid.UUID(user.HomeGroupID.Bytes)
 		group, err := s.queries.GetGroupByID(s.ctx, groupUUID)

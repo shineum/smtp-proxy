@@ -27,6 +27,7 @@ export interface User {
   home_group_id?: string;
   display_name?: string;
   description?: string;
+  api_key_expires_at?: string;
   deleted_at?: string;
 }
 

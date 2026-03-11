@@ -240,6 +240,8 @@ rate_limit:
 | POST | `/api/v1/groups/{id}/members` | Member | Add member to group |
 | PATCH | `/api/v1/groups/{id}/members/{uid}` | Member | Update member role |
 | DELETE | `/api/v1/groups/{id}/members/{uid}` | Member | Remove member |
+| POST | `/api/v1/groups/{id}/service-accounts` | Owner/Admin | Create SMTP service account |
+| PATCH | `/api/v1/groups/{id}/service-accounts/{uid}` | Owner/Admin | Update service account |
 | GET | `/api/v1/groups/{id}/activity` | Member | List activity logs |
 
 Group types: `system` (platform admin), `company` (tenant organization)
@@ -258,29 +260,19 @@ Account types: `user` (JWT login), `smtp` (SMTP sending account)
 
 ### SMTP Authentication
 
-SMTP accounts authenticate via SASL PLAIN (`username` + `password`). The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
-
-| Method | Used For | How It Works |
-|--------|----------|--------------|
-| Password | SMTP AUTH | Username + password set at account creation |
-| API Key | REST API | Auto-generated, used as `Bearer` token for `/api/v1/` endpoints |
-
-When creating an SMTP account, if `password` is provided it is used for SMTP AUTH. The API key is always auto-generated separately for REST API access.
+SMTP service accounts authenticate via SASL PLAIN using `username` + `api_key` (as the password). The API key is auto-generated at account creation and serves as the sole credential for SMTP AUTH. Usernames must be globally unique. The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
 
 ```bash
-# Create SMTP account with explicit password
-curl -X POST http://localhost:8080/api/v1/users \
+# Create service account via group endpoint
+curl -X POST http://localhost:8080/api/v1/groups/<group-uuid>/service-accounts \
   -H "Authorization: Bearer <jwt-token>" \
   -H "Content-Type: application/json" \
-  -d '{
-    "email": "sender@smtp.internal",
-    "account_type": "smtp",
-    "username": "sender",
-    "password": "my-smtp-password",
-    "group_id": "<group-uuid>",
-    "allowed_domains": ["example.com"]
-  }'
-# Response includes auto-generated api_key for REST API use
+  -d '{"username": "sender", "allowed_domains": ["example.com"]}'
+# Response includes auto-generated api_key — save it, this is the SMTP password
+
+# SMTP login
+# Username: sender
+# Password: <api_key from response>
 ```
 
 ### ESP Providers (Unified Auth)
@@ -288,12 +280,17 @@ curl -X POST http://localhost:8080/api/v1/users \
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/providers` | Create provider |
-| GET | `/api/v1/providers` | List providers |
+| GET | `/api/v1/providers` | List providers (`?group_id=` to filter by group accessibility) |
 | GET | `/api/v1/providers/{id}` | Get provider |
 | PUT | `/api/v1/providers/{id}` | Update provider |
 | DELETE | `/api/v1/providers/{id}` | Delete provider |
+| GET | `/api/v1/providers/{id}/access` | List group access grants |
+| POST | `/api/v1/providers/{id}/access` | Grant group access |
+| DELETE | `/api/v1/providers/{id}/access/{gid}` | Revoke group access |
 
 Supported provider types: `sendgrid`, `ses`, `mailgun`, `smtp`, `msgraph`
+
+Provider visibility: `global` (all groups), `shared` (granted groups only), `private` (owner group only)
 
 ### Routing Rules (Unified Auth)
 
@@ -368,9 +365,9 @@ Failed messages in the dead-letter queue can be reprocessed via `POST /api/v1/dl
 
 ## Database
 
-PostgreSQL 18 with 10 migrations applied automatically on startup.
+PostgreSQL 18 with 18 migrations applied automatically on startup.
 
-**Tables:** `groups`, `group_members`, `users`, `esp_providers`, `routing_rules`, `messages`, `delivery_logs`, `sessions`, `activity_logs`
+**Tables:** `groups`, `group_members`, `users`, `esp_providers`, `provider_group_access`, `routing_rules`, `messages`, `delivery_logs`, `sessions`, `activity_logs`
 
 **Multi-tenant isolation:** Row-Level Security (RLS) policies enforce group-level boundaries using the `app.current_group_id` PostgreSQL session variable, set automatically by API middleware.
 
@@ -496,7 +493,7 @@ docker compose up -d --build smtp-server
 | HTTP Router | chi v5 |
 | Database | PostgreSQL 18 (pgx v5, sqlc) |
 | Queue | Redis 7.4 Streams |
-| Auth | JWT (HS256) + bcrypt + API keys (unified auth) |
+| Auth | JWT (HS256) + API keys for SMTP (unified auth) |
 | Metrics | Prometheus client_golang |
 | Logging | zerolog |
 | Config | Viper |

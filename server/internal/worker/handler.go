@@ -100,8 +100,12 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		body = msg.Body
 		h.log.Debug().Str("message_id", msg.ID).Msg("using inline body from queue (legacy format)")
 	} else {
-		// New format: fetch from MessageStore with retry (REQ-QW-002).
-		body, err = h.fetchBodyWithRetry(ctx, msg.ID)
+		// New format: fetch from MessageStore using the storage reference.
+		storageKey := msg.ID
+		if dbMsg.StorageRef.Valid && dbMsg.StorageRef.String != "" {
+			storageKey = dbMsg.StorageRef.String
+		}
+		body, err = h.fetchBodyWithRetry(ctx, storageKey)
 		if err != nil {
 			// All retries exhausted -- mark as storage_error.
 			if statusErr := h.queries.UpdateMessageStatus(ctx, storage.UpdateMessageStatusParams{

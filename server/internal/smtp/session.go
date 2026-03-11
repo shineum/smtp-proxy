@@ -3,6 +3,7 @@ package smtp
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -17,7 +18,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
-	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -83,9 +83,9 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 
-		// Step 2: Verify password.
-		if err := auth.VerifyPassword(user.PasswordHash, password); err != nil {
-			s.log.Warn().Str("username", username).Msg("auth failed: invalid password")
+		// Step 2: Verify API key (service accounts authenticate with API key as password).
+		if !user.ApiKey.Valid || subtle.ConstantTimeCompare([]byte(user.ApiKey.String), []byte(password)) != 1 {
+			s.log.Warn().Str("username", username).Msg("auth failed: invalid API key")
 			return &gosmtp.SMTPError{
 				Code:         535,
 				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},

@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
-	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -452,25 +451,17 @@ func newAuthenticatedSession(mock *mockQuerier, userID, groupID uuid.UUID, allow
 	return s
 }
 
-// hashTestPassword creates a bcrypt hash for testing.
-func hashTestPassword(t *testing.T, password string) string {
-	t.Helper()
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		t.Fatalf("failed to hash password: %v", err)
-	}
-	return hash
-}
+const testAPIKey = "test-api-key-0123456789abcdef"
 
 // newMockWithAuth creates a mockQuerier pre-configured for a successful auth flow.
-func newMockWithAuth(userID, groupID uuid.UUID, passwordHash string, domainsJSON []byte) *mockQuerier {
+func newMockWithAuth(userID, groupID uuid.UUID, apiKey string, domainsJSON []byte) *mockQuerier {
 	return &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, username sql.NullString) (storage.User, error) {
 			if username.String == "testuser" {
 				return storage.User{
 					ID:             userID,
 					Username:       sql.NullString{String: "testuser", Valid: true},
-					PasswordHash:   passwordHash,
+					ApiKey:         sql.NullString{String: apiKey, Valid: true},
 					AccountType:    "smtp",
 					Status:         "active",
 					AllowedDomains: domainsJSON,
@@ -521,13 +512,12 @@ func authenticateSession(t *testing.T, s *Session, username, password string) er
 func TestSession_Auth_Success(t *testing.T) {
 	userID := uuid.New()
 	groupID := uuid.New()
-	passwordHash := hashTestPassword(t, "correct-password")
 	domainsJSON, _ := json.Marshal([]string{"example.com"})
 
-	mock := newMockWithAuth(userID, groupID, passwordHash, domainsJSON)
+	mock := newMockWithAuth(userID, groupID, testAPIKey, domainsJSON)
 	s := newTestSession(mock)
 
-	err := authenticateSession(t, s, "testuser", "correct-password")
+	err := authenticateSession(t, s, "testuser", testAPIKey)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -545,17 +535,16 @@ func TestSession_Auth_Success(t *testing.T) {
 	}
 }
 
-func TestSession_Auth_InvalidPassword(t *testing.T) {
+func TestSession_Auth_InvalidAPIKey(t *testing.T) {
 	userID := uuid.New()
 	groupID := uuid.New()
-	passwordHash := hashTestPassword(t, "correct-password")
 
-	mock := newMockWithAuth(userID, groupID, passwordHash, nil)
+	mock := newMockWithAuth(userID, groupID, testAPIKey, nil)
 	s := newTestSession(mock)
 
-	err := authenticateSession(t, s, "testuser", "wrong-password")
+	err := authenticateSession(t, s, "testuser", "wrong-api-key")
 	if err == nil {
-		t.Fatal("expected error for invalid password")
+		t.Fatal("expected error for invalid API key")
 	}
 
 	var smtpErr *gosmtp.SMTPError
@@ -603,22 +592,21 @@ func TestSession_Auth_UnsupportedMechanism(t *testing.T) {
 
 func TestSession_Auth_InactiveUser(t *testing.T) {
 	userID := uuid.New()
-	passwordHash := hashTestPassword(t, "correct-password")
 
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
 			return storage.User{
-				ID:           userID,
-				Username:     sql.NullString{String: "testuser", Valid: true},
-				PasswordHash: passwordHash,
-				AccountType:  "smtp",
-				Status:       "suspended",
+				ID:          userID,
+				Username:    sql.NullString{String: "testuser", Valid: true},
+				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
+				AccountType: "smtp",
+				Status:      "suspended",
 			}, nil
 		},
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser", "correct-password")
+	err := authenticateSession(t, s, "testuser", testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for inactive user")
 	}
@@ -634,22 +622,21 @@ func TestSession_Auth_InactiveUser(t *testing.T) {
 
 func TestSession_Auth_NonSmtpAccountType(t *testing.T) {
 	userID := uuid.New()
-	passwordHash := hashTestPassword(t, "correct-password")
 
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
 			return storage.User{
-				ID:           userID,
-				Username:     sql.NullString{String: "testuser", Valid: true},
-				PasswordHash: passwordHash,
-				AccountType:  "human",
-				Status:       "active",
+				ID:          userID,
+				Username:    sql.NullString{String: "testuser", Valid: true},
+				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
+				AccountType: "human",
+				Status:      "active",
 			}, nil
 		},
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser", "correct-password")
+	err := authenticateSession(t, s, "testuser", testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for non-smtp account type")
 	}
@@ -665,16 +652,15 @@ func TestSession_Auth_NonSmtpAccountType(t *testing.T) {
 
 func TestSession_Auth_NoGroupMembership(t *testing.T) {
 	userID := uuid.New()
-	passwordHash := hashTestPassword(t, "correct-password")
 
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
 			return storage.User{
-				ID:           userID,
-				Username:     sql.NullString{String: "testuser", Valid: true},
-				PasswordHash: passwordHash,
-				AccountType:  "smtp",
-				Status:       "active",
+				ID:          userID,
+				Username:    sql.NullString{String: "testuser", Valid: true},
+				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
+				AccountType: "smtp",
+				Status:      "active",
 			}, nil
 		},
 		listGroupsByUserIDFn: func(_ context.Context, _ uuid.UUID) ([]storage.Group, error) {
@@ -683,7 +669,7 @@ func TestSession_Auth_NoGroupMembership(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser", "correct-password")
+	err := authenticateSession(t, s, "testuser", testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for no group membership")
 	}
@@ -700,16 +686,15 @@ func TestSession_Auth_NoGroupMembership(t *testing.T) {
 func TestSession_Auth_SuspendedGroup(t *testing.T) {
 	userID := uuid.New()
 	groupID := uuid.New()
-	passwordHash := hashTestPassword(t, "correct-password")
 
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
 			return storage.User{
-				ID:           userID,
-				Username:     sql.NullString{String: "testuser", Valid: true},
-				PasswordHash: passwordHash,
-				AccountType:  "smtp",
-				Status:       "active",
+				ID:          userID,
+				Username:    sql.NullString{String: "testuser", Valid: true},
+				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
+				AccountType: "smtp",
+				Status:      "active",
 			}, nil
 		},
 		listGroupsByUserIDFn: func(_ context.Context, _ uuid.UUID) ([]storage.Group, error) {
@@ -721,7 +706,7 @@ func TestSession_Auth_SuspendedGroup(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser", "correct-password")
+	err := authenticateSession(t, s, "testuser", testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for suspended group")
 	}

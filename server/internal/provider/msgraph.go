@@ -191,7 +191,7 @@ func (m *MSGraph) buildPayload(msg *Message) graphSendMailPayload {
 		},
 		ToRecipients: recipients,
 		From: &graphRecipient{
-			EmailAddress: graphEmailAddress{Address: msg.From},
+			EmailAddress: graphEmailAddress{Address: m.userID},
 		},
 	}
 

@@ -30,7 +30,7 @@ export default function UserListPage() {
 
   const { data: providers } = useQuery({
     queryKey: ['providers'],
-    queryFn: fetchProviders,
+    queryFn: () => fetchProviders(),
     enabled: isCreateOpen && form.account_type === 'smtp',
   });
 

@@ -27,7 +27,7 @@ export default function RoutingRuleFormPage() {
 
   const { data: providers } = useQuery({
     queryKey: ['providers'],
-    queryFn: fetchProviders,
+    queryFn: () => fetchProviders(),
   });
 
   useEffect(() => {

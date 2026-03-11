@@ -150,13 +150,25 @@ func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
 }
 
 // ListProvidersHandler handles GET /api/v1/providers.
-// Lists all providers accessible to the authenticated user's group.
+// Lists all providers accessible to a group. When ?group_id= is provided,
+// lists providers accessible to that group (admin use case); otherwise
+// defaults to the authenticated user's own group.
 func ListProvidersHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
 		if groupID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
+		}
+
+		// Allow overriding group_id via query param (for admin editing service accounts).
+		if qg := r.URL.Query().Get("group_id"); qg != "" {
+			parsed, err := uuid.Parse(qg)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "invalid group_id format")
+				return
+			}
+			groupID = parsed
 		}
 
 		providers, err := queries.ListAccessibleProviders(r.Context(), groupID)

@@ -56,7 +56,8 @@ export const updatePasswordDisabled = async (id: string, password_disabled: bool
   (await api.patch(`/users/${id}/password-disabled`, { password_disabled })).data;
 
 // Providers
-export const fetchProviders = async (): Promise<Provider[]> => (await api.get('/providers')).data;
+export const fetchProviders = async (groupId?: string): Promise<Provider[]> =>
+  (await api.get('/providers', { params: groupId ? { group_id: groupId } : undefined })).data;
 export const fetchProvider = async (id: string): Promise<Provider> => (await api.get(`/providers/${id}`)).data;
 export const createProvider = async (data: Record<string, unknown>): Promise<Provider> =>
   (await api.post('/providers', data)).data;

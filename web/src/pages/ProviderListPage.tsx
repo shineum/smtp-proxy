@@ -15,7 +15,7 @@ export default function ProviderListPage() {
 
   const { data: providers, isLoading } = useQuery({
     queryKey: ['providers'],
-    queryFn: fetchProviders,
+    queryFn: () => fetchProviders(),
   });
 
   const deleteMutation = useMutation({

@@ -70,9 +70,9 @@ export default function GroupDetailPage() {
   });
 
   const { data: providers } = useQuery({
-    queryKey: ['providers'],
-    queryFn: fetchProviders,
-    enabled: isCreateSAOpen || isEditSAOpen,
+    queryKey: ['providers', id],
+    queryFn: () => fetchProviders(id!),
+    enabled: (isCreateSAOpen || isEditSAOpen) && !!id,
   });
 
   // Auto-select stdout provider as default when providers load

@@ -4,17 +4,17 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 
 ---
 
-## TC-001: Clean Build & Service Startup
+## Setup & Infrastructure
+
+### TC-001: Clean Build & Service Startup
 
 | Field | Value |
 |-------|-------|
 | **Precondition** | Docker and Docker Compose installed |
 | **Steps** | 1. `docker compose down -v --remove-orphans` <br> 2. `docker compose up -d --build` <br> 3. Wait for API server healthcheck (`/healthz`) |
-| **Expected** | All services start: postgres, redis, migrate, api-server, smtp-server, queue-worker. Migration completes without error. API healthcheck returns 200 within 60s. |
+| **Expected** | All services start. Migration completes without error. API healthcheck returns 200 within 60s. |
 
----
-
-## TC-002: Admin Login
+### TC-002: Admin Login
 
 | Field | Value |
 |-------|-------|
@@ -24,95 +24,203 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 
 ---
 
-## TC-003: Create Provider (stdout, private)
+## Data Setup
+
+### TC-003: Create Provider (stdout, private)
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-002 passed. Admin JWT available. |
+| **Precondition** | TC-002 passed. |
 | **Steps** | POST `/api/v1/providers` with `{"name":"test-stdout-private","provider_type":"stdout","enabled":true,"visibility":"private"}` |
-| **Expected** | 201 Created. Response includes `id`, `provider_type: "stdout"`, `visibility: "private"`, `group_id` matching system group. |
+| **Expected** | 201 Created. `visibility: "private"`, `group_id` = system group. |
 
----
-
-## TC-004: Create Provider (stdout, global)
+### TC-004: Create Provider (stdout, global)
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-002 passed. Admin JWT available. |
+| **Precondition** | TC-002 passed. |
 | **Steps** | POST `/api/v1/providers` with `{"name":"test-stdout-global","provider_type":"stdout","enabled":true,"visibility":"global"}` |
 | **Expected** | 201 Created. `visibility: "global"`. Accessible to all groups. |
 
----
-
-## TC-005: Create Group
+### TC-005: Create Provider (stdout, shared)
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-002 passed. Admin JWT available. |
-| **Steps** | POST `/api/v1/groups` with `{"name":"e2e-test-group","monthly_limit":1000,"display_name":"E2E Test Group"}` |
-| **Expected** | 201 Created. Response includes `id`, `group_key` (UUID), `group_type: "company"`, `status: "active"`. |
+| **Precondition** | TC-002 passed. |
+| **Steps** | POST `/api/v1/providers` with `{"name":"test-stdout-shared","provider_type":"stdout","enabled":true,"visibility":"shared"}` |
+| **Expected** | 201 Created. `visibility: "shared"`. Not accessible to other groups until access is granted. |
 
----
-
-## TC-006: Switch Group Context
+### TC-006: Create Groups
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-005 passed. Group ID available. |
-| **Steps** | POST `/api/v1/auth/switch-group` with `{"group_id":"<group_id>"}` |
+| **Precondition** | TC-002 passed. |
+| **Steps** | POST `/api/v1/groups` for Group A and Group B |
+| **Expected** | 201 Created for both. Each has unique `id`, `group_key` (UUID), `group_type: "company"`. |
+
+### TC-007: Switch Group Context
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-006 passed. |
+| **Steps** | POST `/api/v1/auth/switch-group` with `{"group_id":"<group_a_id>"}` |
 | **Expected** | 200 OK. New `access_token` with group context. JWT claims include `group_id` and `role: "owner"`. |
 
----
-
-## TC-007: Create Provider (group-scoped, private)
+### TC-008: Create Provider (group-scoped, private)
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-006 passed. Group context JWT available. |
+| **Precondition** | TC-007 passed. Group A context. |
 | **Steps** | POST `/api/v1/providers` with `{"name":"test-group-provider","provider_type":"stdout","enabled":true,"visibility":"private"}` |
-| **Expected** | 201 Created. `group_id` matches test group. Only accessible within the test group. |
+| **Expected** | 201 Created. `group_id` matches Group A. |
 
----
-
-## TC-008: Create Human User
+### TC-009: Create Human User
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-006 passed. Group context JWT available. |
-| **Steps** | POST `/api/v1/users` with `{"email":"testuser@example.com","password":"testpass123","account_type":"user","group_id":"<group_id>"}` |
-| **Expected** | 201 Created. `account_type: "user"`, `status: "active"`. No `api_key` returned. |
+| **Precondition** | TC-007 passed. |
+| **Steps** | POST `/api/v1/users` with `{"email":"testuser@example.com","password":"testpass123","account_type":"user","group_id":"<group_a_id>"}` |
+| **Expected** | 201 Created. `account_type: "user"`, `status: "active"`. No `api_key`. |
 
----
-
-## TC-009: Create SMTP Service Account
+### TC-010: Create SMTP Service Account
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-006, TC-007 passed. Group context JWT and provider ID available. |
-| **Steps** | POST `/api/v1/groups/<group_id>/service-accounts` with `{"username":"e2e-smtp","provider_id":"<provider_id>"}` |
-| **Expected** | 201 Created. `account_type: "smtp"`, `username: "e2e-smtp"` (lowercase), `api_key` returned (visible only at creation), `home_group_id` matches group. |
+| **Precondition** | TC-007, TC-008 passed. |
+| **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts` with `{"username":"e2e-smtp","provider_id":"<provider_3_id>","api_key_expires_in":"30d"}` |
+| **Expected** | 201 Created. `username: "e2e-smtp"` (lowercase), `api_key` returned, `api_key_expires_at` set 30 days from now. |
 
 ---
 
-## TC-010: SMTP Send - Simple Case
+## SMTP Send (Positive Cases)
+
+### TC-011: SMTP Send - Simple Case
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-009 passed. Service account username and api_key available. |
-| **Steps** | Connect to SMTP server (port 587, STARTTLS). <br> AUTH PLAIN with `e2e-smtp@<group_key>` / `<api_key>`. <br> Send email: From `sender@example.com`, To `recipient@example.com`, Subject `E2E Simple Test`, plain text body. |
-| **Expected** | SMTP server accepts and returns 250 OK. Auth logs show `auth successful`. Message persisted and enqueued. Queue worker delivers via stdout provider. |
-| **Verify** | SMTP server log: `message persisted`, `message enqueued`. Queue worker log: `message delivered by worker`. |
+| **Precondition** | TC-010 passed. |
+| **Steps** | SMTP AUTH PLAIN with `e2e-smtp@<group_key>` / `<api_key>`. Send: From, To, Subject, plain text body. |
+| **Expected** | 250 OK. Auth log: `auth successful`. Message persisted and delivered via stdout provider. |
+
+### TC-012: SMTP Send - Complex Case
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-010 passed. Attachment files exist. |
+| **Steps** | SMTP AUTH PLAIN. Send: From, To, CC, BCC, Subject, plain text body, HTML body, 2 attachments. |
+| **Expected** | 3 RCPT TO accepted. `recipient_count: 3`. Delivered via stdout provider. BCC not in headers. |
 
 ---
 
-## TC-011: SMTP Send - Complex Case
+## SMTP Auth Negative Cases
+
+### TC-013: Human User Cannot SMTP Auth
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-009 passed. Service account username and api_key available. Test attachment files exist. |
-| **Steps** | Connect to SMTP server (port 587, STARTTLS). <br> AUTH PLAIN with `e2e-smtp@<group_key>` / `<api_key>`. <br> Send email with: From `sender@example.com`, To `recipient@example.com`, CC `cc-user@example.com`, BCC `bcc-user@example.com`, Subject `E2E Complex Test`, plain text body, HTML body, 2 attachments (`sample.txt`, `sample.html`). |
-| **Expected** | SMTP server accepts 3 RCPT TO commands (to, cc, bcc). Message persisted with `recipient_count: 3`. Queue worker delivers via stdout provider. BCC not visible in message headers. |
-| **Verify** | SMTP server log: 3x `RCPT TO accepted`, `message persisted` with `recipient_count: 3`. Queue worker log: `message delivered by worker`. |
+| **Precondition** | TC-009 passed. Human user exists. |
+| **Steps** | SMTP AUTH PLAIN with `testuser@example.com@<group_key>` / `testpass123` |
+| **Expected** | 535 5.7.8 "Authentication failed". Human (`account_type: "user"`) accounts are not eligible for SMTP. |
+
+### TC-014: Suspended Account Cannot SMTP Auth
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-010 passed. |
+| **Steps** | 1. PATCH `/api/v1/users/<sa_id>/status` with `{"status":"suspended"}` <br> 2. SMTP AUTH PLAIN with service account credentials <br> 3. PATCH status back to `"active"` |
+| **Expected** | Step 1: `status: "suspended"`. Step 2: 535 "Authentication failed". Step 3: auth works again. |
+
+### TC-015: Expired API Key Cannot SMTP Auth
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-010 passed. |
+| **Steps** | 1. Set `api_key_expires_at` to past via DB: `UPDATE users SET api_key_expires_at = NOW() - INTERVAL '1 day'` <br> 2. SMTP AUTH PLAIN with service account credentials <br> 3. Restore expiration to future |
+| **Expected** | Step 2: 535 "API key expired". Step 3: auth works again after restoring. |
+
+---
+
+## Provider Access Control
+
+### TC-016: Private Provider Not Accessible to Other Groups
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-006, TC-008 passed. Provider 3 is private to Group A. |
+| **Steps** | In Group B context, POST service account with `provider_id` = Provider 3 (Group A's private) |
+| **Expected** | 400 "provider not found or not accessible to this group" |
+
+### TC-017: Global Provider Accessible to All Groups
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-004, TC-006 passed. Provider 2 is global. |
+| **Steps** | In Group B context, POST service account with `provider_id` = Provider 2 (global) |
+| **Expected** | 201 Created. Global providers are accessible to all groups. |
+
+### TC-018: Shared Provider Not Accessible Before Grant
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-005, TC-006 passed. Provider 4 is shared, no access granted. |
+| **Steps** | In Group B context, POST service account with `provider_id` = Provider 4 (shared, no grant) |
+| **Expected** | 400 "provider not found or not accessible to this group" |
+
+### TC-019: Shared Provider Accessible After Access Grant
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-018 passed. |
+| **Steps** | 1. POST `/api/v1/providers/<p4_id>/access` with `{"group_id":"<group_b_id>"}` (as system admin) <br> 2. In Group B context, POST service account with `provider_id` = Provider 4 |
+| **Expected** | Step 1: 204 No Content. Step 2: 201 Created. |
+
+### TC-020: Shared Provider Blocked After Access Revoke
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-019 passed. |
+| **Steps** | 1. DELETE `/api/v1/providers/<p4_id>/access/<group_b_id>` <br> 2. In Group B context, POST service account with `provider_id` = Provider 4 |
+| **Expected** | Step 1: 204 No Content. Step 2: 400 "provider not found or not accessible to this group" |
+
+---
+
+## API Key Reset
+
+### TC-021: API Key Reset Generates New Key
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-010 passed. Old API key known. |
+| **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts/<sa_id>/reset-api-key` with `{"api_key_expires_in":"30d"}` |
+| **Expected** | 200 OK. New `api_key` returned (different from old). `api_key_expires_at` set. |
+
+### TC-022: Old API Key Rejected After Reset
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-021 passed. |
+| **Steps** | SMTP AUTH PLAIN with old API key |
+| **Expected** | 535 "Authentication failed". Old key is immediately invalidated. |
+
+### TC-023: New API Key Works After Reset
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-021 passed. |
+| **Steps** | SMTP AUTH PLAIN with new API key |
+| **Expected** | Auth successful. Email sent and delivered. |
+
+---
+
+## Activity Log
+
+### TC-024: Activity Logs Recorded
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | Previous test cases executed (user creation, status changes, API key resets). |
+| **Steps** | GET `/api/v1/groups/<group_a_id>/activity?limit=20` |
+| **Expected** | Array with entries. Actions include: `admin.create_user`, `admin.update_user_status`, `admin.reset_api_key`, etc. |
 
 ---
 
@@ -122,23 +230,25 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 |----------|------|------|-------|
 | Provider 1 | test-stdout-private | stdout | System group, private |
 | Provider 2 | test-stdout-global | stdout | Global (all groups) |
-| Provider 3 | test-group-provider | stdout | Test group, private |
-| Group | e2e-test-group | company | - |
-| Human User | testuser@example.com | user | Test group |
-| Service Account | e2e-smtp | smtp | Test group, Provider 3 |
+| Provider 3 | test-group-provider | stdout | Group A, private |
+| Provider 4 | test-stdout-shared | stdout | System group, shared |
+| Group A | e2e-test-group-a | company | - |
+| Group B | e2e-test-group-b | company | - |
+| Human User | testuser@example.com | user | Group A |
+| Service Account | e2e-smtp | smtp | Group A, Provider 3 |
 
 ---
 
 ## Running
 
 ```bash
-# Full E2E suite (clean build + all test cases)
+# Full E2E suite (clean build + all 24 test cases)
 bash e2e-test.sh
 
-# Manual: just the SMTP tests (assumes services are running)
+# Manual SMTP test
 docker compose run --rm test-client \
   --host=smtp-server --port=587 --tls=starttls --insecure \
-  --user="e2e-smtp@<group_key>" --password="<api_key>" \
+  --user="<username>@<group_key>" --password="<api_key>" \
   --from="sender@example.com" --to="recipient@example.com" \
-  --subject="Manual Test" --body="Hello"
+  --subject="Test" --body="Hello"
 ```

@@ -115,6 +115,34 @@ func main() {
 		Str("group", cfg.Queue.GroupName).
 		Msg("queue worker pool started")
 
+	// Start daily cleanup job for soft-deleted users (>30 days).
+	cleanupCtx, cleanupCancel := context.WithCancel(ctx)
+	defer cleanupCancel()
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+
+		// Run once at startup.
+		if err := queries.PurgeDeletedUsers(cleanupCtx); err != nil {
+			log.Error().Err(err).Msg("failed to purge deleted users")
+		} else {
+			log.Info().Msg("purged expired soft-deleted users")
+		}
+
+		for {
+			select {
+			case <-ticker.C:
+				if err := queries.PurgeDeletedUsers(cleanupCtx); err != nil {
+					log.Error().Err(err).Msg("failed to purge deleted users")
+				} else {
+					log.Info().Msg("purged expired soft-deleted users")
+				}
+			case <-cleanupCtx.Done():
+				return
+			}
+		}
+	}()
+
 	// Wait for interrupt signal for graceful shutdown.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

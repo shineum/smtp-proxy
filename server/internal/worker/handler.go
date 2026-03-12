@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/mail"
 	"time"
 
 	"github.com/google/uuid"
@@ -149,7 +150,7 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		Body:     body,
 	}
 
-	// Parse MIME structure to extract HTML body and attachments.
+	// Parse MIME structure to extract HTML body, attachments, CC, and BCC.
 	parsed, parseErr := mimeparse.Parse(body)
 	if parseErr == nil {
 		providerMsg.TextBody = parsed.TextBody
@@ -165,6 +166,29 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 				ContentID:   att.ContentID,
 				IsInline:    att.IsInline,
 			})
+		}
+
+		// Extract To and CC from MIME headers; derive BCC from envelope recipients.
+		headerTo := extractAddresses(parsed.Headers.Get("To"))
+		headerCC := extractAddresses(parsed.Headers.Get("Cc"))
+		if len(headerTo) > 0 {
+			providerMsg.To = headerTo
+		}
+		providerMsg.CC = headerCC
+
+		// BCC = envelope recipients - (To + CC)
+		knownAddrs := make(map[string]struct{}, len(headerTo)+len(headerCC))
+		for _, a := range headerTo {
+			knownAddrs[a] = struct{}{}
+		}
+		for _, a := range headerCC {
+			knownAddrs[a] = struct{}{}
+		}
+		allRecipients := parseRecipients(dbMsg.Recipients)
+		for _, r := range allRecipients {
+			if _, known := knownAddrs[r]; !known {
+				providerMsg.BCC = append(providerMsg.BCC, r)
+			}
 		}
 	} else {
 		// MIME parse failed -- fall back to raw body as text.
@@ -275,6 +299,23 @@ func parseRecipients(data []byte) []string {
 	var recipients []string
 	_ = json.Unmarshal(data, &recipients)
 	return recipients
+}
+
+// extractAddresses parses an RFC 5322 address header value and returns
+// a slice of plain email addresses. Returns nil on parse failure or empty input.
+func extractAddresses(header string) []string {
+	if header == "" {
+		return nil
+	}
+	addrs, err := mail.ParseAddressList(header)
+	if err != nil {
+		return nil
+	}
+	result := make([]string, len(addrs))
+	for i, a := range addrs {
+		result[i] = a.Address
+	}
+	return result
 }
 
 // parseHeaders decodes a JSON-encoded map[string][]string from the database

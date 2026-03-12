@@ -121,6 +121,12 @@ func (m *Mailgun) buildForm(msg *Message) url.Values {
 	form := url.Values{}
 	form.Set("from", msg.From)
 	form.Set("to", strings.Join(msg.To, ","))
+	if len(msg.CC) > 0 {
+		form.Set("cc", strings.Join(msg.CC, ","))
+	}
+	if len(msg.BCC) > 0 {
+		form.Set("bcc", strings.Join(msg.BCC, ","))
+	}
 	form.Set("subject", msg.Subject)
 
 	// Prefer parsed text body; fall back to raw Body.
@@ -149,6 +155,12 @@ func (m *Mailgun) buildMultipartForm(msg *Message) ([]byte, string, error) {
 	// Add form fields.
 	writer.WriteField("from", msg.From)
 	writer.WriteField("to", strings.Join(msg.To, ","))
+	if len(msg.CC) > 0 {
+		writer.WriteField("cc", strings.Join(msg.CC, ","))
+	}
+	if len(msg.BCC) > 0 {
+		writer.WriteField("bcc", strings.Join(msg.BCC, ","))
+	}
 	writer.WriteField("subject", msg.Subject)
 
 	text := msg.TextBody

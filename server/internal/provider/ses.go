@@ -107,7 +107,9 @@ type sesPayload struct {
 }
 
 type sesDestination struct {
-	ToAddresses []string `json:"ToAddresses"`
+	ToAddresses  []string `json:"ToAddresses"`
+	CcAddresses  []string `json:"CcAddresses,omitempty"`
+	BccAddresses []string `json:"BccAddresses,omitempty"`
 }
 
 type sesContent struct {
@@ -139,11 +141,18 @@ type sesResponse struct {
 }
 
 func (s *SES) buildPayload(msg *Message) sesPayload {
+	dest := sesDestination{
+		ToAddresses: msg.To,
+	}
+	if len(msg.CC) > 0 {
+		dest.CcAddresses = msg.CC
+	}
+	if len(msg.BCC) > 0 {
+		dest.BccAddresses = msg.BCC
+	}
 	payload := sesPayload{
 		FromEmailAddress: msg.From,
-		Destination: sesDestination{
-			ToAddresses: msg.To,
-		},
+		Destination:      dest,
 	}
 
 	// Use Raw mode when attachments are present.
@@ -195,6 +204,9 @@ func buildRawMIME(msg *Message) ([]byte, error) {
 	// Write top-level headers.
 	fmt.Fprintf(&buf, "From: %s\r\n", msg.From)
 	fmt.Fprintf(&buf, "To: %s\r\n", strings.Join(msg.To, ", "))
+	if len(msg.CC) > 0 {
+		fmt.Fprintf(&buf, "Cc: %s\r\n", strings.Join(msg.CC, ", "))
+	}
 	fmt.Fprintf(&buf, "Subject: %s\r\n", msg.Subject)
 	fmt.Fprintf(&buf, "MIME-Version: 1.0\r\n")
 	fmt.Fprintf(&buf, "Content-Type: multipart/mixed; boundary=%q\r\n", writer.Boundary())

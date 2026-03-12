@@ -41,6 +41,8 @@ type Message struct {
 	TenantID    string
 	From        string
 	To          []string
+	CC          []string
+	BCC         []string
 	Subject     string
 	Headers     map[string]string
 	Body        []byte       // raw body (kept for backward compat, used by stdout/file)

@@ -144,6 +144,89 @@ func TestMSGraph_buildPayload_WithAttachments(t *testing.T) {
 	}
 }
 
+func TestMSGraph_buildPayload_WithCCAndBCC(t *testing.T) {
+	mg := &MSGraph{}
+	msg := &Message{
+		From:     "sender@example.com",
+		To:       []string{"to@example.com"},
+		CC:       []string{"cc1@example.com", "cc2@example.com"},
+		BCC:      []string{"bcc@example.com"},
+		Subject:  "Test CC/BCC",
+		TextBody: "body",
+	}
+
+	payload := mg.buildPayload(msg)
+
+	if len(payload.Message.ToRecipients) != 1 {
+		t.Fatalf("expected 1 toRecipient, got %d", len(payload.Message.ToRecipients))
+	}
+	if payload.Message.ToRecipients[0].EmailAddress.Address != "to@example.com" {
+		t.Errorf("expected to@example.com, got %s", payload.Message.ToRecipients[0].EmailAddress.Address)
+	}
+
+	if len(payload.Message.CcRecipients) != 2 {
+		t.Fatalf("expected 2 ccRecipients, got %d", len(payload.Message.CcRecipients))
+	}
+	if payload.Message.CcRecipients[0].EmailAddress.Address != "cc1@example.com" {
+		t.Errorf("expected cc1@example.com, got %s", payload.Message.CcRecipients[0].EmailAddress.Address)
+	}
+
+	if len(payload.Message.BccRecipients) != 1 {
+		t.Fatalf("expected 1 bccRecipient, got %d", len(payload.Message.BccRecipients))
+	}
+	if payload.Message.BccRecipients[0].EmailAddress.Address != "bcc@example.com" {
+		t.Errorf("expected bcc@example.com, got %s", payload.Message.BccRecipients[0].EmailAddress.Address)
+	}
+
+	// Verify JSON marshaling includes cc/bcc fields.
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+	var decoded graphSendMailPayload
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(decoded.Message.CcRecipients) != 2 {
+		t.Errorf("expected 2 ccRecipients after round-trip, got %d", len(decoded.Message.CcRecipients))
+	}
+	if len(decoded.Message.BccRecipients) != 1 {
+		t.Errorf("expected 1 bccRecipient after round-trip, got %d", len(decoded.Message.BccRecipients))
+	}
+}
+
+func TestMSGraph_buildPayload_NoCCBCC_OmittedFromJSON(t *testing.T) {
+	mg := &MSGraph{}
+	msg := &Message{
+		From:     "sender@example.com",
+		To:       []string{"to@example.com"},
+		Subject:  "No CC/BCC",
+		TextBody: "body",
+	}
+
+	payload := mg.buildPayload(msg)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	// Verify ccRecipients and bccRecipients are omitted when empty.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("failed to unmarshal raw: %v", err)
+	}
+	var msgRaw map[string]json.RawMessage
+	if err := json.Unmarshal(raw["message"], &msgRaw); err != nil {
+		t.Fatalf("failed to unmarshal message: %v", err)
+	}
+	if _, exists := msgRaw["ccRecipients"]; exists {
+		t.Error("expected ccRecipients to be omitted when empty")
+	}
+	if _, exists := msgRaw["bccRecipients"]; exists {
+		t.Error("expected bccRecipients to be omitted when empty")
+	}
+}
+
 func TestMSGraph_buildPayload_JSONMarshal(t *testing.T) {
 	mg := &MSGraph{}
 	msg := &Message{

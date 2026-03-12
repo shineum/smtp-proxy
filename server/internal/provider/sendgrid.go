@@ -105,7 +105,9 @@ type sendgridPayload struct {
 }
 
 type sendgridPersonalization struct {
-	To []sendgridEmail `json:"to"`
+	To  []sendgridEmail `json:"to"`
+	Cc  []sendgridEmail `json:"cc,omitempty"`
+	Bcc []sendgridEmail `json:"bcc,omitempty"`
 }
 
 type sendgridEmail struct {
@@ -145,9 +147,26 @@ func (s *SendGrid) buildPayload(msg *Message) sendgridPayload {
 		}
 	}
 
+	ccs := make([]sendgridEmail, len(msg.CC))
+	for i, addr := range msg.CC {
+		ccs[i] = sendgridEmail{Email: addr}
+	}
+	bccs := make([]sendgridEmail, len(msg.BCC))
+	for i, addr := range msg.BCC {
+		bccs[i] = sendgridEmail{Email: addr}
+	}
+
+	personalization := sendgridPersonalization{To: tos}
+	if len(ccs) > 0 {
+		personalization.Cc = ccs
+	}
+	if len(bccs) > 0 {
+		personalization.Bcc = bccs
+	}
+
 	payload := sendgridPayload{
 		Personalizations: []sendgridPersonalization{
-			{To: tos},
+			personalization,
 		},
 		From:    sendgridEmail{Email: msg.From},
 		Subject: msg.Subject,

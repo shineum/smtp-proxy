@@ -135,11 +135,13 @@ type graphSendMailPayload struct {
 }
 
 type graphMessage struct {
-	Subject      string             `json:"subject"`
-	Body         graphBody          `json:"body"`
-	ToRecipients []graphRecipient   `json:"toRecipients"`
-	From         *graphRecipient    `json:"from,omitempty"`
-	Attachments  []graphAttachment  `json:"attachments,omitempty"`
+	Subject        string            `json:"subject"`
+	Body           graphBody         `json:"body"`
+	ToRecipients   []graphRecipient  `json:"toRecipients"`
+	CcRecipients   []graphRecipient  `json:"ccRecipients,omitempty"`
+	BccRecipients  []graphRecipient  `json:"bccRecipients,omitempty"`
+	From           *graphRecipient   `json:"from,omitempty"`
+	Attachments    []graphAttachment `json:"attachments,omitempty"`
 }
 
 type graphBody struct {
@@ -165,12 +167,9 @@ type graphAttachment struct {
 }
 
 func (m *MSGraph) buildPayload(msg *Message) graphSendMailPayload {
-	recipients := make([]graphRecipient, len(msg.To))
-	for i, addr := range msg.To {
-		recipients[i] = graphRecipient{
-			EmailAddress: graphEmailAddress{Address: addr},
-		}
-	}
+	toRecipients := toGraphRecipients(msg.To)
+	ccRecipients := toGraphRecipients(msg.CC)
+	bccRecipients := toGraphRecipients(msg.BCC)
 
 	// Determine body content type and content.
 	contentType := "Text"
@@ -189,7 +188,9 @@ func (m *MSGraph) buildPayload(msg *Message) graphSendMailPayload {
 			ContentType: contentType,
 			Content:     content,
 		},
-		ToRecipients: recipients,
+		ToRecipients:  toRecipients,
+		CcRecipients:  ccRecipients,
+		BccRecipients: bccRecipients,
 		From: &graphRecipient{
 			EmailAddress: graphEmailAddress{Address: m.userID},
 		},
@@ -208,4 +209,18 @@ func (m *MSGraph) buildPayload(msg *Message) graphSendMailPayload {
 	}
 
 	return graphSendMailPayload{Message: gMsg}
+}
+
+// toGraphRecipients converts a slice of email addresses to Graph API recipients.
+func toGraphRecipients(addrs []string) []graphRecipient {
+	if len(addrs) == 0 {
+		return nil
+	}
+	recipients := make([]graphRecipient, len(addrs))
+	for i, addr := range addrs {
+		recipients[i] = graphRecipient{
+			EmailAddress: graphEmailAddress{Address: addr},
+		}
+	}
+	return recipients
 }

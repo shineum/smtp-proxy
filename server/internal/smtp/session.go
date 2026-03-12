@@ -69,7 +69,7 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 				Message:      "Authentication failed",
 			}
 		}
-		actualUsername := username[:atIdx]
+		actualUsername := strings.ToLower(username[:atIdx])
 		groupKeyStr := username[atIdx+1:]
 
 		groupKeyUUID, err := uuid.Parse(groupKeyStr)

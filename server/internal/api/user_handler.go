@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -213,7 +214,7 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 		// Build username
 		var username sql.NullString
 		if req.Username != "" {
-			username = sql.NullString{String: req.Username, Valid: true}
+			username = sql.NullString{String: strings.ToLower(req.Username), Valid: true}
 		}
 
 		// Marshal allowed domains

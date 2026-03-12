@@ -724,6 +724,7 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			respondError(w, http.StatusBadRequest, "username is required")
 			return
 		}
+		req.Username = strings.ToLower(req.Username)
 
 		var providerUUID uuid.UUID
 		if req.ProviderID != "" {

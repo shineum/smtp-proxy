@@ -254,13 +254,19 @@ Group types: `system` (platform admin), `company` (tenant organization)
 | POST | `/api/v1/users` | Authenticated | Create user |
 | GET | `/api/v1/users/{id}` | Authenticated | Get user |
 | PATCH | `/api/v1/users/{id}/status` | Authenticated | Update user status |
-| DELETE | `/api/v1/users/{id}` | Authenticated | Delete user |
+| DELETE | `/api/v1/users/{id}` | Authenticated | Soft delete user |
+| POST | `/api/v1/users/{id}/restore` | Authenticated | Restore soft-deleted user |
+| GET | `/api/v1/users/deleted` | Admin | List soft-deleted users |
+| POST | `/api/v1/users/{id}/reset-api-key` | Authenticated | Reset API key |
+| POST | `/api/v1/groups/{id}/service-accounts/{uid}/reset-api-key` | Owner/Admin | Reset service account API key |
 
 Account types: `user` (JWT login), `smtp` (SMTP sending account)
 
+Deleted users are soft-deleted with a 30-day retention period. A daily cleanup job in the queue-worker automatically purges users whose `deleted_at` exceeds 30 days.
+
 ### SMTP Authentication
 
-SMTP service accounts authenticate via SASL PLAIN using `username` + `api_key` (as the password). The API key is auto-generated at account creation and serves as the sole credential for SMTP AUTH. Usernames must be globally unique. The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
+SMTP service accounts authenticate via SASL PLAIN using `username@group_key` + `api_key` (as the password). The API key is auto-generated at account creation and serves as the sole credential for SMTP AUTH. Usernames are unique per group (not globally) and are always stored in lowercase. The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
 
 ```bash
 # Create service account via group endpoint
@@ -268,12 +274,14 @@ curl -X POST http://localhost:8080/api/v1/groups/<group-uuid>/service-accounts \
   -H "Authorization: Bearer <jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{"username": "sender", "allowed_domains": ["example.com"]}'
-# Response includes auto-generated api_key — save it, this is the SMTP password
+# Response includes auto-generated api_key and group's group_key
 
-# SMTP login
-# Username: sender
+# SMTP login format: username@group_key
+# Username: sender@<group_key_uuid>
 # Password: <api_key from response>
 ```
+
+API keys can optionally have an expiration set via `api_key_expires_in` (e.g., `"7d"`, `"30d"`, `"365d"`) at creation or reset time. Expired keys are rejected at SMTP AUTH.
 
 ### ESP Providers (Unified Auth)
 
@@ -461,6 +469,8 @@ docker compose run --rm test-client \
 | `--password` | *(empty)* | SMTP AUTH password |
 | `--from` | *(required)* | Sender email address |
 | `--to` | *(required)* | Recipient address (repeatable) |
+| `--cc` | *(empty)* | CC recipient (repeatable) |
+| `--bcc` | *(empty)* | BCC recipient (repeatable) |
 | `--subject` | `Test Email` | Email subject |
 | `--body` | `This is a test...` | Plain text body |
 | `--html` | *(empty)* | HTML body (sends multipart/alternative) |
@@ -468,17 +478,56 @@ docker compose run --rm test-client \
 | `--count` | `1` | Number of emails to send |
 | `--rate` | `1` | Emails per second |
 
-## Development
+## Testing
+
+### Unit Tests
 
 ```bash
-# Run tests (Go is only available inside Docker)
+# Run all Go tests (Go is only available inside Docker)
 docker run --rm -w /app \
   -v $(pwd)/server:/app \
   golang:1.24-alpine \
   sh -c "go test ./... -count=1"
+```
 
+### E2E Integration Test
+
+A full end-to-end test script covers the entire flow from clean build to email delivery:
+
+```bash
+# Run the full E2E suite (requires Docker)
+bash e2e-test.sh
+```
+
+The script performs:
+
+1. **Clean build** - `docker compose down -v` + `docker compose up -d --build`
+2. **API data setup** - Login, create providers (private/global/group-scoped), create group, create human user and SMTP service account
+3. **SMTP send (simple)** - Plain text email with from, to, subject, body
+4. **SMTP send (complex)** - Email with from, to, CC, BCC, HTML body, and file attachments
+5. **Delivery verification** - Check SMTP server and queue-worker logs for successful delivery
+
+Test case documentation: [`docs/e2e-test-cases.md`](docs/e2e-test-cases.md) (11 test cases with preconditions, steps, and expected results).
+
+### Manual SMTP Test
+
+```bash
+# Using the built-in test-client (after services are running)
+docker compose run --rm test-client \
+  --host=smtp-server --port=587 --tls=starttls --insecure \
+  --user="<username>@<group_key>" --password="<api_key>" \
+  --from="sender@example.com" \
+  --to="recipient@example.com" \
+  --cc="cc@example.com" \
+  --subject="Test" \
+  --body="Hello"
+```
+
+## Development
+
+```bash
 # Build only (verify compilation)
-docker build --target builder -f server/Dockerfile server/
+docker build --target builder -f server/Dockerfile .
 
 # Rebuild a single service
 docker compose up -d --build smtp-server

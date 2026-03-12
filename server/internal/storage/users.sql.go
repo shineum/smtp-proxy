@@ -211,6 +211,7 @@ const getUserByUsernameAndGroupKey = `-- name: GetUserByUsernameAndGroupKey :one
 SELECT u.id, u.email, u.password_hash, u.status, u.failed_attempts, u.last_login, u.created_at, u.updated_at, u.username, u.account_type, u.api_key, u.allowed_domains, u.password_disabled, u.provider_id, u.home_group_id, u.display_name, u.description, u.deleted_at, u.api_key_expires_at FROM users u
 JOIN groups g ON u.home_group_id = g.id
 WHERE u.username = $1 AND g.group_key = $2
+AND u.account_type = 'smtp'
 AND u.deleted_at IS NULL
 `
 

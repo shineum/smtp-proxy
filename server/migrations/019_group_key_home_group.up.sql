@@ -33,7 +33,7 @@ WHERE gm.user_id = u.id
   AND u.account_type = 'smtp';
 
 -- Drop the old global unique constraint on username
-DROP INDEX IF EXISTS users_username_key;
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_username_key;
 
 -- Create composite unique: (username, home_group_id) for SMTP accounts only
 CREATE UNIQUE INDEX idx_users_username_home_group

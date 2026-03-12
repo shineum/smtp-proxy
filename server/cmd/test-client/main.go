@@ -34,6 +34,8 @@ type config struct {
 	password string
 	from     string
 	to       stringSlice
+	cc       stringSlice
+	bcc      stringSlice
 	subject  string
 	body     string
 	html     string
@@ -75,6 +77,12 @@ func main() {
 	fmt.Printf("  TLS:      %s\n", cfg.tlsMode)
 	fmt.Printf("  From:     %s\n", cfg.from)
 	fmt.Printf("  To:       %s\n", strings.Join(cfg.to, ", "))
+	if len(cfg.cc) > 0 {
+		fmt.Printf("  CC:       %s\n", strings.Join(cfg.cc, ", "))
+	}
+	if len(cfg.bcc) > 0 {
+		fmt.Printf("  BCC:      %s\n", strings.Join(cfg.bcc, ", "))
+	}
 	fmt.Printf("  Count:    %d\n", cfg.count)
 	if cfg.count > 1 {
 		fmt.Printf("  Rate:     %.1f emails/sec\n", cfg.rate)
@@ -147,6 +155,8 @@ func parseFlags() config {
 	flag.StringVar(&cfg.password, "password", "", "SMTP AUTH password")
 	flag.StringVar(&cfg.from, "from", "", "Sender email address")
 	flag.Var(&cfg.to, "to", "Recipient email address (can be specified multiple times)")
+	flag.Var(&cfg.cc, "cc", "CC recipient (can be specified multiple times)")
+	flag.Var(&cfg.bcc, "bcc", "BCC recipient (can be specified multiple times)")
 	flag.StringVar(&cfg.subject, "subject", "Test Email", "Email subject")
 	flag.StringVar(&cfg.body, "body", "This is a test email sent by smtp-proxy test-client.", "Email body")
 	flag.IntVar(&cfg.count, "count", 1, "Number of emails to send (for batch testing)")
@@ -178,7 +188,7 @@ func sendEmail(cfg config, addr, subject, body string) error {
 		InsecureSkipVerify: cfg.insecure, //nolint:gosec // Intentional for dev self-signed certs.
 	}
 
-	msg, err := buildMessage(cfg.from, cfg.to, subject, body, cfg.html, cfg.attach)
+	msg, err := buildMessage(cfg.from, cfg.to, cfg.cc, subject, body, cfg.html, cfg.attach)
 	if err != nil {
 		return fmt.Errorf("build message: %w", err)
 	}
@@ -254,7 +264,8 @@ func smtpSend(c *smtp.Client, cfg config, msg []byte) error {
 		return fmt.Errorf("mail from: %w", err)
 	}
 
-	for _, rcpt := range cfg.to {
+	allRecipients := append(append(cfg.to, cfg.cc...), cfg.bcc...)
+	for _, rcpt := range allRecipients {
 		if err := c.Rcpt(rcpt); err != nil {
 			return fmt.Errorf("rcpt to %s: %w", rcpt, err)
 		}
@@ -276,11 +287,14 @@ func smtpSend(c *smtp.Client, cfg config, msg []byte) error {
 	return c.Quit()
 }
 
-func buildMessage(from string, to []string, subject, body, html string, attachments []string) ([]byte, error) {
+func buildMessage(from string, to, cc []string, subject, body, html string, attachments []string) ([]byte, error) {
 	var buf bytes.Buffer
 
 	fmt.Fprintf(&buf, "From: %s\r\n", from)
 	fmt.Fprintf(&buf, "To: %s\r\n", strings.Join(to, ", "))
+	if len(cc) > 0 {
+		fmt.Fprintf(&buf, "Cc: %s\r\n", strings.Join(cc, ", "))
+	}
 	fmt.Fprintf(&buf, "Subject: %s\r\n", subject)
 	fmt.Fprintf(&buf, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
 	buf.WriteString("MIME-Version: 1.0\r\n")

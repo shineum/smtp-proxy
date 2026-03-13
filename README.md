@@ -134,7 +134,7 @@ server/
 │   ├── storage/           # sqlc-generated PostgreSQL queries
 │   ├── tlsutil/           # Self-signed TLS certificate generator
 │   └── worker/            # Queue message handler (delivery orchestration)
-├── migrations/            # 24 up/down SQL migration pairs
+├── migrations/            # 25 up/down SQL migration pairs
 └── config/config.yaml     # Default application config
 ```
 
@@ -242,6 +242,10 @@ rate_limit:
 | DELETE | `/api/v1/groups/{id}/members/{uid}` | Member | Remove member |
 | POST | `/api/v1/groups/{id}/service-accounts` | Owner/Admin | Create SMTP service account |
 | PATCH | `/api/v1/groups/{id}/service-accounts/{uid}` | Owner/Admin | Update service account |
+| POST | `/api/v1/groups/{id}/service-accounts/{uid}/api-keys` | Owner/Admin | Create API key for service account |
+| GET | `/api/v1/groups/{id}/service-accounts/{uid}/api-keys` | Owner/Admin | List API keys |
+| PATCH | `/api/v1/groups/{id}/service-accounts/{uid}/api-keys/{keyId}` | Owner/Admin | Update API key status (activate/deactivate) |
+| DELETE | `/api/v1/groups/{id}/service-accounts/{uid}/api-keys/{keyId}` | Owner/Admin | Delete API key |
 | GET | `/api/v1/groups/{id}/activity` | Member | List activity logs |
 
 Group types: `system` (platform admin), `company` (tenant organization)
@@ -266,22 +270,28 @@ Deleted users are soft-deleted with a 30-day retention period. A daily cleanup j
 
 ### SMTP Authentication
 
-SMTP service accounts authenticate via SASL PLAIN using `username@group_id` + `api_key` (as the password). The `group_id` is the UUID of the group (the `id` field in the group response). Each service account supports multiple API keys stored in the `api_keys` table with bcrypt-hashed credentials and a 12-character prefix for fast lookup. Usernames are unique per group (not globally) and are always stored in lowercase. The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
+SMTP service accounts authenticate via SASL PLAIN using `username@group_id` + `api_key` (as the password). The `group_id` is the UUID of the group (the `id` field in the group response). Each service account supports multiple API keys stored in the `api_keys` table with bcrypt-hashed credentials, a 12-character prefix for fast lookup, and an `is_active` flag per key. Usernames are unique per group (not globally) and are always stored in lowercase. The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
 
 ```bash
-# Create service account via group endpoint
+# 1. Create service account (no API key generated at this step)
 curl -X POST http://localhost:8080/api/v1/groups/<group-uuid>/service-accounts \
   -H "Authorization: Bearer <jwt-token>" \
   -H "Content-Type: application/json" \
-  -d '{"username": "sender", "allowed_domains": ["example.com"]}'
-# Response includes auto-generated api_key and group's id
+  -d '{"username": "sender", "provider_id": "<provider-uuid>", "allowed_domains": ["example.com"]}'
+
+# 2. Create an API key for the service account
+curl -X POST http://localhost:8080/api/v1/groups/<group-uuid>/service-accounts/<sa-uuid>/api-keys \
+  -H "Authorization: Bearer <jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"label": "production", "api_key_expires_in": "30d"}'
+# Response includes plaintext api_key (shown only once)
 
 # SMTP login format: username@group_id
 # Username: sender@<group_uuid>
 # Password: <api_key from response>
 ```
 
-API keys can optionally have an expiration set via `api_key_expires_in` (e.g., `"7d"`, `"30d"`, `"365d"`) at creation or reset time. Expired keys are rejected at SMTP AUTH.
+API keys can optionally have an expiration set via `api_key_expires_in` (e.g., `"7d"`, `"30d"`, `"365d"`). Expired or deactivated keys are rejected at SMTP AUTH. Each key can be individually activated/deactivated via the `is_active` flag without affecting other keys on the same service account.
 
 ### ESP Providers (Unified Auth)
 
@@ -373,7 +383,7 @@ Failed messages in the dead-letter queue can be reprocessed via `POST /api/v1/dl
 
 ## Database
 
-PostgreSQL 18 with 24 migrations applied automatically on startup.
+PostgreSQL 18 with 25 migrations applied automatically on startup.
 
 **Tables:** `groups`, `group_members`, `users`, `api_keys`, `esp_providers`, `provider_group_access`, `routing_rules`, `messages`, `delivery_logs`, `sessions`, `activity_logs`
 
@@ -507,7 +517,7 @@ The script performs:
 4. **SMTP send (complex)** - Email with from, to, CC, BCC, HTML body, and file attachments
 5. **Delivery verification** - Check SMTP server and queue-worker logs for successful delivery
 
-Test case documentation: [`docs/e2e-test-cases.md`](docs/e2e-test-cases.md) (30 test cases, 28 assertions implemented).
+Test case documentation: [`docs/e2e-test-cases.md`](docs/e2e-test-cases.md) (32 test cases).
 
 ### Manual SMTP Test
 

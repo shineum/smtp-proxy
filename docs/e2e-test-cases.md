@@ -87,8 +87,16 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 | Field | Value |
 |-------|-------|
 | **Precondition** | TC-007, TC-008 passed. |
-| **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts` with `{"username":"e2e-smtp","provider_id":"<provider_3_id>","api_key_expires_in":"30d"}` |
-| **Expected** | 201 Created. `username: "e2e-smtp"` (lowercase), `api_key` returned, `api_key_expires_at` set 30 days from now. |
+| **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts` with `{"username":"e2e-smtp","provider_id":"<provider_3_id>"}` |
+| **Expected** | 201 Created. `username: "e2e-smtp"` (lowercase), `account_type: "smtp"`. No API key generated (keys are created separately via TC-025). |
+
+### TC-010b: Create Initial API Key for Service Account
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-010 passed. |
+| **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts/<sa_id>/api-keys` with `{"label":"default","api_key_expires_in":"30d"}` |
+| **Expected** | 201 Created. `api_key` returned (plaintext, shown once), `key_prefix` (12 chars), `label: "default"`, `expires_at` set 30 days from now. |
 
 ---
 
@@ -135,7 +143,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 | Field | Value |
 |-------|-------|
 | **Precondition** | TC-010 passed. |
-| **Steps** | 1. Set `api_key_expires_at` to past via DB: `UPDATE users SET api_key_expires_at = NOW() - INTERVAL '1 day'` <br> 2. SMTP AUTH PLAIN with service account credentials <br> 3. Restore expiration to future |
+| **Steps** | 1. Set `expires_at` to past via DB: `UPDATE api_keys SET expires_at = NOW() - INTERVAL '1 day' WHERE user_id = '<sa_id>'` <br> 2. SMTP AUTH PLAIN with service account credentials <br> 3. Restore expiration to future |
 | **Expected** | Step 2: 535 "API key expired". Step 3: auth works again after restoring. |
 
 ---
@@ -230,7 +238,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-010 passed (service account exists with default key from creation). |
+| **Precondition** | TC-010b passed (service account exists with one key). |
 | **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts/<sa_id>/api-keys` with `{"label":"ci-pipeline","api_key_expires_in":"90d"}` |
 | **Expected** | 201 Created. Response includes plaintext `api_key`, `key_prefix` (first 12 chars), `label: "ci-pipeline"`, `expires_at` set 90 days from now. |
 
@@ -240,7 +248,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 |-------|-------|
 | **Precondition** | TC-025 passed (2 keys exist for the service account). |
 | **Steps** | GET `/api/v1/groups/<group_a_id>/service-accounts/<sa_id>/api-keys` |
-| **Expected** | 200 OK. Array with 2 entries. Each has `id`, `key_prefix`, `label`, `expires_at`, `last_used_at`, `created_at`. No `key_hash` or plaintext exposed. |
+| **Expected** | 200 OK. Array with 2 entries. Each has `id`, `key_prefix`, `label`, `is_active`, `expires_at`, `last_used_at`, `created_at`. No `key_hash` or plaintext exposed. |
 
 ### TC-027: SMTP Auth with Second API Key
 
@@ -249,6 +257,14 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 | **Precondition** | TC-025 passed (second API key created). |
 | **Steps** | SMTP AUTH PLAIN with `e2e-smtp@<group_a_id>` / `<new_api_key_from_tc025>` |
 | **Expected** | 250 OK. Auth successful with the second API key. Message sent and delivered. |
+
+### TC-027b: Deactivated API Key Rejected
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-025 passed (second API key created and active). |
+| **Steps** | 1. PATCH `/api/v1/groups/<group_a_id>/service-accounts/<sa_id>/api-keys/<key_id>` with `{"is_active":false}` <br> 2. SMTP AUTH PLAIN with `e2e-smtp@<group_a_id>` / `<api_key_from_tc025>` <br> 3. PATCH with `{"is_active":true}` to re-activate |
+| **Expected** | Step 1: 200 OK, `is_active: false`. Step 2: 535 "Authentication failed" (inactive key rejected). Step 3: auth works again. |
 
 ### TC-028: Delete Specific API Key
 
@@ -288,7 +304,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 | Group B | e2e-test-group-b | company | - |
 | Human User | testuser@example.com | user | Group A |
 | Service Account | e2e-smtp | smtp | Group A, Provider 3 |
-| API Key 1 | default key | smtp-key | Group A, e2e-smtp, 30d expiry |
+| API Key 1 | default | smtp-key | Group A, e2e-smtp, 30d expiry |
 | API Key 2 | ci-pipeline | smtp-key | Group A, e2e-smtp, 90d expiry |
 
 ---
@@ -296,7 +312,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 ## Running
 
 ```bash
-# Full E2E suite (clean build + 28 assertions across 30 test cases)
+# Full E2E suite (clean build + assertions across 32 test cases)
 bash e2e-test.sh
 
 # Manual SMTP test

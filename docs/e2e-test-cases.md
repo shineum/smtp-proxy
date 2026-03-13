@@ -296,7 +296,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 ## Running
 
 ```bash
-# Full E2E suite (clean build + 34 assertions across 30 test cases)
+# Full E2E suite (clean build + 28 assertions across 30 test cases)
 bash e2e-test.sh
 
 # Manual SMTP test

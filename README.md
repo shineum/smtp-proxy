@@ -134,7 +134,7 @@ server/
 │   ├── storage/           # sqlc-generated PostgreSQL queries
 │   ├── tlsutil/           # Self-signed TLS certificate generator
 │   └── worker/            # Queue message handler (delivery orchestration)
-├── migrations/            # 10 up/down SQL migration pairs
+├── migrations/            # 24 up/down SQL migration pairs
 └── config/config.yaml     # Default application config
 ```
 
@@ -266,7 +266,7 @@ Deleted users are soft-deleted with a 30-day retention period. A daily cleanup j
 
 ### SMTP Authentication
 
-SMTP service accounts authenticate via SASL PLAIN using `username@group_id` + `api_key` (as the password). The `group_id` is the UUID of the group (the `id` field in the group response). The API key is auto-generated at account creation and serves as the sole credential for SMTP AUTH. Usernames are unique per group (not globally) and are always stored in lowercase. The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
+SMTP service accounts authenticate via SASL PLAIN using `username@group_id` + `api_key` (as the password). The `group_id` is the UUID of the group (the `id` field in the group response). Each service account supports multiple API keys stored in the `api_keys` table with bcrypt-hashed credentials and a 12-character prefix for fast lookup. Usernames are unique per group (not globally) and are always stored in lowercase. The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
 
 ```bash
 # Create service account via group endpoint
@@ -373,9 +373,9 @@ Failed messages in the dead-letter queue can be reprocessed via `POST /api/v1/dl
 
 ## Database
 
-PostgreSQL 18 with 18 migrations applied automatically on startup.
+PostgreSQL 18 with 24 migrations applied automatically on startup.
 
-**Tables:** `groups`, `group_members`, `users`, `esp_providers`, `provider_group_access`, `routing_rules`, `messages`, `delivery_logs`, `sessions`, `activity_logs`
+**Tables:** `groups`, `group_members`, `users`, `api_keys`, `esp_providers`, `provider_group_access`, `routing_rules`, `messages`, `delivery_logs`, `sessions`, `activity_logs`
 
 **Multi-tenant isolation:** Row-Level Security (RLS) policies enforce group-level boundaries using the `app.current_group_id` PostgreSQL session variable, set automatically by API middleware.
 
@@ -507,7 +507,7 @@ The script performs:
 4. **SMTP send (complex)** - Email with from, to, CC, BCC, HTML body, and file attachments
 5. **Delivery verification** - Check SMTP server and queue-worker logs for successful delivery
 
-Test case documentation: [`docs/e2e-test-cases.md`](docs/e2e-test-cases.md) (24 test cases, 28 assertions).
+Test case documentation: [`docs/e2e-test-cases.md`](docs/e2e-test-cases.md) (30 test cases, 28 assertions implemented).
 
 ### Manual SMTP Test
 
@@ -542,7 +542,7 @@ docker compose up -d --build smtp-server
 | HTTP Router | chi v5 |
 | Database | PostgreSQL 18 (pgx v5, sqlc) |
 | Queue | Redis 7.4 Streams |
-| Auth | JWT (HS256) + API keys for SMTP (unified auth) |
+| Auth | JWT (HS256) + API keys for SMTP (bcrypt-hashed, prefix-based lookup) |
 | Metrics | Prometheus client_golang |
 | Logging | zerolog |
 | Config | Viper |

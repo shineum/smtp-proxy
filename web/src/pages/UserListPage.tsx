@@ -43,7 +43,7 @@ export default function UserListPage() {
   useEffect(() => {
     if (providers && form.account_type === 'smtp' && !form.provider_id) {
       const stdout = providers.find(p => p.provider_type === 'stdout' && p.enabled);
-      if (stdout) setForm(f => ({ ...f, provider_id: stdout.id }));
+      if (stdout) setForm(f => ({ ...f, provider_id: String(stdout.id) }));
     }
   }, [providers, form.account_type]);
 

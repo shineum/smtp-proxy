@@ -100,7 +100,7 @@ export default function GroupDetailPage() {
         username: saUsername,
         email: saEmail || undefined,
         allowed_domains: domains,
-        provider_id: saProviderId || undefined,
+        provider_id: saProviderId ? String(saProviderId) : undefined,
         api_key_expires_in: saKeyExpiry || undefined,
       });
     },
@@ -148,7 +148,7 @@ export default function GroupDetailPage() {
       const domains = editSADomains.trim() ? editSADomains.split(',').map(d => d.trim()).filter(Boolean) : [];
       return updateServiceAccount(id!, editSAUserId, {
         allowed_domains: domains,
-        provider_id: editSAProviderId || undefined,
+        provider_id: editSAProviderId ? String(editSAProviderId) : undefined,
       });
     },
     onSuccess: () => {

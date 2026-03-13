@@ -266,18 +266,18 @@ Deleted users are soft-deleted with a 30-day retention period. A daily cleanup j
 
 ### SMTP Authentication
 
-SMTP service accounts authenticate via SASL PLAIN using `username@group_key` + `api_key` (as the password). The API key is auto-generated at account creation and serves as the sole credential for SMTP AUTH. Usernames are unique per group (not globally) and are always stored in lowercase. The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
+SMTP service accounts authenticate via SASL PLAIN using `username@group_id` + `api_key` (as the password). The API key is auto-generated at account creation and serves as the sole credential for SMTP AUTH. Usernames are unique per group (not globally) and are always stored in lowercase. The sender address (MAIL FROM) is independent of the login credentials, restricted only by `allowed_domains`.
 
 ```bash
 # Create service account via group endpoint
-curl -X POST http://localhost:8080/api/v1/groups/<group-uuid>/service-accounts \
+curl -X POST http://localhost:8080/api/v1/groups/<group-id>/service-accounts \
   -H "Authorization: Bearer <jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{"username": "sender", "allowed_domains": ["example.com"]}'
-# Response includes auto-generated api_key and group's group_key
+# Response includes auto-generated api_key
 
-# SMTP login format: username@group_key
-# Username: sender@<group_key_uuid>
+# SMTP login format: username@group_id
+# Username: sender@1
 # Password: <api_key from response>
 ```
 
@@ -515,7 +515,7 @@ Test case documentation: [`docs/e2e-test-cases.md`](docs/e2e-test-cases.md) (11 
 # Using the built-in test-client (after services are running)
 docker compose run --rm test-client \
   --host=smtp-server --port=587 --tls=starttls --insecure \
-  --user="<username>@<group_key>" --password="<api_key>" \
+  --user="<username>@<group_id>" --password="<api_key>" \
   --from="sender@example.com" \
   --to="recipient@example.com" \
   --cc="cc@example.com" \

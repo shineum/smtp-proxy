@@ -788,15 +788,13 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 		}
 
 		user, err := queries.CreateUser(r.Context(), storage.CreateUserParams{
-			Email:           email,
-			PasswordHash:    passwordHash,
-			AccountType:     "smtp",
-			Username:        sql.NullString{String: req.Username, Valid: true},
-			ApiKey:          sql.NullString{String: apiKey, Valid: true},
-			AllowedDomains:  domainsJSON,
-			ProviderID:      pgtype.UUID{Bytes: providerUUID, Valid: true},
-			HomeGroupID:     pgtype.UUID{Bytes: groupID, Valid: true},
-			ApiKeyExpiresAt: apiKeyExpiresAt,
+			Email:          email,
+			PasswordHash:   passwordHash,
+			AccountType:    "smtp",
+			Username:       sql.NullString{String: req.Username, Valid: true},
+			AllowedDomains: domainsJSON,
+			ProviderID:     pgtype.UUID{Bytes: providerUUID, Valid: true},
+			HomeGroupID:    pgtype.UUID{Bytes: groupID, Valid: true},
 		})
 		if err != nil {
 			if strings.Contains(err.Error(), "users_username_key") {
@@ -804,6 +802,25 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			} else {
 				respondError(w, http.StatusInternalServerError, "failed to create service account")
 			}
+			return
+		}
+
+		// Create API key in api_keys table
+		keyPrefix := auth.APIKeyPrefix(apiKey)
+		keyHash, err := auth.HashAPIKey(apiKey)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		apiKeyRecord, err := queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
+			UserID:    user.ID,
+			KeyPrefix: keyPrefix,
+			KeyHash:   keyHash,
+			Label:     "default",
+			ExpiresAt: apiKeyExpiresAt,
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to create API key")
 			return
 		}
 
@@ -825,7 +842,13 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			})
 		}
 
-		respondJSON(w, http.StatusCreated, toUserResponseWithAPIKey(user))
+		resp := toUserResponse(user)
+		resp.ApiKey = &apiKey
+		if apiKeyRecord.ExpiresAt.Valid {
+			t := apiKeyRecord.ExpiresAt.Time
+			resp.ApiKeyExpiresAt = &t
+		}
+		respondJSON(w, http.StatusCreated, resp)
 	}
 }
 
@@ -890,13 +913,27 @@ func ResetServiceAccountAPIKeyHandler(queries storage.Querier, auditLogger *auth
 			return
 		}
 
-		updated, err := queries.ResetUserAPIKey(r.Context(), storage.ResetUserAPIKeyParams{
-			ID:              userID,
-			ApiKey:          sql.NullString{String: newKey, Valid: true},
-			ApiKeyExpiresAt: apiKeyExpiresAt,
+		// Delete all existing API keys, then create a new one
+		if err := queries.DeleteAllAPIKeysByUserID(r.Context(), userID); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to reset API key")
+			return
+		}
+
+		keyPrefix := auth.APIKeyPrefix(newKey)
+		keyHash, err := auth.HashAPIKey(newKey)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		newApiKeyRecord, err := queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
+			UserID:    userID,
+			KeyPrefix: keyPrefix,
+			KeyHash:   keyHash,
+			Label:     "default",
+			ExpiresAt: apiKeyExpiresAt,
 		})
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to reset API key")
+			respondError(w, http.StatusInternalServerError, "failed to create API key")
 			return
 		}
 
@@ -906,6 +943,12 @@ func ResetServiceAccountAPIKeyHandler(queries storage.Querier, auditLogger *auth
 			})
 		}
 
-		respondJSON(w, http.StatusOK, toUserResponseWithAPIKey(updated))
+		resp := toUserResponse(user)
+		resp.ApiKey = &newKey
+		if newApiKeyRecord.ExpiresAt.Valid {
+			t := newApiKeyRecord.ExpiresAt.Time
+			resp.ApiKeyExpiresAt = &t
+		}
+		respondJSON(w, http.StatusOK, resp)
 	}
 }

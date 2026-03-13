@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -417,12 +416,29 @@ func TestUnifiedAuth_JWTAndAPIKey(t *testing.T) {
 	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	groupID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
 
+	// Generate a real API key and compute its prefix + hash for prefix-based lookup.
+	rawAPIKey, err := auth.GenerateAPIKey()
+	if err != nil {
+		t.Fatalf("failed to generate API key: %v", err)
+	}
+	keyPrefix := auth.APIKeyPrefix(rawAPIKey)
+	keyHash, err := auth.HashAPIKey(rawAPIKey)
+	if err != nil {
+		t.Fatalf("failed to hash API key: %v", err)
+	}
+
 	smtpUser := storage.User{
 		ID:          userID,
 		Email:       "smtp@example.com",
 		Status:      "active",
 		AccountType: "smtp",
-		ApiKey:      sql.NullString{String: "testapikey123456", Valid: true},
+	}
+
+	apiKeyRecord := storage.ApiKey{
+		ID:        uuid.New(),
+		UserID:    userID,
+		KeyPrefix: keyPrefix,
+		KeyHash:   keyHash,
 	}
 
 	group := storage.Group{
@@ -440,8 +456,14 @@ func TestUnifiedAuth_JWTAndAPIKey(t *testing.T) {
 	}
 
 	mock := &mockQuerier{
-		getUserByAPIKeyFn: func(ctx context.Context, apiKey sql.NullString) (storage.User, error) {
-			if apiKey.String == smtpUser.ApiKey.String {
+		getAPIKeyByPrefixFn: func(_ context.Context, prefix string) (storage.ApiKey, error) {
+			if prefix == keyPrefix {
+				return apiKeyRecord, nil
+			}
+			return storage.ApiKey{}, errNotFound
+		},
+		getUserByIDFn: func(_ context.Context, id uuid.UUID) (storage.User, error) {
+			if id == userID {
 				return smtpUser, nil
 			}
 			return storage.User{}, errNotFound
@@ -512,7 +534,7 @@ func TestUnifiedAuth_JWTAndAPIKey(t *testing.T) {
 		t.Parallel()
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/providers", nil)
-		req.Header.Set("Authorization", "Bearer "+smtpUser.ApiKey.String)
+		req.Header.Set("Authorization", "Bearer "+rawAPIKey)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -578,17 +600,12 @@ func TestSMTPAccountCreation_WithGroupMembership(t *testing.T) {
 
 	var createdUser storage.User
 	var createdMembership bool
+	var storedAPIKey string
 
 	mock := &mockQuerier{
 		createUserFn: func(ctx context.Context, arg storage.CreateUserParams) (storage.User, error) {
 			if arg.AccountType != "smtp" {
 				t.Errorf("expected account_type smtp, got %s", arg.AccountType)
-			}
-			if !arg.ApiKey.Valid {
-				t.Error("expected API key to be generated for SMTP account")
-			}
-			if arg.ApiKey.String == "" {
-				t.Error("expected non-empty API key")
 			}
 
 			createdUser = storage.User{
@@ -596,12 +613,29 @@ func TestSMTPAccountCreation_WithGroupMembership(t *testing.T) {
 				Email:       arg.Email,
 				AccountType: arg.AccountType,
 				Status:      "active",
-				ApiKey:      arg.ApiKey,
 				ProviderID:  arg.ProviderID,
 				CreatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 				UpdatedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			}
 			return createdUser, nil
+		},
+		createAPIKeyFn: func(_ context.Context, arg storage.CreateAPIKeyParams) (storage.ApiKey, error) {
+			if arg.UserID != createdUser.ID {
+				t.Errorf("expected API key userID %s, got %s", createdUser.ID, arg.UserID)
+			}
+			if arg.KeyPrefix == "" {
+				t.Error("expected non-empty key prefix")
+			}
+			if arg.KeyHash == "" {
+				t.Error("expected non-empty key hash")
+			}
+			return storage.ApiKey{
+				ID:        uuid.New(),
+				UserID:    arg.UserID,
+				KeyPrefix: arg.KeyPrefix,
+				KeyHash:   arg.KeyHash,
+				Label:     arg.Label,
+			}, nil
 		},
 		createGroupMemberFn: func(ctx context.Context, arg storage.CreateGroupMemberParams) (storage.GroupMember, error) {
 			if arg.GroupID != groupID {
@@ -614,12 +648,6 @@ func TestSMTPAccountCreation_WithGroupMembership(t *testing.T) {
 				UserID:  arg.UserID,
 				Role:    arg.Role,
 			}, nil
-		},
-		getUserByAPIKeyFn: func(ctx context.Context, apiKey sql.NullString) (storage.User, error) {
-			if apiKey.Valid && apiKey.String == createdUser.ApiKey.String {
-				return createdUser, nil
-			}
-			return storage.User{}, errNotFound
 		},
 		getProviderByIDFn: func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error) {
 			if id == providerID {
@@ -665,13 +693,10 @@ func TestSMTPAccountCreation_WithGroupMembership(t *testing.T) {
 		t.Errorf("Step 2 (Verify): expected account_type smtp, got %s", resp.AccountType)
 	}
 
-	// Step 3: Verify the SMTP user can be looked up by API key
-	lookedUpUser, err := mock.GetUserByAPIKey(context.Background(), sql.NullString{String: *resp.ApiKey, Valid: true})
-	if err != nil {
-		t.Fatalf("Step 3 (Lookup): failed to look up user by API key: %v", err)
-	}
-	if lookedUpUser.Email != "smtp-bot@example.com" {
-		t.Errorf("Step 3 (Lookup): expected email smtp-bot@example.com, got %s", lookedUpUser.Email)
+	// Step 3: Verify the API key was returned in the response
+	storedAPIKey = *resp.ApiKey
+	if len(storedAPIKey) == 0 {
+		t.Fatal("Step 3 (Verify): expected non-empty api_key in response")
 	}
 
 	// Step 4: Verify group membership was created

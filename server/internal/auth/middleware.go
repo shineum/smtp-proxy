@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"database/sql"
 	"net/http"
 	"strings"
 	"time"
@@ -174,8 +173,30 @@ func UnifiedAuth(jwtService *JWTService, queries storage.Querier) func(http.Hand
 				// JWT validation failed; fall through to API key check
 			}
 
-			// Try API key lookup
-			user, err := queries.GetUserByAPIKey(r.Context(), sql.NullString{String: token, Valid: true})
+			// Try API key lookup: extract prefix, verify hash, check expiry
+			prefix := APIKeyPrefix(token)
+			apiKeyRecord, err := queries.GetAPIKeyByPrefix(r.Context(), prefix)
+			if err != nil {
+				http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
+				return
+			}
+
+			if !VerifyAPIKey(apiKeyRecord.KeyHash, token) {
+				http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
+				return
+			}
+
+			// Check API key expiration
+			if apiKeyRecord.ExpiresAt.Valid && time.Now().After(apiKeyRecord.ExpiresAt.Time) {
+				http.Error(w, `{"error":"API key expired"}`, http.StatusUnauthorized)
+				return
+			}
+
+			// Update last used timestamp (best-effort)
+			_ = queries.UpdateAPIKeyLastUsed(r.Context(), apiKeyRecord.ID)
+
+			// Look up the user who owns this API key
+			user, err := queries.GetUserByID(r.Context(), apiKeyRecord.UserID)
 			if err != nil {
 				http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
 				return
@@ -183,12 +204,6 @@ func UnifiedAuth(jwtService *JWTService, queries storage.Querier) func(http.Hand
 
 			if user.Status != "active" {
 				http.Error(w, `{"error":"account is not active"}`, http.StatusUnauthorized)
-				return
-			}
-
-			// Check API key expiration
-			if user.ApiKeyExpiresAt.Valid && time.Now().After(user.ApiKeyExpiresAt.Time) {
-				http.Error(w, `{"error":"API key expired"}`, http.StatusUnauthorized)
 				return
 			}
 

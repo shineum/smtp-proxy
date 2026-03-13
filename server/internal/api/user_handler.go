@@ -88,10 +88,6 @@ func toUserResponse(u storage.User) userResponse {
 		s := u.Description.String
 		resp.Description = &s
 	}
-	if u.ApiKeyExpiresAt.Valid {
-		t := u.ApiKeyExpiresAt.Time
-		resp.ApiKeyExpiresAt = &t
-	}
 	if u.DeletedAt.Valid {
 		t := u.DeletedAt.Time
 		resp.DeletedAt = &t
@@ -99,13 +95,10 @@ func toUserResponse(u storage.User) userResponse {
 	return resp
 }
 
-// toUserResponseWithAPIKey converts a storage.User to a userResponse, including the API key.
+// toUserResponseWithAPIKey converts a storage.User to a userResponse.
+// The API key must be set separately by the caller since it is no longer stored on the User struct.
 func toUserResponseWithAPIKey(u storage.User) userResponse {
-	resp := toUserResponse(u)
-	if u.ApiKey.Valid {
-		resp.ApiKey = &u.ApiKey.String
-	}
-	return resp
+	return toUserResponse(u)
 }
 
 // validRoles is the set of valid user roles.
@@ -305,14 +298,12 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			PasswordHash:     passwordHash,
 			AccountType:      req.AccountType,
 			Username:         username,
-			ApiKey:           apiKey,
 			AllowedDomains:   domainsJSON,
 			PasswordDisabled: req.PasswordDisabled,
 			ProviderID:       providerPgID,
 			HomeGroupID:      homeGroupPgID,
 			DisplayName:      sql.NullString{String: req.DisplayName, Valid: req.DisplayName != ""},
 			Description:      pgtype.Text{String: req.Description, Valid: req.Description != ""},
-			ApiKeyExpiresAt:  apiKeyExpiresAt,
 		})
 		if err != nil {
 			if req.AccountType == "smtp" {
@@ -343,9 +334,32 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			})
 		}
 
-		// Return API key in response for SMTP accounts
-		if req.AccountType == "smtp" {
-			respondJSON(w, http.StatusCreated, toUserResponseWithAPIKey(user))
+		// For SMTP accounts, create the API key in api_keys table
+		if req.AccountType == "smtp" && apiKey.Valid {
+			keyPrefix := auth.APIKeyPrefix(apiKey.String)
+			keyHash, hashErr := auth.HashAPIKey(apiKey.String)
+			if hashErr != nil {
+				respondError(w, http.StatusInternalServerError, "internal server error")
+				return
+			}
+			apiKeyRecord, createErr := queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
+				UserID:    user.ID,
+				KeyPrefix: keyPrefix,
+				KeyHash:   keyHash,
+				Label:     "default",
+				ExpiresAt: apiKeyExpiresAt,
+			})
+			if createErr != nil {
+				respondError(w, http.StatusInternalServerError, "failed to create API key")
+				return
+			}
+			resp := toUserResponse(user)
+			resp.ApiKey = &apiKey.String
+			if apiKeyRecord.ExpiresAt.Valid {
+				t := apiKeyRecord.ExpiresAt.Time
+				resp.ApiKeyExpiresAt = &t
+			}
+			respondJSON(w, http.StatusCreated, resp)
 			return
 		}
 
@@ -648,13 +662,27 @@ func ResetAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 			return
 		}
 
-		updated, err := queries.ResetUserAPIKey(r.Context(), storage.ResetUserAPIKeyParams{
-			ID:              id,
-			ApiKey:          sql.NullString{String: newKey, Valid: true},
-			ApiKeyExpiresAt: apiKeyExpiresAt,
+		// Delete all existing API keys, then create a new one
+		if err := queries.DeleteAllAPIKeysByUserID(r.Context(), id); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to reset API key")
+			return
+		}
+
+		keyPrefix := auth.APIKeyPrefix(newKey)
+		keyHash, err := auth.HashAPIKey(newKey)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+		newApiKeyRecord, err := queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
+			UserID:    id,
+			KeyPrefix: keyPrefix,
+			KeyHash:   keyHash,
+			Label:     "default",
+			ExpiresAt: apiKeyExpiresAt,
 		})
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to reset API key")
+			respondError(w, http.StatusInternalServerError, "failed to create API key")
 			return
 		}
 
@@ -662,6 +690,12 @@ func ResetAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 			auditLogger.LogAdminAction(r.Context(), r, "admin.reset_api_key", "user", id.String(), nil)
 		}
 
-		respondJSON(w, http.StatusOK, toUserResponseWithAPIKey(updated))
+		resp := toUserResponse(user)
+		resp.ApiKey = &newKey
+		if newApiKeyRecord.ExpiresAt.Valid {
+			t := newApiKeyRecord.ExpiresAt.Time
+			resp.ApiKeyExpiresAt = &t
+		}
+		respondJSON(w, http.StatusOK, resp)
 	}
 }

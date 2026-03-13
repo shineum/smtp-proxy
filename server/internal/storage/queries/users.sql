@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (email, password_hash, account_type, username, api_key, allowed_domains, password_disabled, provider_id, home_group_id, display_name, description, api_key_expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+INSERT INTO users (email, password_hash, account_type, username, allowed_domains, password_disabled, provider_id, home_group_id, display_name, description)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
 -- name: GetUserByID :one
@@ -11,9 +11,6 @@ SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL;
 
 -- name: GetUserByUsername :one
 SELECT * FROM users WHERE username = $1 AND deleted_at IS NULL;
-
--- name: GetUserByAPIKey :one
-SELECT * FROM users WHERE api_key = $1 AND deleted_at IS NULL;
 
 -- name: GetUserByUsernameAndGroupID :one
 SELECT u.* FROM users u
@@ -104,8 +101,3 @@ SELECT * FROM users WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC;
 -- name: PurgeDeletedUsers :exec
 DELETE FROM users WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - INTERVAL '30 days';
 
--- name: ResetUserAPIKey :one
-UPDATE users
-SET api_key = $2, api_key_expires_at = $3, updated_at = NOW()
-WHERE id = $1
-RETURNING *;

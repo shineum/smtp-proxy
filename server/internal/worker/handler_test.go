@@ -295,8 +295,32 @@ func (m *mockQuerier) CreateUser(_ context.Context, _ storage.CreateUserParams) 
 	return storage.User{}, nil
 }
 func (m *mockQuerier) DeleteUser(_ context.Context, _ uuid.UUID) error { return nil }
-func (m *mockQuerier) GetUserByAPIKey(_ context.Context, _ sql.NullString) (storage.User, error) {
-	return storage.User{}, nil
+func (m *mockQuerier) GetAPIKeyByPrefix(_ context.Context, _ string) (storage.ApiKey, error) {
+	return storage.ApiKey{}, nil
+}
+
+func (m *mockQuerier) CountAPIKeysByUserID(_ context.Context, _ uuid.UUID) (int32, error) {
+	return 0, nil
+}
+
+func (m *mockQuerier) CreateAPIKey(_ context.Context, _ storage.CreateAPIKeyParams) (storage.ApiKey, error) {
+	return storage.ApiKey{}, nil
+}
+
+func (m *mockQuerier) DeleteAPIKey(_ context.Context, _ storage.DeleteAPIKeyParams) error {
+	return nil
+}
+
+func (m *mockQuerier) DeleteAllAPIKeysByUserID(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) ListAPIKeysByUserID(_ context.Context, _ uuid.UUID) ([]storage.ListAPIKeysByUserIDRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) UpdateAPIKeyLastUsed(_ context.Context, _ uuid.UUID) error {
+	return nil
 }
 func (m *mockQuerier) GetUserByEmail(_ context.Context, _ string) (storage.User, error) {
 	return storage.User{}, nil
@@ -356,10 +380,6 @@ func (m *mockQuerier) ListDeletedUsers(_ context.Context) ([]storage.User, error
 
 func (m *mockQuerier) PurgeDeletedUsers(_ context.Context) error {
 	return nil
-}
-
-func (m *mockQuerier) ResetUserAPIKey(_ context.Context, _ storage.ResetUserAPIKeyParams) (storage.User, error) {
-	return storage.User{}, nil
 }
 
 // Ensure mockQuerier satisfies the Querier interface at compile time.

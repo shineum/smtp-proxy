@@ -76,15 +76,23 @@ func TestToUserResponseWithAPIKey(t *testing.T) {
 		Email:       "smtp@example.com",
 		AccountType: "smtp",
 		Status:      "active",
-		ApiKey:      sql.NullString{String: "test-api-key-123", Valid: true},
 		CreatedAt:   pgtype.Timestamptz{Valid: true},
 		UpdatedAt:   pgtype.Timestamptz{Valid: true},
 	}
 
+	// toUserResponseWithAPIKey no longer sets ApiKey; the caller sets it after
+	// creating the api_key record. We only verify the base fields are mapped.
 	resp := toUserResponseWithAPIKey(user)
 
-	if resp.ApiKey == nil || *resp.ApiKey != "test-api-key-123" {
-		t.Errorf("ApiKey = %v, want test-api-key-123", resp.ApiKey)
+	if resp.ID != user.ID {
+		t.Errorf("ID = %v, want %v", resp.ID, user.ID)
+	}
+	if resp.Email != user.Email {
+		t.Errorf("Email = %q, want %q", resp.Email, user.Email)
+	}
+	// ApiKey is nil until the caller assigns the plaintext key after creation.
+	if resp.ApiKey != nil {
+		t.Errorf("expected ApiKey to be nil before caller assignment, got %v", resp.ApiKey)
 	}
 }
 
@@ -155,7 +163,6 @@ func TestCreateUserHandler_HumanUser(t *testing.T) {
 func TestCreateUserHandler_SMTPAccount(t *testing.T) {
 	smtpUser := testUser()
 	smtpUser.AccountType = "smtp"
-	smtpUser.ApiKey = sql.NullString{String: "generated-api-key", Valid: true}
 
 	groupID := testGroup().ID
 	providerID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
@@ -164,9 +171,6 @@ func TestCreateUserHandler_SMTPAccount(t *testing.T) {
 		createUserFn: func(ctx context.Context, arg storage.CreateUserParams) (storage.User, error) {
 			if arg.AccountType != "smtp" {
 				t.Errorf("expected account_type smtp, got %s", arg.AccountType)
-			}
-			if !arg.ApiKey.Valid {
-				t.Error("expected ApiKey to be set for smtp account")
 			}
 			if !arg.ProviderID.Valid {
 				t.Error("expected ProviderID to be set for smtp account")

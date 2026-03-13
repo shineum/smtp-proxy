@@ -308,6 +308,17 @@ type Session struct {
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
+type ApiKey struct {
+	ID         uuid.UUID          `json:"id"`
+	UserID     uuid.UUID          `json:"user_id"`
+	KeyPrefix  string             `json:"key_prefix"`
+	KeyHash    string             `json:"key_hash"`
+	Label      string             `json:"label"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type User struct {
 	ID               uuid.UUID          `json:"id"`
 	Email            string             `json:"email"`
@@ -319,7 +330,6 @@ type User struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 	Username         sql.NullString     `json:"username"`
 	AccountType      string             `json:"account_type"`
-	ApiKey           sql.NullString     `json:"api_key"`
 	AllowedDomains   []byte             `json:"allowed_domains"`
 	PasswordDisabled bool               `json:"password_disabled"`
 	ProviderID       pgtype.UUID        `json:"provider_id"`
@@ -327,5 +337,4 @@ type User struct {
 	DisplayName      sql.NullString     `json:"display_name"`
 	Description      pgtype.Text        `json:"description"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
-	ApiKeyExpiresAt  pgtype.Timestamptz `json:"api_key_expires_at"`
 }

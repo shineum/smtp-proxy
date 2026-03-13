@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
+	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -38,6 +39,7 @@ var errNotFound = errors.New("no rows")
 type mockQuerier struct {
 	// Auth-related behavior
 	getUserByUsernameFn  func(ctx context.Context, username sql.NullString) (storage.User, error)
+	getAPIKeyByPrefixFn  func(ctx context.Context, keyPrefix string) (storage.ApiKey, error)
 	listGroupsByUserIDFn func(ctx context.Context, userID uuid.UUID) ([]storage.Group, error)
 	getGroupByIDFn       func(ctx context.Context, id uuid.UUID) (storage.Group, error)
 
@@ -287,8 +289,35 @@ func (m *mockQuerier) GetSessionByID(_ context.Context, _ uuid.UUID) (storage.Se
 	return storage.Session{}, nil
 }
 
-func (m *mockQuerier) GetUserByAPIKey(_ context.Context, _ sql.NullString) (storage.User, error) {
-	return storage.User{}, nil
+func (m *mockQuerier) GetAPIKeyByPrefix(ctx context.Context, keyPrefix string) (storage.ApiKey, error) {
+	if m.getAPIKeyByPrefixFn != nil {
+		return m.getAPIKeyByPrefixFn(ctx, keyPrefix)
+	}
+	return storage.ApiKey{}, errNotFound
+}
+
+func (m *mockQuerier) CountAPIKeysByUserID(_ context.Context, _ uuid.UUID) (int32, error) {
+	return 0, nil
+}
+
+func (m *mockQuerier) CreateAPIKey(_ context.Context, _ storage.CreateAPIKeyParams) (storage.ApiKey, error) {
+	return storage.ApiKey{}, nil
+}
+
+func (m *mockQuerier) DeleteAPIKey(_ context.Context, _ storage.DeleteAPIKeyParams) error {
+	return nil
+}
+
+func (m *mockQuerier) DeleteAllAPIKeysByUserID(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+
+func (m *mockQuerier) ListAPIKeysByUserID(_ context.Context, _ uuid.UUID) ([]storage.ListAPIKeysByUserIDRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) UpdateAPIKeyLastUsed(_ context.Context, _ uuid.UUID) error {
+	return nil
 }
 
 func (m *mockQuerier) GetUserByEmail(_ context.Context, _ string) (storage.User, error) {
@@ -487,10 +516,6 @@ func (m *mockQuerier) PurgeDeletedUsers(_ context.Context) error {
 	return nil
 }
 
-func (m *mockQuerier) ResetUserAPIKey(_ context.Context, _ storage.ResetUserAPIKeyParams) (storage.User, error) {
-	return storage.User{}, nil
-}
-
 // newTestSession creates a Session with a mock backend for testing.
 func newTestSession(mock *mockQuerier) *Session {
 	log := zerolog.Nop()
@@ -521,13 +546,13 @@ var testGroupID = uuid.MustParse("00000000-0000-0000-0000-000000000099")
 
 // newMockWithAuth creates a mockQuerier pre-configured for a successful auth flow.
 func newMockWithAuth(userID, groupID uuid.UUID, apiKey string, domainsJSON []byte) *mockQuerier {
+	keyHash, _ := auth.HashAPIKey(apiKey)
 	return &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, username sql.NullString) (storage.User, error) {
 			if username.String == "testuser" {
 				return storage.User{
 					ID:             userID,
 					Username:       sql.NullString{String: "testuser", Valid: true},
-					ApiKey:         sql.NullString{String: apiKey, Valid: true},
 					AccountType:    "smtp",
 					Status:         "active",
 					AllowedDomains: domainsJSON,
@@ -535,6 +560,13 @@ func newMockWithAuth(userID, groupID uuid.UUID, apiKey string, domainsJSON []byt
 				}, nil
 			}
 			return storage.User{}, errNotFound
+		},
+		getAPIKeyByPrefixFn: func(_ context.Context, _ string) (storage.ApiKey, error) {
+			return storage.ApiKey{
+				ID:      uuid.New(),
+				UserID:  userID,
+				KeyHash: keyHash,
+			}, nil
 		},
 		getGroupByIDFn: func(_ context.Context, id uuid.UUID) (storage.Group, error) {
 			if id == groupID {
@@ -656,15 +688,22 @@ func TestSession_Auth_UnsupportedMechanism(t *testing.T) {
 
 func TestSession_Auth_InactiveUser(t *testing.T) {
 	userID := uuid.New()
+	keyHash, _ := auth.HashAPIKey(testAPIKey)
 
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
 			return storage.User{
 				ID:          userID,
 				Username:    sql.NullString{String: "testuser", Valid: true},
-				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
 				AccountType: "smtp",
 				Status:      "suspended",
+			}, nil
+		},
+		getAPIKeyByPrefixFn: func(_ context.Context, _ string) (storage.ApiKey, error) {
+			return storage.ApiKey{
+				ID:      uuid.New(),
+				UserID:  userID,
+				KeyHash: keyHash,
 			}, nil
 		},
 	}
@@ -692,7 +731,6 @@ func TestSession_Auth_NonSmtpAccountType(t *testing.T) {
 			return storage.User{
 				ID:          userID,
 				Username:    sql.NullString{String: "testuser", Valid: true},
-				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
 				AccountType: "human",
 				Status:      "active",
 			}, nil
@@ -716,17 +754,24 @@ func TestSession_Auth_NonSmtpAccountType(t *testing.T) {
 
 func TestSession_Auth_NoGroupMembership(t *testing.T) {
 	userID := uuid.New()
+	keyHash, _ := auth.HashAPIKey(testAPIKey)
 
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
 			return storage.User{
 				ID:          userID,
 				Username:    sql.NullString{String: "testuser", Valid: true},
-				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
 				AccountType: "smtp",
 				Status:      "active",
 				// HomeGroupID is zero/invalid: GetGroupByID will return errNotFound
 				HomeGroupID: pgtype.UUID{Valid: false},
+			}, nil
+		},
+		getAPIKeyByPrefixFn: func(_ context.Context, _ string) (storage.ApiKey, error) {
+			return storage.ApiKey{
+				ID:      uuid.New(),
+				UserID:  userID,
+				KeyHash: keyHash,
 			}, nil
 		},
 		getGroupByIDFn: func(_ context.Context, _ uuid.UUID) (storage.Group, error) {
@@ -753,15 +798,22 @@ func TestSession_Auth_SuspendedGroup(t *testing.T) {
 	userID := uuid.New()
 	groupID := uuid.New()
 
+	keyHash, _ := auth.HashAPIKey(testAPIKey)
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
 			return storage.User{
 				ID:          userID,
 				Username:    sql.NullString{String: "testuser", Valid: true},
-				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
 				AccountType: "smtp",
 				Status:      "active",
 				HomeGroupID: pgtype.UUID{Bytes: groupID, Valid: true},
+			}, nil
+		},
+		getAPIKeyByPrefixFn: func(_ context.Context, _ string) (storage.ApiKey, error) {
+			return storage.ApiKey{
+				ID:      uuid.New(),
+				UserID:  userID,
+				KeyHash: keyHash,
 			}, nil
 		},
 		getGroupByIDFn: func(_ context.Context, _ uuid.UUID) (storage.Group, error) {

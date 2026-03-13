@@ -68,7 +68,11 @@ type Querier interface {
 	GetRoutingRuleByID(ctx context.Context, id uuid.UUID) (RoutingRule, error)
 	GetSessionByID(ctx context.Context, id uuid.UUID) (Session, error)
 	GetStdoutProviderByGroupID(ctx context.Context, groupID uuid.UUID) (EspProvider, error)
-	GetUserByAPIKey(ctx context.Context, apiKey sql.NullString) (User, error)
+	CountAPIKeysByUserID(ctx context.Context, userID uuid.UUID) (int32, error)
+	CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error)
+	DeleteAPIKey(ctx context.Context, arg DeleteAPIKeyParams) error
+	DeleteAllAPIKeysByUserID(ctx context.Context, userID uuid.UUID) error
+	GetAPIKeyByPrefix(ctx context.Context, keyPrefix string) (ApiKey, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username sql.NullString) (User, error)
@@ -102,7 +106,8 @@ type Querier interface {
 	PurgeDeletedUsers(ctx context.Context) error
 	ResetFailedAttempts(ctx context.Context, id uuid.UUID) error
 	ResetMonthlySent(ctx context.Context, id uuid.UUID) error
-	ResetUserAPIKey(ctx context.Context, arg ResetUserAPIKeyParams) (User, error)
+	ListAPIKeysByUserID(ctx context.Context, userID uuid.UUID) ([]ListAPIKeysByUserIDRow, error)
+	UpdateAPIKeyLastUsed(ctx context.Context, id uuid.UUID) error
 	RestoreUser(ctx context.Context, id uuid.UUID) (User, error)
 	RevokeProviderAccess(ctx context.Context, arg RevokeProviderAccessParams) error
 	SoftDeleteUser(ctx context.Context, id uuid.UUID) (User, error)

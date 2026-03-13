@@ -3,7 +3,6 @@ package smtp
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -18,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
+	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/delivery"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -109,8 +109,37 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 
-		// Step 3: Verify API key (service accounts authenticate with API key as password).
-		if !user.ApiKey.Valid || subtle.ConstantTimeCompare([]byte(user.ApiKey.String), []byte(password)) != 1 {
+		// Step 3: Verify API key using prefix lookup and bcrypt verification.
+		if len(password) < 12 {
+			s.log.Warn().Str("username", username).Msg("auth failed: password too short for API key")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
+		}
+		prefix := auth.APIKeyPrefix(password)
+		apiKeyRecord, err := s.queries.GetAPIKeyByPrefix(s.ctx, prefix)
+		if err != nil {
+			s.log.Warn().Str("username", username).Msg("auth failed: API key not found")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
+		}
+
+		// Verify the key belongs to this user.
+		if apiKeyRecord.UserID != user.ID {
+			s.log.Warn().Str("username", username).Msg("auth failed: API key does not belong to user")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
+		}
+
+		if !auth.VerifyAPIKey(apiKeyRecord.KeyHash, password) {
 			s.log.Warn().Str("username", username).Msg("auth failed: invalid API key")
 			return &gosmtp.SMTPError{
 				Code:         535,
@@ -120,14 +149,17 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 		}
 
 		// Step 3b: Check API key expiration.
-		if user.ApiKeyExpiresAt.Valid && time.Now().After(user.ApiKeyExpiresAt.Time) {
-			s.log.Warn().Str("username", username).Time("expires_at", user.ApiKeyExpiresAt.Time).Msg("auth failed: API key expired")
+		if apiKeyRecord.ExpiresAt.Valid && time.Now().After(apiKeyRecord.ExpiresAt.Time) {
+			s.log.Warn().Str("username", username).Time("expires_at", apiKeyRecord.ExpiresAt.Time).Msg("auth failed: API key expired")
 			return &gosmtp.SMTPError{
 				Code:         535,
 				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
 				Message:      "API key expired",
 			}
 		}
+
+		// Update last used timestamp (fire-and-forget).
+		_ = s.queries.UpdateAPIKeyLastUsed(s.ctx, apiKeyRecord.ID)
 
 		// Step 4: Get home group and verify it is active.
 		groupUUID := uuid.UUID(user.HomeGroupID.Bytes)

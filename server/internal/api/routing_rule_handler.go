@@ -3,9 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -20,11 +20,11 @@ type routingRuleRequest struct {
 
 // routingRuleResponse is the JSON response for a routing rule.
 type routingRuleResponse struct {
-	ID         uuid.UUID       `json:"id"`
-	GroupID    uuid.UUID       `json:"group_id"`
+	ID         int32           `json:"id"`
+	GroupID    int32           `json:"group_id"`
 	Priority   int32           `json:"priority"`
 	Conditions json.RawMessage `json:"conditions"`
-	ProviderID uuid.UUID       `json:"provider_id"`
+	ProviderID int32           `json:"provider_id"`
 	Enabled    bool            `json:"enabled"`
 	CreatedAt  string          `json:"created_at"`
 	UpdatedAt  string          `json:"updated_at"`
@@ -54,7 +54,7 @@ func toRoutingRuleResponse(rr storage.RoutingRule) routingRuleResponse {
 func CreateRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -65,11 +65,12 @@ func CreateRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 			return
 		}
 
-		providerID, err := uuid.Parse(req.ProviderID)
+		providerID64, err := strconv.ParseInt(req.ProviderID, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider_id format")
 			return
 		}
+		providerID := int32(providerID64)
 
 		conditions := []byte("{}")
 		if len(req.Conditions) > 0 {
@@ -97,7 +98,7 @@ func CreateRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 func ListRoutingRulesHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -121,13 +122,13 @@ func ListRoutingRulesHandler(queries storage.Querier) http.HandlerFunc {
 func GetRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		id64, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid routing rule ID format")
 			return
 		}
 
-		rule, err := queries.GetRoutingRuleByID(r.Context(), id)
+		rule, err := queries.GetRoutingRuleByID(r.Context(), int32(id64))
 		if err != nil {
 			respondError(w, http.StatusNotFound, "routing rule not found")
 			return
@@ -141,11 +142,12 @@ func GetRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 func UpdateRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		id64, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid routing rule ID format")
 			return
 		}
+		id := int32(id64)
 
 		var req routingRuleRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -153,11 +155,12 @@ func UpdateRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 			return
 		}
 
-		providerID, err := uuid.Parse(req.ProviderID)
+		providerID64, err := strconv.ParseInt(req.ProviderID, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider_id format")
 			return
 		}
+		providerID := int32(providerID64)
 
 		conditions := []byte("{}")
 		if len(req.Conditions) > 0 {
@@ -184,13 +187,13 @@ func UpdateRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 func DeleteRoutingRuleHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		id64, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid routing rule ID format")
 			return
 		}
 
-		if err := queries.DeleteRoutingRule(r.Context(), id); err != nil {
+		if err := queries.DeleteRoutingRule(r.Context(), int32(id64)); err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}

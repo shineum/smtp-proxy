@@ -8,7 +8,6 @@ package storage
 import (
 	"context"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -16,7 +15,7 @@ const countGroupOwners = `-- name: CountGroupOwners :one
 SELECT count(*) FROM group_members WHERE group_id = $1 AND role = 'owner'
 `
 
-func (q *Queries) CountGroupOwners(ctx context.Context, groupID uuid.UUID) (int64, error) {
+func (q *Queries) CountGroupOwners(ctx context.Context, groupID int32) (int64, error) {
 	row := q.db.QueryRow(ctx, countGroupOwners, groupID)
 	var count int64
 	err := row.Scan(&count)
@@ -26,20 +25,19 @@ func (q *Queries) CountGroupOwners(ctx context.Context, groupID uuid.UUID) (int6
 const createGroupMember = `-- name: CreateGroupMember :one
 INSERT INTO group_members (group_id, user_id, role)
 VALUES ($1, $2, $3)
-RETURNING id, group_id, user_id, role, created_at
+RETURNING group_id, user_id, role, created_at
 `
 
 type CreateGroupMemberParams struct {
-	GroupID uuid.UUID `json:"group_id"`
-	UserID  uuid.UUID `json:"user_id"`
-	Role    string    `json:"role"`
+	GroupID int32  `json:"group_id"`
+	UserID  int32  `json:"user_id"`
+	Role    string `json:"role"`
 }
 
 func (q *Queries) CreateGroupMember(ctx context.Context, arg CreateGroupMemberParams) (GroupMember, error) {
 	row := q.db.QueryRow(ctx, createGroupMember, arg.GroupID, arg.UserID, arg.Role)
 	var i GroupMember
 	err := row.Scan(
-		&i.ID,
 		&i.GroupID,
 		&i.UserID,
 		&i.Role,
@@ -49,11 +47,16 @@ func (q *Queries) CreateGroupMember(ctx context.Context, arg CreateGroupMemberPa
 }
 
 const deleteGroupMember = `-- name: DeleteGroupMember :exec
-DELETE FROM group_members WHERE id = $1
+DELETE FROM group_members WHERE group_id = $1 AND user_id = $2
 `
 
-func (q *Queries) DeleteGroupMember(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteGroupMember, id)
+type DeleteGroupMemberParams struct {
+	GroupID int32 `json:"group_id"`
+	UserID  int32 `json:"user_id"`
+}
+
+func (q *Queries) DeleteGroupMember(ctx context.Context, arg DeleteGroupMemberParams) error {
+	_, err := q.db.Exec(ctx, deleteGroupMember, arg.GroupID, arg.UserID)
 	return err
 }
 
@@ -61,42 +64,24 @@ const deleteGroupMembersByUserID = `-- name: DeleteGroupMembersByUserID :exec
 DELETE FROM group_members WHERE user_id = $1
 `
 
-func (q *Queries) DeleteGroupMembersByUserID(ctx context.Context, userID uuid.UUID) error {
+func (q *Queries) DeleteGroupMembersByUserID(ctx context.Context, userID int32) error {
 	_, err := q.db.Exec(ctx, deleteGroupMembersByUserID, userID)
 	return err
 }
 
-const getGroupMemberByID = `-- name: GetGroupMemberByID :one
-SELECT id, group_id, user_id, role, created_at FROM group_members WHERE id = $1
-`
-
-func (q *Queries) GetGroupMemberByID(ctx context.Context, id uuid.UUID) (GroupMember, error) {
-	row := q.db.QueryRow(ctx, getGroupMemberByID, id)
-	var i GroupMember
-	err := row.Scan(
-		&i.ID,
-		&i.GroupID,
-		&i.UserID,
-		&i.Role,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getGroupMemberByUserAndGroup = `-- name: GetGroupMemberByUserAndGroup :one
-SELECT id, group_id, user_id, role, created_at FROM group_members WHERE user_id = $1 AND group_id = $2
+SELECT group_id, user_id, role, created_at FROM group_members WHERE user_id = $1 AND group_id = $2
 `
 
 type GetGroupMemberByUserAndGroupParams struct {
-	UserID  uuid.UUID `json:"user_id"`
-	GroupID uuid.UUID `json:"group_id"`
+	UserID  int32 `json:"user_id"`
+	GroupID int32 `json:"group_id"`
 }
 
 func (q *Queries) GetGroupMemberByUserAndGroup(ctx context.Context, arg GetGroupMemberByUserAndGroupParams) (GroupMember, error) {
 	row := q.db.QueryRow(ctx, getGroupMemberByUserAndGroup, arg.UserID, arg.GroupID)
 	var i GroupMember
 	err := row.Scan(
-		&i.ID,
 		&i.GroupID,
 		&i.UserID,
 		&i.Role,
@@ -106,10 +91,10 @@ func (q *Queries) GetGroupMemberByUserAndGroup(ctx context.Context, arg GetGroup
 }
 
 const listGroupMembersByGroupID = `-- name: ListGroupMembersByGroupID :many
-SELECT id, group_id, user_id, role, created_at FROM group_members WHERE group_id = $1 ORDER BY created_at ASC
+SELECT group_id, user_id, role, created_at FROM group_members WHERE group_id = $1 ORDER BY created_at ASC
 `
 
-func (q *Queries) ListGroupMembersByGroupID(ctx context.Context, groupID uuid.UUID) ([]GroupMember, error) {
+func (q *Queries) ListGroupMembersByGroupID(ctx context.Context, groupID int32) ([]GroupMember, error) {
 	rows, err := q.db.Query(ctx, listGroupMembersByGroupID, groupID)
 	if err != nil {
 		return nil, err
@@ -119,7 +104,6 @@ func (q *Queries) ListGroupMembersByGroupID(ctx context.Context, groupID uuid.UU
 	for rows.Next() {
 		var i GroupMember
 		if err := rows.Scan(
-			&i.ID,
 			&i.GroupID,
 			&i.UserID,
 			&i.Role,
@@ -136,13 +120,13 @@ func (q *Queries) ListGroupMembersByGroupID(ctx context.Context, groupID uuid.UU
 }
 
 const listGroupsByUserID = `-- name: ListGroupsByUserID :many
-SELECT g.id, g.name, g.status, g.monthly_limit, g.monthly_sent, g.allowed_ips, g.created_at, g.updated_at, g.group_type, g.group_key, g.display_name, g.description FROM groups g
+SELECT g.id, g.name, g.status, g.monthly_limit, g.monthly_sent, g.allowed_ips, g.created_at, g.updated_at, g.group_type, g.display_name, g.description FROM groups g
 JOIN group_members gm ON g.id = gm.group_id
 WHERE gm.user_id = $1 AND g.status != 'deleted'
 ORDER BY gm.created_at ASC
 `
 
-func (q *Queries) ListGroupsByUserID(ctx context.Context, userID uuid.UUID) ([]Group, error) {
+func (q *Queries) ListGroupsByUserID(ctx context.Context, userID int32) ([]Group, error) {
 	rows, err := q.db.Query(ctx, listGroupsByUserID, userID)
 	if err != nil {
 		return nil, err
@@ -161,7 +145,6 @@ func (q *Queries) ListGroupsByUserID(ctx context.Context, userID uuid.UUID) ([]G
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GroupType,
-			&i.GroupKey,
 			&i.DisplayName,
 			&i.Description,
 		); err != nil {
@@ -176,7 +159,7 @@ func (q *Queries) ListGroupsByUserID(ctx context.Context, userID uuid.UUID) ([]G
 }
 
 const listMembershipsByUserID = `-- name: ListMembershipsByUserID :many
-SELECT gm.id, gm.group_id, gm.user_id, gm.role, gm.created_at,
+SELECT gm.group_id, gm.user_id, gm.role, gm.created_at,
        g.name as group_name, g.group_type
 FROM group_members gm
 JOIN groups g ON gm.group_id = g.id
@@ -185,16 +168,15 @@ ORDER BY gm.created_at
 `
 
 type ListMembershipsByUserIDRow struct {
-	ID        uuid.UUID          `json:"id"`
-	GroupID   uuid.UUID          `json:"group_id"`
-	UserID    uuid.UUID          `json:"user_id"`
+	GroupID   int32              `json:"group_id"`
+	UserID    int32              `json:"user_id"`
 	Role      string             `json:"role"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	GroupName string             `json:"group_name"`
 	GroupType string             `json:"group_type"`
 }
 
-func (q *Queries) ListMembershipsByUserID(ctx context.Context, userID uuid.UUID) ([]ListMembershipsByUserIDRow, error) {
+func (q *Queries) ListMembershipsByUserID(ctx context.Context, userID int32) ([]ListMembershipsByUserIDRow, error) {
 	rows, err := q.db.Query(ctx, listMembershipsByUserID, userID)
 	if err != nil {
 		return nil, err
@@ -204,7 +186,6 @@ func (q *Queries) ListMembershipsByUserID(ctx context.Context, userID uuid.UUID)
 	for rows.Next() {
 		var i ListMembershipsByUserIDRow
 		if err := rows.Scan(
-			&i.ID,
 			&i.GroupID,
 			&i.UserID,
 			&i.Role,
@@ -224,21 +205,21 @@ func (q *Queries) ListMembershipsByUserID(ctx context.Context, userID uuid.UUID)
 
 const updateGroupMemberRole = `-- name: UpdateGroupMemberRole :one
 UPDATE group_members
-SET role = $2
-WHERE id = $1
-RETURNING id, group_id, user_id, role, created_at
+SET role = $3
+WHERE group_id = $1 AND user_id = $2
+RETURNING group_id, user_id, role, created_at
 `
 
 type UpdateGroupMemberRoleParams struct {
-	ID   uuid.UUID `json:"id"`
-	Role string    `json:"role"`
+	GroupID int32  `json:"group_id"`
+	UserID  int32  `json:"user_id"`
+	Role    string `json:"role"`
 }
 
 func (q *Queries) UpdateGroupMemberRole(ctx context.Context, arg UpdateGroupMemberRoleParams) (GroupMember, error) {
-	row := q.db.QueryRow(ctx, updateGroupMemberRole, arg.ID, arg.Role)
+	row := q.db.QueryRow(ctx, updateGroupMemberRole, arg.GroupID, arg.UserID, arg.Role)
 	var i GroupMember
 	err := row.Scan(
-		&i.ID,
 		&i.GroupID,
 		&i.UserID,
 		&i.Role,

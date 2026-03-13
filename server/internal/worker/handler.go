@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"strconv"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
@@ -31,8 +31,8 @@ var storageRetryBackoff = []time.Duration{
 
 // providerResolver resolves the ESP provider for message delivery.
 type providerResolver interface {
-	Resolve(ctx context.Context, groupID uuid.UUID) (provider.Provider, error)
-	ResolveByUserID(ctx context.Context, userID uuid.UUID) (provider.Provider, error)
+	Resolve(ctx context.Context, groupID int32) (provider.Provider, error)
+	ResolveByUserID(ctx context.Context, userID int32) (provider.Provider, error)
 }
 
 // Handler implements queue.MessageHandler. It delivers messages via ESP
@@ -64,7 +64,7 @@ func NewHandler(
 // HandleMessage implements queue.MessageHandler. It resolves the provider,
 // sends the message, and updates the database.
 func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
-	messageID, err := uuid.Parse(msg.ID)
+	messageID, err := strconv.ParseInt(msg.ID, 10, 64)
 	if err != nil {
 		return fmt.Errorf("parse message ID %q: %w", msg.ID, err)
 	}
@@ -86,13 +86,13 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 			return nil
 		}
 		h.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to get message from database")
-		h.recordFailure(ctx, messageID, pgtype.UUID{}, pgtype.UUID{}, "", fmt.Errorf("get message: %w", err))
+		h.recordFailure(ctx, messageID, pgtype.Int4{}, pgtype.Int4{}, "", fmt.Errorf("get message: %w", err))
 		return fmt.Errorf("get message %s: %w", msg.ID, err)
 	}
 
 	// Extract IDs for provider resolution and logging.
-	groupID := uuid.UUID(dbMsg.GroupID.Bytes)
-	userID := uuid.UUID(dbMsg.UserID.Bytes)
+	groupID := dbMsg.GroupID.Int32
+	userID := dbMsg.UserID.Int32
 
 	// Determine message body source.
 	var body []byte
@@ -129,8 +129,8 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 	}
 	if err != nil {
 		h.log.Error().Err(err).
-			Stringer("group_id", groupID).
-			Stringer("user_id", userID).
+			Int32("group_id", groupID).
+			Int32("user_id", userID).
 			Str("message_id", msg.ID).
 			Msg("failed to resolve provider")
 		h.recordFailure(ctx, messageID, dbMsg.GroupID, dbMsg.UserID, "", err)
@@ -142,7 +142,7 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 	// Build provider message from DB metadata + body.
 	providerMsg := &provider.Message{
 		ID:       msg.ID,
-		TenantID: groupID.String(),
+		TenantID: fmt.Sprintf("%d", groupID),
 		From:     dbMsg.Sender,
 		To:       parseRecipients(dbMsg.Recipients),
 		Subject:  nullStringValue(dbMsg.Subject),
@@ -226,7 +226,7 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 
 	if _, err := h.queries.CreateDeliveryLog(ctx, storage.CreateDeliveryLogParams{
 		MessageID:         messageID,
-		ProviderID:        pgtype.UUID{},
+		ProviderID:        pgtype.Int4{},
 		Status:            string(storage.MessageStatusDelivered),
 		Provider:          sql.NullString{String: providerName, Valid: true},
 		ProviderMessageID: sql.NullString{String: result.ProviderMessageID, Valid: result.ProviderMessageID != ""},
@@ -272,24 +272,24 @@ func (h *Handler) fetchBodyWithRetry(ctx context.Context, messageID string) ([]b
 }
 
 // recordFailure updates the message status to failed and creates a delivery log.
-func (h *Handler) recordFailure(ctx context.Context, messageID uuid.UUID, groupID pgtype.UUID, userID pgtype.UUID, providerName string, deliveryErr error) {
+func (h *Handler) recordFailure(ctx context.Context, messageID int64, groupID pgtype.Int4, userID pgtype.Int4, providerName string, deliveryErr error) {
 	if err := h.queries.UpdateMessageStatus(ctx, storage.UpdateMessageStatusParams{
 		ID:     messageID,
 		Status: storage.MessageStatusFailed,
 	}); err != nil {
-		h.log.Error().Err(err).Stringer("message_id", messageID).Msg("failed to update failed status")
+		h.log.Error().Err(err).Int64("message_id", messageID).Msg("failed to update failed status")
 	}
 
 	if _, err := h.queries.CreateDeliveryLog(ctx, storage.CreateDeliveryLogParams{
 		MessageID:  messageID,
-		ProviderID: pgtype.UUID{},
+		ProviderID: pgtype.Int4{},
 		Status:     string(storage.MessageStatusFailed),
 		Provider:   sql.NullString{String: providerName, Valid: providerName != ""},
 		LastError:  pgtype.Text{String: deliveryErr.Error(), Valid: true},
 		GroupID:    groupID,
 		UserID:     userID,
 	}); err != nil {
-		h.log.Error().Err(err).Stringer("message_id", messageID).Msg("failed to create failure delivery log")
+		h.log.Error().Err(err).Int64("message_id", messageID).Msg("failed to create failure delivery log")
 	}
 }
 

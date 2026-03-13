@@ -2,9 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
 	"github.com/sungwon/smtp-proxy/server/internal/queue"
@@ -29,7 +29,7 @@ func DLQReprocessHandler(dlq queue.DeadLetterQueue) http.HandlerFunc {
 		log := logger.FromContext(r.Context())
 
 		accountID := auth.AccountFromContext(r.Context())
-		if accountID == uuid.Nil {
+		if accountID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -46,7 +46,7 @@ func DLQReprocessHandler(dlq queue.DeadLetterQueue) http.HandlerFunc {
 		}
 
 		// Use the account ID as tenant ID for DLQ lookup.
-		tenantID := accountID.String()
+		tenantID := fmt.Sprintf("%d", accountID)
 
 		reprocessed, err := dlq.Reprocess(r.Context(), tenantID, req.MessageIDs)
 		if err != nil {

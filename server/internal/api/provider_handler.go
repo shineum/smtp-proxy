@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -24,8 +24,8 @@ type providerRequest struct {
 
 // providerResponse is the JSON response for a provider.
 type providerResponse struct {
-	ID           uuid.UUID       `json:"id"`
-	GroupID      uuid.UUID       `json:"group_id"`
+	ID           int32           `json:"id"`
+	GroupID      int32           `json:"group_id"`
 	Name         string          `json:"name"`
 	ProviderType string          `json:"provider_type"`
 	SMTPConfig   json.RawMessage `json:"smtp_config"`
@@ -77,7 +77,7 @@ var validVisibilities = map[string]storage.ProviderVisibility{
 func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -156,19 +156,19 @@ func CreateProviderHandler(queries storage.Querier) http.HandlerFunc {
 func ListProvidersHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
 		// Allow overriding group_id via query param (for admin editing service accounts).
 		if qg := r.URL.Query().Get("group_id"); qg != "" {
-			parsed, err := uuid.Parse(qg)
+			parsed, err := strconv.ParseInt(qg, 10, 32)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid group_id format")
 				return
 			}
-			groupID = parsed
+			groupID = int32(parsed)
 		}
 
 		providers, err := queries.ListAccessibleProviders(r.Context(), groupID)
@@ -190,17 +190,18 @@ func ListProvidersHandler(queries storage.Querier) http.HandlerFunc {
 func GetProviderHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
 		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		parsed, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
 			return
 		}
+		id := int32(parsed)
 
 		provider, err := queries.GetProviderByID(r.Context(), id)
 		if err != nil {
@@ -226,17 +227,18 @@ func GetProviderHandler(queries storage.Querier) http.HandlerFunc {
 func UpdateProviderHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
 		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		parsed, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
 			return
 		}
+		id := int32(parsed)
 
 		// Only the owning group can update a provider
 		existing, err := queries.GetProviderByID(r.Context(), id)
@@ -318,17 +320,18 @@ func UpdateProviderHandler(queries storage.Querier) http.HandlerFunc {
 func DeleteProviderHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
 		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		parsed, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
 			return
 		}
+		id := int32(parsed)
 
 		// Only the owning group can delete a provider
 		existing, err := queries.GetProviderByID(r.Context(), id)
@@ -362,17 +365,18 @@ func DeleteProviderHandler(queries storage.Querier) http.HandlerFunc {
 func ListProviderAccessHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
 		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		parsed, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
 			return
 		}
+		id := int32(parsed)
 
 		// Only the owning group or system admin can view access list
 		provider, err := queries.GetProviderByID(r.Context(), id)
@@ -405,17 +409,18 @@ type grantAccessRequest struct {
 func GrantProviderAccessHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
 		idStr := chi.URLParam(r, "id")
-		providerID, err := uuid.Parse(idStr)
+		parsedID, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
 			return
 		}
+		providerID := int32(parsedID)
 
 		// Only the owning group's admin/owner or system admin can grant access
 		provider, err := queries.GetProviderByID(r.Context(), providerID)
@@ -439,17 +444,18 @@ func GrantProviderAccessHandler(queries storage.Querier) http.HandlerFunc {
 			return
 		}
 
-		targetGroupID, err := uuid.Parse(req.GroupID)
+		parsedGID, err := strconv.ParseInt(req.GroupID, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group_id format")
 			return
 		}
+		targetGroupID := int32(parsedGID)
 
 		callerUserID := auth.UserFromContext(r.Context())
 		if err := queries.GrantProviderAccess(r.Context(), storage.GrantProviderAccessParams{
 			ProviderID: providerID,
 			GroupID:    targetGroupID,
-			GrantedBy:  pgtype.UUID{Bytes: callerUserID, Valid: callerUserID != uuid.Nil},
+			GrantedBy:  pgtype.Int4{Int32: callerUserID, Valid: callerUserID != 0},
 		}); err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -464,17 +470,18 @@ func GrantProviderAccessHandler(queries storage.Querier) http.HandlerFunc {
 func ProviderUsageHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
 		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		parsed, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
 			return
 		}
+		id := int32(parsed)
 
 		// Only the owning group or system admin can view usage
 		provider, err := queries.GetProviderByID(r.Context(), id)
@@ -488,30 +495,30 @@ func ProviderUsageHandler(queries storage.Querier) http.HandlerFunc {
 			return
 		}
 
-		rows, err := queries.ListUsersByProviderID(r.Context(), pgtype.UUID{Bytes: id, Valid: true})
+		rows, err := queries.ListUsersByProviderID(r.Context(), pgtype.Int4{Int32: id, Valid: true})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
 		type usageRow struct {
-			UserID      uuid.UUID `json:"user_id"`
-			Email       string    `json:"email"`
-			AccountType string    `json:"account_type"`
-			Role        string    `json:"role"`
-			GroupID     uuid.UUID `json:"group_id"`
-			GroupName   string    `json:"group_name"`
+			UserID      int32  `json:"user_id"`
+			Email       string `json:"email"`
+			AccountType string `json:"account_type"`
+			Role        string `json:"role"`
+			GroupID     int32  `json:"group_id"`
+			GroupName   string `json:"group_name"`
 		}
 
 		result := make([]usageRow, len(rows))
-		for i, r := range rows {
+		for i, row := range rows {
 			result[i] = usageRow{
-				UserID:      r.ID,
-				Email:       r.Email,
-				AccountType: r.AccountType,
-				Role:        r.Role,
-				GroupID:     r.GroupID,
-				GroupName:   r.GroupName,
+				UserID:      row.ID,
+				Email:       row.Email,
+				AccountType: row.AccountType,
+				Role:        row.Role,
+				GroupID:     row.GroupID,
+				GroupName:   row.GroupName,
 			}
 		}
 
@@ -524,21 +531,24 @@ func ProviderUsageHandler(queries storage.Querier) http.HandlerFunc {
 func RevokeProviderAccessHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
-		providerID, err := uuid.Parse(chi.URLParam(r, "id"))
+		parsedPID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
 			return
 		}
-		targetGroupID, err := uuid.Parse(chi.URLParam(r, "groupId"))
+		providerID := int32(parsedPID)
+
+		parsedGID, err := strconv.ParseInt(chi.URLParam(r, "groupId"), 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
+		targetGroupID := int32(parsedGID)
 
 		// Only the owning group's admin/owner or system admin can revoke access
 		provider, err := queries.GetProviderByID(r.Context(), providerID)

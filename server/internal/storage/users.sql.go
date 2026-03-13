@@ -9,7 +9,6 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -27,8 +26,8 @@ type CreateUserParams struct {
 	ApiKey           sql.NullString     `json:"api_key"`
 	AllowedDomains   []byte             `json:"allowed_domains"`
 	PasswordDisabled bool               `json:"password_disabled"`
-	ProviderID       pgtype.UUID        `json:"provider_id"`
-	HomeGroupID      pgtype.UUID        `json:"home_group_id"`
+	ProviderID       pgtype.Int4        `json:"provider_id"`
+	HomeGroupID      pgtype.Int4        `json:"home_group_id"`
 	DisplayName      sql.NullString     `json:"display_name"`
 	Description      pgtype.Text        `json:"description"`
 	ApiKeyExpiresAt  pgtype.Timestamptz `json:"api_key_expires_at"`
@@ -78,7 +77,7 @@ const deleteUser = `-- name: DeleteUser :exec
 DELETE FROM users WHERE id = $1
 `
 
-func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
+func (q *Queries) DeleteUser(ctx context.Context, id int32) error {
 	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
 }
@@ -149,7 +148,7 @@ const getUserByID = `-- name: GetUserByID :one
 SELECT id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id, home_group_id, display_name, description, deleted_at, api_key_expires_at FROM users WHERE id = $1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
+func (q *Queries) GetUserByID(ctx context.Context, id int32) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
 	var i User
 	err := row.Scan(
@@ -207,21 +206,20 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString
 	return i, err
 }
 
-const getUserByUsernameAndGroupKey = `-- name: GetUserByUsernameAndGroupKey :one
+const getUserByUsernameAndGroupID = `-- name: GetUserByUsernameAndGroupID :one
 SELECT u.id, u.email, u.password_hash, u.status, u.failed_attempts, u.last_login, u.created_at, u.updated_at, u.username, u.account_type, u.api_key, u.allowed_domains, u.password_disabled, u.provider_id, u.home_group_id, u.display_name, u.description, u.deleted_at, u.api_key_expires_at FROM users u
-JOIN groups g ON u.home_group_id = g.id
-WHERE u.username = $1 AND g.group_key = $2
+WHERE u.username = $1 AND u.home_group_id = $2
 AND u.account_type = 'smtp'
 AND u.deleted_at IS NULL
 `
 
-type GetUserByUsernameAndGroupKeyParams struct {
-	Username sql.NullString `json:"username"`
-	GroupKey uuid.UUID      `json:"group_key"`
+type GetUserByUsernameAndGroupIDParams struct {
+	Username    sql.NullString `json:"username"`
+	HomeGroupID int32          `json:"home_group_id"`
 }
 
-func (q *Queries) GetUserByUsernameAndGroupKey(ctx context.Context, arg GetUserByUsernameAndGroupKeyParams) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByUsernameAndGroupKey, arg.Username, arg.GroupKey)
+func (q *Queries) GetUserByUsernameAndGroupID(ctx context.Context, arg GetUserByUsernameAndGroupIDParams) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByUsernameAndGroupID, arg.Username, arg.HomeGroupID)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -253,7 +251,7 @@ SET failed_attempts = failed_attempts + 1, updated_at = NOW()
 WHERE id = $1
 `
 
-func (q *Queries) IncrementFailedAttempts(ctx context.Context, id uuid.UUID) error {
+func (q *Queries) IncrementFailedAttempts(ctx context.Context, id int32) error {
 	_, err := q.db.Exec(ctx, incrementFailedAttempts, id)
 	return err
 }
@@ -353,7 +351,7 @@ WHERE gm.group_id = $1 AND u.deleted_at IS NULL
 ORDER BY u.created_at DESC
 `
 
-func (q *Queries) ListUsersByGroupID(ctx context.Context, groupID uuid.UUID) ([]User, error) {
+func (q *Queries) ListUsersByGroupID(ctx context.Context, groupID int32) ([]User, error) {
 	rows, err := q.db.Query(ctx, listUsersByGroupID, groupID)
 	if err != nil {
 		return nil, err
@@ -403,15 +401,15 @@ ORDER BY g.name, u.email
 `
 
 type ListUsersByProviderIDRow struct {
-	ID          uuid.UUID `json:"id"`
-	Email       string    `json:"email"`
-	AccountType string    `json:"account_type"`
-	Role        string    `json:"role"`
-	GroupID     uuid.UUID `json:"group_id"`
-	GroupName   string    `json:"group_name"`
+	ID          int32  `json:"id"`
+	Email       string `json:"email"`
+	AccountType string `json:"account_type"`
+	Role        string `json:"role"`
+	GroupID     int32  `json:"group_id"`
+	GroupName   string `json:"group_name"`
 }
 
-func (q *Queries) ListUsersByProviderID(ctx context.Context, providerID pgtype.UUID) ([]ListUsersByProviderIDRow, error) {
+func (q *Queries) ListUsersByProviderID(ctx context.Context, providerID pgtype.Int4) ([]ListUsersByProviderIDRow, error) {
 	rows, err := q.db.Query(ctx, listUsersByProviderID, providerID)
 	if err != nil {
 		return nil, err
@@ -453,7 +451,7 @@ SET failed_attempts = 0, updated_at = NOW()
 WHERE id = $1
 `
 
-func (q *Queries) ResetFailedAttempts(ctx context.Context, id uuid.UUID) error {
+func (q *Queries) ResetFailedAttempts(ctx context.Context, id int32) error {
 	_, err := q.db.Exec(ctx, resetFailedAttempts, id)
 	return err
 }
@@ -466,7 +464,7 @@ RETURNING id, email, password_hash, status, failed_attempts, last_login, created
 `
 
 type ResetUserAPIKeyParams struct {
-	ID              uuid.UUID          `json:"id"`
+	ID              int32              `json:"id"`
 	ApiKey          sql.NullString     `json:"api_key"`
 	ApiKeyExpiresAt pgtype.Timestamptz `json:"api_key_expires_at"`
 }
@@ -505,7 +503,7 @@ WHERE id = $1
 RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id, home_group_id, display_name, description, deleted_at, api_key_expires_at
 `
 
-func (q *Queries) RestoreUser(ctx context.Context, id uuid.UUID) (User, error) {
+func (q *Queries) RestoreUser(ctx context.Context, id int32) (User, error) {
 	row := q.db.QueryRow(ctx, restoreUser, id)
 	var i User
 	err := row.Scan(
@@ -539,7 +537,7 @@ WHERE id = $1
 RETURNING id, email, password_hash, status, failed_attempts, last_login, created_at, updated_at, username, account_type, api_key, allowed_domains, password_disabled, provider_id, home_group_id, display_name, description, deleted_at, api_key_expires_at
 `
 
-func (q *Queries) SoftDeleteUser(ctx context.Context, id uuid.UUID) (User, error) {
+func (q *Queries) SoftDeleteUser(ctx context.Context, id int32) (User, error) {
 	row := q.db.QueryRow(ctx, softDeleteUser, id)
 	var i User
 	err := row.Scan(
@@ -574,8 +572,8 @@ RETURNING id, email, password_hash, status, failed_attempts, last_login, created
 `
 
 type UpdatePasswordDisabledParams struct {
-	ID               uuid.UUID `json:"id"`
-	PasswordDisabled bool      `json:"password_disabled"`
+	ID               int32 `json:"id"`
+	PasswordDisabled bool  `json:"password_disabled"`
 }
 
 func (q *Queries) UpdatePasswordDisabled(ctx context.Context, arg UpdatePasswordDisabledParams) (User, error) {
@@ -613,7 +611,7 @@ RETURNING id, email, password_hash, status, failed_attempts, last_login, created
 `
 
 type UpdateUserParams struct {
-	ID             uuid.UUID      `json:"id"`
+	ID             int32          `json:"id"`
 	Email          string         `json:"email"`
 	Status         string         `json:"status"`
 	AllowedDomains []byte         `json:"allowed_domains"`
@@ -661,7 +659,7 @@ SET last_login = NOW(), failed_attempts = 0, updated_at = NOW()
 WHERE id = $1
 `
 
-func (q *Queries) UpdateUserLastLogin(ctx context.Context, id uuid.UUID) error {
+func (q *Queries) UpdateUserLastLogin(ctx context.Context, id int32) error {
 	_, err := q.db.Exec(ctx, updateUserLastLogin, id)
 	return err
 }
@@ -673,8 +671,8 @@ WHERE id = $1
 `
 
 type UpdateUserPasswordParams struct {
-	ID           uuid.UUID `json:"id"`
-	PasswordHash string    `json:"password_hash"`
+	ID           int32  `json:"id"`
+	PasswordHash string `json:"password_hash"`
 }
 
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
@@ -690,8 +688,8 @@ RETURNING id, email, password_hash, status, failed_attempts, last_login, created
 `
 
 type UpdateUserProviderParams struct {
-	ID         uuid.UUID   `json:"id"`
-	ProviderID pgtype.UUID `json:"provider_id"`
+	ID         int32       `json:"id"`
+	ProviderID pgtype.Int4 `json:"provider_id"`
 }
 
 func (q *Queries) UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) (User, error) {
@@ -729,8 +727,8 @@ RETURNING id, email, password_hash, status, failed_attempts, last_login, created
 `
 
 type UpdateUserStatusParams struct {
-	ID     uuid.UUID `json:"id"`
-	Status string    `json:"status"`
+	ID     int32  `json:"id"`
+	Status string `json:"status"`
 }
 
 func (q *Queries) UpdateUserStatus(ctx context.Context, arg UpdateUserStatusParams) (User, error) {

@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"io"
 	"net/mail"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/emersion/go-sasl"
 	gosmtp "github.com/emersion/go-smtp"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
@@ -37,8 +37,8 @@ type Session struct {
 	queries        storage.Querier
 	log            zerolog.Logger
 	backend        *Backend
-	userID         uuid.UUID
-	groupID        uuid.UUID
+	userID         int32
+	groupID        int32
 	authenticated  bool
 	allowedDomains []string
 	sender         string
@@ -59,10 +59,10 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 	return sasl.NewPlainServer(func(identity, username, password string) error {
 		s.log.Info().Str("username", username).Msg("auth attempt")
 
-		// Step 1: Parse username@{group_key_uuid} format.
+		// Step 1: Parse username@{group_id} format.
 		atIdx := strings.LastIndex(username, "@")
 		if atIdx < 0 {
-			s.log.Warn().Str("username", username).Msg("auth failed: username must be in user@group-key format")
+			s.log.Warn().Str("username", username).Msg("auth failed: username must be in user@group-id format")
 			return &gosmtp.SMTPError{
 				Code:         535,
 				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
@@ -70,11 +70,23 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 		actualUsername := strings.ToLower(username[:atIdx])
-		groupKeyStr := username[atIdx+1:]
+		groupIDStr := username[atIdx+1:]
 
-		groupKeyUUID, err := uuid.Parse(groupKeyStr)
+		groupIDInt, err := strconv.ParseInt(groupIDStr, 10, 32)
 		if err != nil {
-			s.log.Warn().Str("username", username).Msg("auth failed: invalid group key format")
+			s.log.Warn().Str("username", username).Msg("auth failed: invalid group ID format")
+			return &gosmtp.SMTPError{
+				Code:         535,
+				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
+				Message:      "Authentication failed",
+			}
+		}
+		groupID := int32(groupIDInt)
+
+		// Step 2: Look up user by username and verify home group ID.
+		user, err := s.queries.GetUserByUsername(s.ctx, sql.NullString{String: actualUsername, Valid: true})
+		if err != nil {
+			s.log.Warn().Str("username", username).Msg("auth failed: user not found")
 			return &gosmtp.SMTPError{
 				Code:         535,
 				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
@@ -82,13 +94,9 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 
-		// Step 2: Look up user by username and group key.
-		user, err := s.queries.GetUserByUsernameAndGroupKey(s.ctx, storage.GetUserByUsernameAndGroupKeyParams{
-			Username: sql.NullString{String: actualUsername, Valid: true},
-			GroupKey: groupKeyUUID,
-		})
-		if err != nil {
-			s.log.Warn().Str("username", username).Msg("auth failed: user not found")
+		// Verify the user belongs to the specified group.
+		if !user.HomeGroupID.Valid || user.HomeGroupID.Int32 != groupID {
+			s.log.Warn().Str("username", username).Msg("auth failed: user not in specified group")
 			return &gosmtp.SMTPError{
 				Code:         535,
 				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
@@ -130,11 +138,10 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 		}
 
 		// Step 4: Get home group and verify it is active.
-		groupUUID := uuid.UUID(user.HomeGroupID.Bytes)
-		group, err := s.queries.GetGroupByID(s.ctx, groupUUID)
+		group, err := s.queries.GetGroupByID(s.ctx, groupID)
 		if err != nil || group.Status != "active" {
 			s.log.Warn().Str("username", username).
-				Str("group_id", groupUUID.String()).
+				Int32("group_id", groupID).
 				Msg("auth failed: group not active")
 			return &gosmtp.SMTPError{
 				Code:         535,
@@ -159,8 +166,8 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 
 		s.log.Info().
 			Str("username", username).
-			Str("user_id", user.ID.String()).
-			Str("group_id", group.ID.String()).
+			Int32("user_id", user.ID).
+			Int32("group_id", group.ID).
 			Msg("auth successful")
 
 		return nil
@@ -281,24 +288,24 @@ func (s *Session) Data(r io.Reader) error {
 		headers = map[string][]string(msg.Header)
 	}
 
-	// Generate message ID for storage reference.
-	messageID := uuid.New()
-
 	// Marshal recipients and headers to JSON for storage.
 	recipientsJSON, _ := json.Marshal(s.recipients)
 	headersJSON, _ := json.Marshal(headers)
 
 	bodyBytes := buf.Bytes()
 
-	// Build pgtype.UUID values for user and group identifiers.
-	userPgID := pgtype.UUID{Bytes: s.userID, Valid: true}
-	groupPgID := pgtype.UUID{Bytes: s.groupID, Valid: true}
+	// Build pgtype.Int4 values for user and group identifiers.
+	userPgID := pgtype.Int4{Int32: s.userID, Valid: true}
+	groupPgID := pgtype.Int4{Int32: s.groupID, Valid: true}
 
 	// Try to store body in MessageStore and persist metadata.
 	var dbMsg storage.Message
 	if s.backend.store != nil {
-		if err := s.backend.store.Put(s.ctx, messageID.String(), bodyBytes); err != nil {
-			s.log.Warn().Err(err).Str("message_id", messageID.String()).
+		// Generate a storage reference key for the message body.
+		storageRef := strconv.FormatInt(time.Now().UnixNano(), 36)
+
+		if err := s.backend.store.Put(s.ctx, storageRef, bodyBytes); err != nil {
+			s.log.Warn().Err(err).Str("storage_ref", storageRef).
 				Msg("MessageStore write failed, falling back to inline body")
 			// Fall back to inline body storage.
 			dbMsg, err = s.queries.EnqueueMessage(s.ctx, storage.EnqueueMessageParams{
@@ -327,7 +334,7 @@ func (s *Session) Data(r io.Reader) error {
 				Recipients: recipientsJSON,
 				Subject:    sql.NullString{String: subject, Valid: subject != ""},
 				Headers:    headersJSON,
-				StorageRef: pgtype.Text{String: messageID.String(), Valid: true},
+				StorageRef: pgtype.Text{String: storageRef, Valid: true},
 			})
 			if err != nil {
 				s.log.Error().Err(err).Msg("failed to enqueue message metadata")
@@ -362,7 +369,7 @@ func (s *Session) Data(r io.Reader) error {
 	s.log.Info().
 		Str("from", s.sender).
 		Int("recipient_count", len(s.recipients)).
-		Stringer("message_id", dbMsg.ID).
+		Int64("message_id", dbMsg.ID).
 		Msg("message persisted")
 
 	// Enqueue ID-only reference for async delivery by the worker process.
@@ -379,7 +386,7 @@ func (s *Session) Data(r io.Reader) error {
 		if err := s.backend.delivery.DeliverMessage(s.ctx, req); err != nil {
 			lastErr = err
 			s.log.Warn().Err(err).
-				Stringer("message_id", dbMsg.ID).
+				Int64("message_id", dbMsg.ID).
 				Int("attempt", attempt+1).
 				Int("max_attempts", len(enqueueRetryBackoff)).
 				Dur("elapsed", time.Since(enqueueStart)).
@@ -396,7 +403,7 @@ func (s *Session) Data(r io.Reader) error {
 		// Enqueue succeeded.
 		if attempt > 0 {
 			s.log.Info().
-				Stringer("message_id", dbMsg.ID).
+				Int64("message_id", dbMsg.ID).
 				Int("attempt", attempt+1).
 				Dur("elapsed", time.Since(enqueueStart)).
 				Msg("enqueue succeeded on retry")
@@ -407,7 +414,7 @@ func (s *Session) Data(r io.Reader) error {
 exhausted:
 	// All retries exhausted -- mark as enqueue_failed (REQ-SMTP-005).
 	s.log.Error().Err(lastErr).
-		Stringer("message_id", dbMsg.ID).
+		Int64("message_id", dbMsg.ID).
 		Int("attempts", len(enqueueRetryBackoff)).
 		Dur("elapsed", time.Since(enqueueStart)).
 		Msg("enqueue failed after all retries")
@@ -417,7 +424,7 @@ exhausted:
 		Status: storage.MessageStatusEnqueueFailed,
 	}); err != nil {
 		s.log.Error().Err(err).
-			Stringer("message_id", dbMsg.ID).
+			Int64("message_id", dbMsg.ID).
 			Msg("failed to update enqueue_failed status")
 	}
 

@@ -9,7 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
+	"strconv"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/api"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
@@ -66,17 +67,17 @@ func main() {
 
 	// Initialize audit store (bridges auth.AuditStore to storage.Querier)
 	auditStore := auth.NewFuncAuditStore(func(ctx context.Context, entry auth.AuditEntry) error {
-		// Parse ResourceID as UUID; set invalid if empty or unparseable.
-		var resourceID pgtype.UUID
+		// Parse ResourceID as int; set invalid if empty or unparseable.
+		var resourceID pgtype.Int4
 		if entry.ResourceID != "" {
-			if parsed, err := uuid.Parse(entry.ResourceID); err == nil {
-				resourceID = pgtype.UUID{Bytes: parsed, Valid: true}
+			if parsed, err := strconv.ParseInt(entry.ResourceID, 10, 32); err == nil {
+				resourceID = pgtype.Int4{Int32: int32(parsed), Valid: true}
 			}
 		}
 
 		_, err := queries.CreateActivityLog(ctx, storage.CreateActivityLogParams{
 			GroupID:      entry.GroupID,
-			ActorID:      pgtype.UUID{Bytes: entry.UserID, Valid: entry.UserID != uuid.Nil},
+			ActorID:      pgtype.Int4{Int32: entry.UserID, Valid: entry.UserID != 0},
 			Action:       entry.Action,
 			ResourceType: entry.ResourceType,
 			ResourceID:   resourceID,

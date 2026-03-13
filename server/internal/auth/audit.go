@@ -3,11 +3,11 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
 
-	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
@@ -25,8 +25,8 @@ const (
 
 // AuditEntry represents a single activity log entry to be persisted.
 type AuditEntry struct {
-	GroupID      uuid.UUID
-	UserID       uuid.UUID
+	GroupID      int32
+	UserID       int32
 	Action       string
 	ResourceType string
 	ResourceID   string
@@ -55,7 +55,7 @@ func NewAuditLogger(store AuditStore, logger zerolog.Logger) *AuditLogger {
 }
 
 // LogAuthAttempt logs a successful authentication event.
-func (al *AuditLogger) LogAuthAttempt(ctx context.Context, r *http.Request, groupID, userID uuid.UUID, action string) {
+func (al *AuditLogger) LogAuthAttempt(ctx context.Context, r *http.Request, groupID, userID int32, action string) {
 	entry := AuditEntry{
 		GroupID:      groupID,
 		UserID:       userID,
@@ -110,11 +110,11 @@ func (al *AuditLogger) log(ctx context.Context, entry AuditEntry) {
 		Str("resource_type", entry.ResourceType).
 		Str("ip_address", entry.IPAddress)
 
-	if entry.GroupID != uuid.Nil {
-		event = event.Str("group_id", entry.GroupID.String())
+	if entry.GroupID != 0 {
+		event = event.Str("group_id", fmt.Sprintf("%d", entry.GroupID))
 	}
-	if entry.UserID != uuid.Nil {
-		event = event.Str("user_id", entry.UserID.String())
+	if entry.UserID != 0 {
+		event = event.Str("user_id", fmt.Sprintf("%d", entry.UserID))
 	}
 	if entry.ResourceID != "" {
 		event = event.Str("resource_id", entry.ResourceID)

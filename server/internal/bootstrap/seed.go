@@ -85,7 +85,7 @@ func SeedSystemAdmin(ctx context.Context, queries storage.Querier, log zerolog.L
 		if err != nil {
 			return err
 		}
-		log.Info().Str("group_id", group.ID.String()).Msg("system group created")
+		log.Info().Int32("group_id", group.ID).Msg("system group created")
 	}
 
 	// Step 3: Create or get the admin user.
@@ -108,7 +108,7 @@ func SeedSystemAdmin(ctx context.Context, queries storage.Querier, log zerolog.L
 		user = existingUser
 		log.Info().Str("email", email).Msg("admin user already exists, reusing")
 	} else {
-		log.Info().Str("user_id", user.ID.String()).Str("email", email).Msg("admin user created")
+		log.Info().Int32("user_id", user.ID).Str("email", email).Msg("admin user created")
 	}
 
 	// Step 4: Add admin as owner of the system group.
@@ -157,3 +157,4 @@ func updateAdminPassword(ctx context.Context, queries storage.Querier, log zerol
 	log.Info().Str("email", email).Msg("admin password updated from environment")
 	return nil
 }
+

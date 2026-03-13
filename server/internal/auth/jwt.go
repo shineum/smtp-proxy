@@ -3,10 +3,10 @@ package auth
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 )
 
 // JWTConfig holds JWT signing and expiry configuration.
@@ -53,15 +53,15 @@ var (
 )
 
 // GenerateAccessToken creates a signed JWT access token for the given user.
-func (s *JWTService) GenerateAccessToken(userID, groupID uuid.UUID, email, role, groupType string) (string, error) {
+func (s *JWTService) GenerateAccessToken(userID, groupID int32, email, role, groupType string) (string, error) {
 	now := time.Now()
 	claims := AccessTokenClaims{
-		GroupID:   groupID.String(),
+		GroupID:   strconv.FormatInt(int64(groupID), 10),
 		GroupType: groupType,
 		Email:     email,
 		Role:      role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   userID.String(),
+			Subject:   strconv.FormatInt(int64(userID), 10),
 			Issuer:    s.config.Issuer,
 			Audience:  jwt.ClaimStrings{s.config.Audience},
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -78,13 +78,13 @@ func (s *JWTService) GenerateAccessToken(userID, groupID uuid.UUID, email, role,
 }
 
 // GenerateRefreshToken creates a signed JWT refresh token for the given session.
-func (s *JWTService) GenerateRefreshToken(userID, groupID, sessionID uuid.UUID) (string, error) {
+func (s *JWTService) GenerateRefreshToken(userID, groupID, sessionID int32) (string, error) {
 	now := time.Now()
 	claims := RefreshTokenClaims{
-		GroupID:   groupID.String(),
-		SessionID: sessionID.String(),
+		GroupID:   strconv.FormatInt(int64(groupID), 10),
+		SessionID: strconv.FormatInt(int64(sessionID), 10),
 		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   userID.String(),
+			Subject:   strconv.FormatInt(int64(userID), 10),
 			Issuer:    s.config.Issuer,
 			Audience:  jwt.ClaimStrings{s.config.Audience},
 			IssuedAt:  jwt.NewNumericDate(now),

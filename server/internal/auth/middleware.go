@@ -4,10 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
@@ -23,26 +23,26 @@ const (
 )
 
 // AccountFromContext retrieves the authenticated account ID from the request context.
-// Returns uuid.Nil if no account is set.
-func AccountFromContext(ctx context.Context) uuid.UUID {
-	if id, ok := ctx.Value(accountIDKey).(uuid.UUID); ok {
+// Returns 0 if no account is set.
+func AccountFromContext(ctx context.Context) int32 {
+	if id, ok := ctx.Value(accountIDKey).(int32); ok {
 		return id
 	}
-	return uuid.Nil
+	return 0
 }
 
 // withAccountID stores the account ID in the request context.
-func withAccountID(ctx context.Context, id uuid.UUID) context.Context {
+func withAccountID(ctx context.Context, id int32) context.Context {
 	return context.WithValue(ctx, accountIDKey, id)
 }
 
 // GroupIDFromContext retrieves the group ID from the request context.
-// Returns uuid.Nil if no group is set.
-func GroupIDFromContext(ctx context.Context) uuid.UUID {
-	if id, ok := ctx.Value(groupIDKey).(uuid.UUID); ok {
+// Returns 0 if no group is set.
+func GroupIDFromContext(ctx context.Context) int32 {
+	if id, ok := ctx.Value(groupIDKey).(int32); ok {
 		return id
 	}
-	return uuid.Nil
+	return 0
 }
 
 // GroupTypeFromContext retrieves the group type from the request context.
@@ -55,12 +55,12 @@ func GroupTypeFromContext(ctx context.Context) string {
 }
 
 // UserFromContext retrieves the user ID from the request context.
-// Returns uuid.Nil if no user is set.
-func UserFromContext(ctx context.Context) uuid.UUID {
-	if id, ok := ctx.Value(userIDKey).(uuid.UUID); ok {
+// Returns 0 if no user is set.
+func UserFromContext(ctx context.Context) int32 {
+	if id, ok := ctx.Value(userIDKey).(int32); ok {
 		return id
 	}
-	return uuid.Nil
+	return 0
 }
 
 // UserEmailFromContext retrieves the user email from the request context.
@@ -83,7 +83,7 @@ func RoleFromContext(ctx context.Context) string {
 
 // AccountLookupFunc is a function that looks up an account by API key.
 // It returns the account ID if found, or an error if not.
-type AccountLookupFunc func(ctx context.Context, apiKey string) (uuid.UUID, error)
+type AccountLookupFunc func(ctx context.Context, apiKey string) (int32, error)
 
 // BearerAuth returns an HTTP middleware that validates Bearer token authentication.
 // It extracts the API key from the Authorization header and looks up the account.
@@ -152,19 +152,19 @@ func UnifiedAuth(jwtService *JWTService, queries storage.Querier) func(http.Hand
 			if strings.Contains(token, ".") {
 				claims, err := jwtService.ValidateAccessToken(token)
 				if err == nil {
-					userID, err := uuid.Parse(claims.Subject)
+					userIDInt, err := strconv.ParseInt(claims.Subject, 10, 32)
 					if err != nil {
 						http.Error(w, `{"error":"invalid token claims"}`, http.StatusUnauthorized)
 						return
 					}
-					groupID, err := uuid.Parse(claims.GroupID)
+					groupIDInt, err := strconv.ParseInt(claims.GroupID, 10, 32)
 					if err != nil {
 						http.Error(w, `{"error":"invalid token claims"}`, http.StatusUnauthorized)
 						return
 					}
 					ctx := r.Context()
-					ctx = context.WithValue(ctx, userIDKey, userID)
-					ctx = context.WithValue(ctx, groupIDKey, groupID)
+					ctx = context.WithValue(ctx, userIDKey, int32(userIDInt))
+					ctx = context.WithValue(ctx, groupIDKey, int32(groupIDInt))
 					ctx = context.WithValue(ctx, groupTypeKey, claims.GroupType)
 					ctx = context.WithValue(ctx, userEmailKey, claims.Email)
 					ctx = context.WithValue(ctx, userRoleKey, claims.Role)
@@ -253,21 +253,21 @@ func JWTAuth(jwtService *JWTService) func(http.Handler) http.Handler {
 				return
 			}
 
-			userID, err := uuid.Parse(claims.Subject)
+			userIDInt, err := strconv.ParseInt(claims.Subject, 10, 32)
 			if err != nil {
 				http.Error(w, `{"error":"invalid token claims"}`, http.StatusUnauthorized)
 				return
 			}
 
-			groupID, err := uuid.Parse(claims.GroupID)
+			groupIDInt, err := strconv.ParseInt(claims.GroupID, 10, 32)
 			if err != nil {
 				http.Error(w, `{"error":"invalid token claims"}`, http.StatusUnauthorized)
 				return
 			}
 
 			ctx := r.Context()
-			ctx = context.WithValue(ctx, userIDKey, userID)
-			ctx = context.WithValue(ctx, groupIDKey, groupID)
+			ctx = context.WithValue(ctx, userIDKey, int32(userIDInt))
+			ctx = context.WithValue(ctx, groupIDKey, int32(groupIDInt))
 			ctx = context.WithValue(ctx, groupTypeKey, claims.GroupType)
 			ctx = context.WithValue(ctx, userEmailKey, claims.Email)
 			ctx = context.WithValue(ctx, userRoleKey, claims.Role)

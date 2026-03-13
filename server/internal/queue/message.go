@@ -1,9 +1,8 @@
 package queue
 
 import (
+	"fmt"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // Message represents an email message in the queue.
@@ -25,10 +24,10 @@ type Message struct {
 	CreatedAt  time.Time         `json:"created_at"`
 }
 
-// NewMessage creates a new Message with a generated UUID and current timestamp.
+// NewMessage creates a new Message with a generated unique ID and current timestamp.
 func NewMessage(tenantID, from string, to []string, subject string, body []byte) *Message {
 	return &Message{
-		ID:        uuid.New().String(),
+		ID:        fmt.Sprintf("%d", time.Now().UnixNano()),
 		TenantID:  tenantID,
 		From:      from,
 		To:        to,

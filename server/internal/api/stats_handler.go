@@ -1,12 +1,13 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -34,29 +35,25 @@ func parseDateRange(r *http.Request) (pgtype.Timestamptz, pgtype.Timestamptz) {
 		pgtype.Timestamptz{Time: to, Valid: true}
 }
 
-func uuidToPgtype(id uuid.UUID) pgtype.UUID {
-	return pgtype.UUID{Bytes: id, Valid: id != uuid.Nil}
-}
-
 // isSystemAdmin returns true if the authenticated user belongs to a system group.
 func isSystemAdmin(r *http.Request) bool {
 	return auth.GroupTypeFromContext(r.Context()) == "system"
 }
 
 // filterGroupIDs extracts optional group_id query parameters for admin filtering.
-// Accepts a comma-separated list of UUIDs: ?group_id=id1,id2,id3
-// Returns the parsed UUIDs and true if at least one valid UUID is present.
-func filterGroupIDs(r *http.Request) ([]uuid.UUID, bool) {
+// Accepts a comma-separated list of integer IDs: ?group_id=1,2,3
+// Returns the parsed IDs and true if at least one valid ID is present.
+func filterGroupIDs(r *http.Request) ([]int32, bool) {
 	v := r.URL.Query().Get("group_id")
 	if v == "" {
 		return nil, false
 	}
 	parts := strings.Split(v, ",")
-	var ids []uuid.UUID
+	var ids []int32
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
-		if id, err := uuid.Parse(p); err == nil {
-			ids = append(ids, id)
+		if n, err := strconv.ParseInt(p, 10, 32); err == nil {
+			ids = append(ids, int32(n))
 		}
 	}
 	if len(ids) == 0 {
@@ -82,7 +79,7 @@ type dashboardResponse struct {
 func DashboardHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -107,30 +104,26 @@ func DashboardHandler(queries storage.Querier) http.HandlerFunc {
 		} else if sysAdmin && hasFilter && len(filterIDs) == 1 {
 			// System admin with a single group filter.
 			rows, err = queries.CountDeliveryLogsByGroupDateRange(r.Context(), storage.CountDeliveryLogsByGroupDateRangeParams{
-				GroupID:     uuidToPgtype(filterIDs[0]),
+				GroupID:     pgtype.Int4{Int32: filterIDs[0], Valid: true},
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
-			respGroupID = filterIDs[0].String()
+			respGroupID = fmt.Sprintf("%d", filterIDs[0])
 		} else if sysAdmin && hasFilter {
 			// System admin with multiple group filter.
-			pgIDs := make([]pgtype.UUID, len(filterIDs))
-			for i, id := range filterIDs {
-				pgIDs[i] = uuidToPgtype(id)
-			}
 			rows, err = queries.CountDeliveryLogsByGroupIDs(r.Context(), storage.MultiGroupDateRangeParams{
-				GroupIDs:    pgIDs,
+				GroupIDs:    filterIDs,
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
 		} else {
 			// Non-admin: own group only.
 			rows, err = queries.CountDeliveryLogsByGroupDateRange(r.Context(), storage.CountDeliveryLogsByGroupDateRangeParams{
-				GroupID:     uuidToPgtype(groupID),
+				GroupID:     pgtype.Int4{Int32: groupID, Valid: true},
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
-			respGroupID = groupID.String()
+			respGroupID = fmt.Sprintf("%d", groupID)
 		}
 
 		if err != nil {
@@ -176,7 +169,7 @@ type timeSeriesPoint struct {
 func TimeSeriesHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -196,23 +189,19 @@ func TimeSeriesHandler(queries storage.Querier) http.HandlerFunc {
 			})
 		} else if sysAdmin && hasFilter && len(filterIDs) == 1 {
 			rows, err = queries.DailyDeliveryCountsByGroup(r.Context(), storage.DailyDeliveryCountsByGroupParams{
-				GroupID:     uuidToPgtype(filterIDs[0]),
+				GroupID:     pgtype.Int4{Int32: filterIDs[0], Valid: true},
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
 		} else if sysAdmin && hasFilter {
-			pgIDs := make([]pgtype.UUID, len(filterIDs))
-			for i, id := range filterIDs {
-				pgIDs[i] = uuidToPgtype(id)
-			}
 			rows, err = queries.DailyDeliveryCountsByGroupIDs(r.Context(), storage.MultiGroupDateRangeParams{
-				GroupIDs:    pgIDs,
+				GroupIDs:    filterIDs,
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
 		} else {
 			rows, err = queries.DailyDeliveryCountsByGroup(r.Context(), storage.DailyDeliveryCountsByGroupParams{
-				GroupID:     uuidToPgtype(groupID),
+				GroupID:     pgtype.Int4{Int32: groupID, Valid: true},
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
@@ -253,7 +242,7 @@ type usageByUserRow struct {
 func UsageByUserHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -273,23 +262,19 @@ func UsageByUserHandler(queries storage.Querier) http.HandlerFunc {
 			})
 		} else if sysAdmin && hasFilter && len(filterIDs) == 1 {
 			rows, err = queries.DeliveryCountsByGroupAndUser(r.Context(), storage.DeliveryCountsByGroupAndUserParams{
-				GroupID:     uuidToPgtype(filterIDs[0]),
+				GroupID:     pgtype.Int4{Int32: filterIDs[0], Valid: true},
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
 		} else if sysAdmin && hasFilter {
-			pgIDs := make([]pgtype.UUID, len(filterIDs))
-			for i, id := range filterIDs {
-				pgIDs[i] = uuidToPgtype(id)
-			}
 			rows, err = queries.DeliveryCountsByUserAndGroupIDs(r.Context(), storage.MultiGroupDateRangeParams{
-				GroupIDs:    pgIDs,
+				GroupIDs:    filterIDs,
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
 		} else {
 			rows, err = queries.DeliveryCountsByGroupAndUser(r.Context(), storage.DeliveryCountsByGroupAndUserParams{
-				GroupID:     uuidToPgtype(groupID),
+				GroupID:     pgtype.Int4{Int32: groupID, Valid: true},
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
@@ -304,7 +289,7 @@ func UsageByUserHandler(queries storage.Querier) http.HandlerFunc {
 		for i, row := range rows {
 			uid := ""
 			if row.UserID.Valid {
-				uid = uuid.UUID(row.UserID.Bytes).String()
+				uid = fmt.Sprintf("%d", row.UserID.Int32)
 			}
 			result[i] = usageByUserRow{
 				UserID: uid,
@@ -330,7 +315,7 @@ type usageByProviderRow struct {
 func UsageByProviderHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -350,23 +335,19 @@ func UsageByProviderHandler(queries storage.Querier) http.HandlerFunc {
 			})
 		} else if sysAdmin && hasFilter && len(filterIDs) == 1 {
 			rows, err = queries.DeliveryCountsByGroupAndProvider(r.Context(), storage.DeliveryCountsByGroupAndProviderParams{
-				GroupID:     uuidToPgtype(filterIDs[0]),
+				GroupID:     pgtype.Int4{Int32: filterIDs[0], Valid: true},
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
 		} else if sysAdmin && hasFilter {
-			pgIDs := make([]pgtype.UUID, len(filterIDs))
-			for i, id := range filterIDs {
-				pgIDs[i] = uuidToPgtype(id)
-			}
 			rows, err = queries.DeliveryCountsByProviderAndGroupIDs(r.Context(), storage.MultiGroupDateRangeParams{
-				GroupIDs:    pgIDs,
+				GroupIDs:    filterIDs,
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
 		} else {
 			rows, err = queries.DeliveryCountsByGroupAndProvider(r.Context(), storage.DeliveryCountsByGroupAndProviderParams{
-				GroupID:     uuidToPgtype(groupID),
+				GroupID:     pgtype.Int4{Int32: groupID, Valid: true},
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
@@ -407,7 +388,7 @@ type usageByGroupRow struct {
 func UsageByGroupHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == uuid.Nil {
+		if groupID == 0 {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -430,15 +411,11 @@ func UsageByGroupHandler(queries storage.Querier) http.HandlerFunc {
 
 		result := make([]usageByGroupRow, len(rows))
 		for i, row := range rows {
-			gid := ""
-			if row.GroupID.Valid {
-				gid = uuid.UUID(row.GroupID.Bytes).String()
-			}
 			result[i] = usageByGroupRow{
-				GroupID:   gid,
+				GroupID:   fmt.Sprintf("%d", row.GroupID),
 				GroupName: row.GroupName,
-				Status:   row.Status,
-				Count:    row.Count,
+				Status:    row.Status,
+				Count:     row.Count,
 			}
 		}
 
@@ -451,11 +428,12 @@ func UsageByGroupHandler(queries storage.Querier) http.HandlerFunc {
 func ProviderHealthHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		n, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid provider ID format")
 			return
 		}
+		id := int32(n)
 
 		provider, err := queries.GetProviderByID(r.Context(), id)
 		if err != nil {
@@ -470,7 +448,7 @@ func ProviderHealthHandler(queries storage.Querier) http.HandlerFunc {
 
 		groupID := auth.GroupIDFromContext(r.Context())
 		rows, err := queries.DeliveryCountsByGroupAndProvider(r.Context(), storage.DeliveryCountsByGroupAndProviderParams{
-			GroupID:     uuidToPgtype(groupID),
+			GroupID:     pgtype.Int4{Int32: groupID, Valid: true},
 			CreatedAt:   fromTS,
 			CreatedAt_2: toTS,
 		})

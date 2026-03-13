@@ -3,9 +3,9 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -56,7 +56,7 @@ func SendGridWebhookHandler(queries storage.Querier) http.HandlerFunc {
 				LastError:         pgtype.Text{String: event.Reason, Valid: event.Reason != ""},
 				Metadata:          marshalMetadata(map[string]string{"event": event.Event, "email": event.Email}),
 			}); err != nil {
-				log.Error().Err(err).Str("message_id", msgID.String()).Msg("sendgrid webhook: update delivery log failed")
+				log.Error().Err(err).Str("message_id", fmt.Sprintf("%d", msgID)).Msg("sendgrid webhook: update delivery log failed")
 			}
 		}
 
@@ -117,7 +117,7 @@ func SESWebhookHandler(queries storage.Querier) http.HandlerFunc {
 			LastError:         pgtype.Text{String: lastError, Valid: lastError != ""},
 			Metadata:          marshalMetadata(map[string]string{"notification_type": notification.NotificationType}),
 		}); err != nil {
-			log.Error().Err(err).Str("message_id", msgID.String()).Msg("ses webhook: update delivery log failed")
+			log.Error().Err(err).Str("message_id", fmt.Sprintf("%d", msgID)).Msg("ses webhook: update delivery log failed")
 		}
 
 		respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -166,7 +166,7 @@ func MailgunWebhookHandler(queries storage.Querier) http.HandlerFunc {
 			LastError:         pgtype.Text{String: reason, Valid: reason != ""},
 			Metadata:          marshalMetadata(map[string]string{"event": event.Event, "recipient": event.Recipient}),
 		}); err != nil {
-			log.Error().Err(err).Str("message_id", msgID.String()).Msg("mailgun webhook: update delivery log failed")
+			log.Error().Err(err).Str("message_id", fmt.Sprintf("%d", msgID)).Msg("mailgun webhook: update delivery log failed")
 		}
 
 		respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -280,13 +280,13 @@ func normalizeMailgunStatus(event string) string {
 // --- Helpers ---
 
 // lookupMessageIDByProvider finds the internal message ID from a provider message ID.
-func lookupMessageIDByProvider(r *http.Request, queries storage.Querier, providerMessageID string) (uuid.UUID, error) {
+func lookupMessageIDByProvider(r *http.Request, queries storage.Querier, providerMessageID string) (int64, error) {
 	log, err := queries.GetDeliveryLogByProviderMessageID(r.Context(), sql.NullString{
 		String: providerMessageID,
 		Valid:  providerMessageID != "",
 	})
 	if err != nil {
-		return uuid.Nil, err
+		return 0, err
 	}
 	return log.MessageID, nil
 }

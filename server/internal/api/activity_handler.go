@@ -7,23 +7,22 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 // activityLogResponse is the JSON response for an activity log entry.
 type activityLogResponse struct {
-	ID           uuid.UUID        `json:"id"`
-	GroupID      uuid.UUID        `json:"group_id"`
-	ActorID      *uuid.UUID       `json:"actor_id,omitempty"`
-	Action       string           `json:"action"`
-	ResourceType string           `json:"resource_type"`
-	ResourceID   *uuid.UUID       `json:"resource_id,omitempty"`
-	Changes      json.RawMessage  `json:"changes,omitempty"`
-	Comment      *string          `json:"comment,omitempty"`
-	IPAddress    *string          `json:"ip_address,omitempty"`
-	CreatedAt    time.Time        `json:"created_at"`
+	ID           int64           `json:"id"`
+	GroupID      int32           `json:"group_id"`
+	ActorID      *int32          `json:"actor_id,omitempty"`
+	Action       string          `json:"action"`
+	ResourceType string          `json:"resource_type"`
+	ResourceID   *int32          `json:"resource_id,omitempty"`
+	Changes      json.RawMessage `json:"changes,omitempty"`
+	Comment      *string         `json:"comment,omitempty"`
+	IPAddress    *string         `json:"ip_address,omitempty"`
+	CreatedAt    time.Time       `json:"created_at"`
 }
 
 // toActivityLogResponse converts a storage.ActivityLog to an activityLogResponse.
@@ -37,12 +36,12 @@ func toActivityLogResponse(al storage.ActivityLog) activityLogResponse {
 	}
 
 	if al.ActorID.Valid {
-		id := uuid.UUID(al.ActorID.Bytes)
+		id := al.ActorID.Int32
 		resp.ActorID = &id
 	}
 
 	if al.ResourceID.Valid {
-		id := uuid.UUID(al.ResourceID.Bytes)
+		id := al.ResourceID.Int32
 		resp.ResourceID = &id
 	}
 
@@ -69,11 +68,12 @@ func toActivityLogResponse(al storage.ActivityLog) activityLogResponse {
 func ListActivityLogsHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		groupID, err := uuid.Parse(idStr)
+		parsed, err := strconv.ParseInt(idStr, 10, 32)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
+		groupID := int32(parsed)
 
 		// Verify access
 		callerGroupID := auth.GroupIDFromContext(r.Context())
@@ -121,4 +121,3 @@ func ListActivityLogsHandler(queries storage.Querier) http.HandlerFunc {
 		respondJSON(w, http.StatusOK, resp)
 	}
 }
-

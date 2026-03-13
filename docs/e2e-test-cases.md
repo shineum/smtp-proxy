@@ -224,6 +224,58 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 
 ---
 
+## Multi-API Key Support
+
+### TC-025: Create Additional API Key for Service Account
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-010 passed (service account exists with default key from creation). |
+| **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts/<sa_id>/api-keys` with `{"label":"ci-pipeline","api_key_expires_in":"90d"}` |
+| **Expected** | 201 Created. Response includes plaintext `api_key`, `key_prefix` (first 12 chars), `label: "ci-pipeline"`, `expires_at` set 90 days from now. |
+
+### TC-026: List API Keys for Service Account
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-025 passed (2 keys exist for the service account). |
+| **Steps** | GET `/api/v1/groups/<group_a_id>/service-accounts/<sa_id>/api-keys` |
+| **Expected** | 200 OK. Array with 2 entries. Each has `id`, `key_prefix`, `label`, `expires_at`, `last_used_at`, `created_at`. No `key_hash` or plaintext exposed. |
+
+### TC-027: SMTP Auth with Second API Key
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-025 passed (second API key created). |
+| **Steps** | SMTP AUTH PLAIN with `e2e-smtp@<group_a_id>` / `<new_api_key_from_tc025>` |
+| **Expected** | 250 OK. Auth successful with the second API key. Message sent and delivered. |
+
+### TC-028: Delete Specific API Key
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-025 passed (2 keys exist). |
+| **Steps** | DELETE `/api/v1/groups/<group_a_id>/service-accounts/<sa_id>/api-keys/<key_id_of_first_key>` |
+| **Expected** | 204 No Content. First (default) API key is removed. Service account still has second key. |
+
+### TC-029: Deleted API Key Rejected
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-028 passed (first key deleted). |
+| **Steps** | SMTP AUTH PLAIN with `e2e-smtp@<group_a_id>` / `<api_key_from_tc010>` (the deleted first key) |
+| **Expected** | 535 "Authentication failed". Deleted API key is rejected. |
+
+### TC-030: Remaining API Key Still Works
+
+| Field | Value |
+|-------|-------|
+| **Precondition** | TC-028 passed (first key deleted, second key remains). |
+| **Steps** | SMTP AUTH PLAIN with `e2e-smtp@<group_a_id>` / `<api_key_from_tc025>` (the second key) |
+| **Expected** | 250 OK. Auth successful with remaining API key. Message sent and delivered. |
+
+---
+
 ## Test Data Summary
 
 | Resource | Name | Type | Scope |
@@ -236,13 +288,15 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 | Group B | e2e-test-group-b | company | - |
 | Human User | testuser@example.com | user | Group A |
 | Service Account | e2e-smtp | smtp | Group A, Provider 3 |
+| API Key 1 | default key | smtp-key | Group A, e2e-smtp, 30d expiry |
+| API Key 2 | ci-pipeline | smtp-key | Group A, e2e-smtp, 90d expiry |
 
 ---
 
 ## Running
 
 ```bash
-# Full E2E suite (clean build + 28 assertions across 24 test cases)
+# Full E2E suite (clean build + 34 assertions across 30 test cases)
 bash e2e-test.sh
 
 # Manual SMTP test

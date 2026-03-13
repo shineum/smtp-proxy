@@ -50,6 +50,8 @@ export interface GroupMember {
   user_id: string;
   email?: string;
   username?: string;
+  account_type?: string;
+  provider_id?: string;
   role: string;
   created_at: string;
 }

@@ -28,7 +28,6 @@ export default function GroupDetailPage() {
   // Service account creation state
   const [isCreateSAOpen, setIsCreateSAOpen] = useState(false);
   const [saUsername, setSaUsername] = useState('');
-  const [saEmail, setSaEmail] = useState('');
   const [saDomains, setSaDomains] = useState('');
   const [saProviderId, setSaProviderId] = useState('');
 
@@ -82,7 +81,7 @@ export default function GroupDetailPage() {
   const { data: providers } = useQuery({
     queryKey: ['providers', id],
     queryFn: () => fetchProviders(id!),
-    enabled: (isCreateSAOpen || isEditSAOpen) && !!id,
+    enabled: (isCreateSAOpen || isEditSAOpen || activeTab === 1) && !!id,
   });
 
   const { data: apiKeys, refetch: refetchApiKeys } = useQuery({
@@ -105,7 +104,6 @@ export default function GroupDetailPage() {
       const domains = saDomains.trim() ? saDomains.split(',').map(d => d.trim()).filter(Boolean) : undefined;
       return createServiceAccount(id!, {
         username: saUsername,
-        email: saEmail || undefined,
         allowed_domains: domains,
         provider_id: saProviderId || undefined,
       });
@@ -114,7 +112,6 @@ export default function GroupDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['group-members', id] });
       setIsCreateSAOpen(false);
       setSaUsername('');
-      setSaEmail('');
       setSaDomains('');
       setSaProviderId('');
     },
@@ -210,8 +207,8 @@ export default function GroupDetailPage() {
 
   if (isLoading || !group) return <PageSection><Spinner size="xl" /></PageSection>;
 
-  const serviceAccounts = members?.filter(m => m.email?.endsWith('@smtp.internal') || false) || [];
-  const humanMembers = members?.filter(m => !m.email?.endsWith('@smtp.internal')) || [];
+  const serviceAccounts = members?.filter(m => m.account_type === 'smtp') || [];
+  const humanMembers = members?.filter(m => m.account_type !== 'smtp') || [];
 
   return (
     <PageSection>
@@ -231,7 +228,11 @@ export default function GroupDetailPage() {
               <DescriptionList>
                 <DescriptionListGroup>
                   <DescriptionListTerm>ID</DescriptionListTerm>
-                  <DescriptionListDescription className="mono">{group.id}</DescriptionListDescription>
+                  <DescriptionListDescription>
+                    <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" variant="inline-compact" className="mono">
+                      {group.id}
+                    </ClipboardCopy>
+                  </DescriptionListDescription>
                 </DescriptionListGroup>
                 {group.display_name && (
                   <DescriptionListGroup>
@@ -245,14 +246,6 @@ export default function GroupDetailPage() {
                     <DescriptionListDescription>{group.description}</DescriptionListDescription>
                   </DescriptionListGroup>
                 )}
-                <DescriptionListGroup>
-                  <DescriptionListTerm>SMTP Auth Key</DescriptionListTerm>
-                  <DescriptionListDescription>
-                    <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" className="mono">
-                      {group.id}
-                    </ClipboardCopy>
-                  </DescriptionListDescription>
-                </DescriptionListGroup>
                 <DescriptionListGroup>
                   <DescriptionListTerm>Type</DescriptionListTerm>
                   <DescriptionListDescription><Label color={group.group_type === 'system' ? 'purple' : 'blue'}>{group.group_type}</Label></DescriptionListDescription>
@@ -326,13 +319,18 @@ export default function GroupDetailPage() {
                 )}
               </div>
               <Table aria-label="Service accounts">
-                <Thead><Tr><Th>Username</Th><Th>Email</Th><Th>Role</Th><Th>Joined</Th>{isOwnerOrAdmin && <Th>Actions</Th>}</Tr></Thead>
+                <Thead><Tr><Th>Username</Th><Th>SMTP Auth User</Th><Th>Provider</Th><Th>Role</Th><Th>Joined</Th>{isOwnerOrAdmin && <Th>Actions</Th>}</Tr></Thead>
                 <Tbody>
                   {serviceAccounts.map((m) => (
                     <Tr key={m.id} isClickable isRowSelected={expandedSA === m.user_id}
                       onRowClick={() => setExpandedSA(expandedSA === m.user_id ? null : m.user_id)}>
                       <Td>{m.username || '-'}</Td>
-                      <Td>{m.email || m.user_id}</Td>
+                      <Td onClick={(e) => e.stopPropagation()}>
+                        <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" variant="inline-compact" className="mono">
+                          {`${m.username || m.user_id}@${id}`}
+                        </ClipboardCopy>
+                      </Td>
+                      <Td>{providers?.find(p => p.id === m.provider_id)?.name || m.provider_id?.slice(0, 8) || '-'}</Td>
                       <Td><Label>{m.role}</Label></Td>
                       <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
                       {isOwnerOrAdmin && (
@@ -350,7 +348,7 @@ export default function GroupDetailPage() {
                     </Tr>
                   ))}
                   {serviceAccounts.length === 0 && (
-                    <Tr><Td colSpan={isOwnerOrAdmin ? 5 : 4}>No service accounts</Td></Tr>
+                    <Tr><Td colSpan={isOwnerOrAdmin ? 6 : 5}>No service accounts</Td></Tr>
                   )}
                 </Tbody>
               </Table>
@@ -461,9 +459,6 @@ export default function GroupDetailPage() {
                 <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.provider_type})`} />
               ))}
             </FormSelect>
-          </FormGroup>
-          <FormGroup label="Email (optional, defaults to username@smtp.internal)" fieldId="sa-email">
-            <TextInput id="sa-email" value={saEmail} onChange={(_e, v) => setSaEmail(v)} />
           </FormGroup>
           <FormGroup label="Allowed Domains (comma-separated, optional)" fieldId="sa-domains">
             <TextInput id="sa-domains" value={saDomains} onChange={(_e, v) => setSaDomains(v)} placeholder="example.com, other.com" />

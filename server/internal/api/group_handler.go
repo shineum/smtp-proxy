@@ -50,13 +50,15 @@ type groupResponse struct {
 
 // groupMemberResponse is the JSON response for a group member.
 type groupMemberResponse struct {
-	ID        uuid.UUID `json:"id"`
-	GroupID   uuid.UUID `json:"group_id"`
-	UserID    uuid.UUID `json:"user_id"`
-	Email     string    `json:"email,omitempty"`
-	Username  *string   `json:"username,omitempty"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          uuid.UUID  `json:"id"`
+	GroupID     uuid.UUID  `json:"group_id"`
+	UserID      uuid.UUID  `json:"user_id"`
+	Email       string     `json:"email,omitempty"`
+	Username    *string    `json:"username,omitempty"`
+	AccountType string     `json:"account_type,omitempty"`
+	ProviderID  *uuid.UUID `json:"provider_id,omitempty"`
+	Role        string     `json:"role"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 // toGroupResponse converts a storage.Group to a groupResponse.
@@ -366,8 +368,13 @@ func ListGroupMembersHandler(queries storage.Querier) http.HandlerFunc {
 			resp[i] = toGroupMemberResponse(m)
 			if user, err := queries.GetUserByID(r.Context(), m.UserID); err == nil {
 				resp[i].Email = user.Email
+				resp[i].AccountType = user.AccountType
 				if user.Username.Valid {
 					resp[i].Username = &user.Username.String
+				}
+				if user.ProviderID.Valid {
+					id := uuid.UUID(user.ProviderID.Bytes)
+					resp[i].ProviderID = &id
 				}
 			}
 		}

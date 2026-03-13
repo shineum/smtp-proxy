@@ -58,7 +58,6 @@ type Querier interface {
 	GetDeliveryLogByMessageID(ctx context.Context, messageID uuid.UUID) (DeliveryLog, error)
 	GetDeliveryLogByProviderMessageID(ctx context.Context, providerMessageID sql.NullString) (DeliveryLog, error)
 	GetGlobalStdoutProvider(ctx context.Context) (EspProvider, error)
-	GetGroupByGroupKey(ctx context.Context, groupKey uuid.UUID) (Group, error)
 	GetGroupByID(ctx context.Context, id uuid.UUID) (Group, error)
 	GetGroupByName(ctx context.Context, name string) (Group, error)
 	GetGroupMemberByID(ctx context.Context, id uuid.UUID) (GroupMember, error)
@@ -73,7 +72,7 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username sql.NullString) (User, error)
-	GetUserByUsernameAndGroupKey(ctx context.Context, arg GetUserByUsernameAndGroupKeyParams) (User, error)
+	GetUserByUsernameAndGroupID(ctx context.Context, arg GetUserByUsernameAndGroupIDParams) (User, error)
 	GrantProviderAccess(ctx context.Context, arg GrantProviderAccessParams) error
 	IncrementFailedAttempts(ctx context.Context, id uuid.UUID) error
 	IncrementMonthlySent(ctx context.Context, id uuid.UUID) error

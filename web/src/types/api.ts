@@ -40,7 +40,6 @@ export interface Group {
   monthly_sent: number;
   created_at: string;
   updated_at: string;
-  group_key: string;
   display_name?: string;
   description?: string;
 }

@@ -235,7 +235,7 @@ export default function GroupDetailPage() {
                   <DescriptionListTerm>SMTP Auth Key</DescriptionListTerm>
                   <DescriptionListDescription>
                     <ClipboardCopy isReadOnly hoverTip="Copy" clickTip="Copied" className="mono">
-                      {group.group_key}
+                      {group.id}
                     </ClipboardCopy>
                   </DescriptionListDescription>
                 </DescriptionListGroup>
@@ -385,7 +385,7 @@ export default function GroupDetailPage() {
           <div>
             <p style={{ marginBottom: '1rem' }}>Service account created. Copy the credentials below - the API key will not be shown again.</p>
             <FormGroup label="SMTP Login" fieldId="sa-smtp-login">
-              <ClipboardCopy isReadOnly className="mono">{`${saUsername || createdSA.username || ''}@${group.group_key}`}</ClipboardCopy>
+              <ClipboardCopy isReadOnly className="mono">{`${saUsername || createdSA.username || ''}@${group.id}`}</ClipboardCopy>
             </FormGroup>
             <FormGroup label="Password (API Key)" fieldId="sa-api-key" style={{ marginTop: '0.75rem' }}>
               <ClipboardCopy isReadOnly className="mono">{createdSA.api_key || ''}</ClipboardCopy>

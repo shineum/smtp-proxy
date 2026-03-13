@@ -9,9 +9,6 @@ SELECT * FROM groups WHERE id = $1;
 -- name: GetGroupByName :one
 SELECT * FROM groups WHERE name = $1;
 
--- name: GetGroupByGroupKey :one
-SELECT * FROM groups WHERE group_key = $1;
-
 -- name: ListGroups :many
 SELECT * FROM groups WHERE status != 'deleted' ORDER BY created_at DESC;
 

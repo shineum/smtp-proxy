@@ -464,11 +464,7 @@ func (m *mockQuerier) UpdateUserProvider(_ context.Context, _ storage.UpdateUser
 	return storage.User{}, nil
 }
 
-func (m *mockQuerier) GetGroupByGroupKey(_ context.Context, _ uuid.UUID) (storage.Group, error) {
-	return storage.Group{}, nil
-}
-
-func (m *mockQuerier) GetUserByUsernameAndGroupKey(_ context.Context, arg storage.GetUserByUsernameAndGroupKeyParams) (storage.User, error) {
+func (m *mockQuerier) GetUserByUsernameAndGroupID(_ context.Context, arg storage.GetUserByUsernameAndGroupIDParams) (storage.User, error) {
 	if m.getUserByUsernameFn != nil {
 		return m.getUserByUsernameFn(context.Background(), arg.Username)
 	}
@@ -520,8 +516,8 @@ func newAuthenticatedSession(mock *mockQuerier, userID, groupID uuid.UUID, allow
 
 const testAPIKey = "test-api-key-0123456789abcdef"
 
-// testGroupKey is a fixed UUID used as the group_key in auth tests.
-var testGroupKey = uuid.MustParse("00000000-0000-0000-0000-000000000099")
+// testGroupID is a fixed UUID used as the group_id in auth tests.
+var testGroupID = uuid.MustParse("00000000-0000-0000-0000-000000000099")
 
 // newMockWithAuth creates a mockQuerier pre-configured for a successful auth flow.
 func newMockWithAuth(userID, groupID uuid.UUID, apiKey string, domainsJSON []byte) *mockQuerier {
@@ -585,7 +581,7 @@ func TestSession_Auth_Success(t *testing.T) {
 	mock := newMockWithAuth(userID, groupID, testAPIKey, domainsJSON)
 	s := newTestSession(mock)
 
-	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), testAPIKey)
+	err := authenticateSession(t, s, "testuser@"+testGroupID.String(), testAPIKey)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -610,7 +606,7 @@ func TestSession_Auth_InvalidAPIKey(t *testing.T) {
 	mock := newMockWithAuth(userID, groupID, testAPIKey, nil)
 	s := newTestSession(mock)
 
-	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), "wrong-api-key")
+	err := authenticateSession(t, s, "testuser@"+testGroupID.String(), "wrong-api-key")
 	if err == nil {
 		t.Fatal("expected error for invalid API key")
 	}
@@ -635,7 +631,7 @@ func TestSession_Auth_UnknownUser(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "unknown@"+testGroupKey.String(), "any-password")
+	err := authenticateSession(t, s, "unknown@"+testGroupID.String(), "any-password")
 	if err == nil {
 		t.Fatal("expected error for unknown user")
 	}
@@ -674,7 +670,7 @@ func TestSession_Auth_InactiveUser(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), testAPIKey)
+	err := authenticateSession(t, s, "testuser@"+testGroupID.String(), testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for inactive user")
 	}
@@ -704,7 +700,7 @@ func TestSession_Auth_NonSmtpAccountType(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), testAPIKey)
+	err := authenticateSession(t, s, "testuser@"+testGroupID.String(), testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for non-smtp account type")
 	}
@@ -739,7 +735,7 @@ func TestSession_Auth_NoGroupMembership(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), testAPIKey)
+	err := authenticateSession(t, s, "testuser@"+testGroupID.String(), testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for no group membership")
 	}
@@ -774,7 +770,7 @@ func TestSession_Auth_SuspendedGroup(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), testAPIKey)
+	err := authenticateSession(t, s, "testuser@"+testGroupID.String(), testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for suspended group")
 	}

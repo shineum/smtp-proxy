@@ -56,7 +56,7 @@ export default function GroupListPage() {
         <Thead>
           <Tr>
             <Th>Name</Th>
-            <Th>Group Key</Th>
+            <Th>ID</Th>
             <Th>Type</Th>
             <Th>Status</Th>
             <Th>Monthly Sent / Limit</Th>
@@ -73,8 +73,8 @@ export default function GroupListPage() {
                 ) : g.name}
               </Td>
               <Td>
-                <Tooltip content={g.group_key}>
-                  <span className="mono" style={{ cursor: 'default' }}>{g.group_key ? `${g.group_key.slice(0, 8)}...` : '-'}</span>
+                <Tooltip content={g.id}>
+                  <span className="mono" style={{ cursor: 'default' }}>{g.id ? `${g.id.slice(0, 8)}...` : '-'}</span>
                 </Tooltip>
               </Td>
               <Td><Label color={g.group_type === 'system' ? 'purple' : 'blue'}>{g.group_type}</Label></Td>

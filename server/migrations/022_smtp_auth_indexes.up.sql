@@ -1,5 +1,5 @@
 -- Migration 022: Add indexes for SMTP auth query performance
--- Optimizes GetUserByUsernameAndGroupKey JOIN path.
+-- Optimizes GetUserByUsernameAndGroupID JOIN path.
 
 BEGIN;
 

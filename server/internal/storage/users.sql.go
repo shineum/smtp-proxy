@@ -207,21 +207,21 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username sql.NullString
 	return i, err
 }
 
-const getUserByUsernameAndGroupKey = `-- name: GetUserByUsernameAndGroupKey :one
+const getUserByUsernameAndGroupID = `-- name: GetUserByUsernameAndGroupID :one
 SELECT u.id, u.email, u.password_hash, u.status, u.failed_attempts, u.last_login, u.created_at, u.updated_at, u.username, u.account_type, u.api_key, u.allowed_domains, u.password_disabled, u.provider_id, u.home_group_id, u.display_name, u.description, u.deleted_at, u.api_key_expires_at FROM users u
 JOIN groups g ON u.home_group_id = g.id
-WHERE u.username = $1 AND g.group_key = $2
+WHERE u.username = $1 AND g.id = $2
 AND u.account_type = 'smtp'
 AND u.deleted_at IS NULL
 `
 
-type GetUserByUsernameAndGroupKeyParams struct {
+type GetUserByUsernameAndGroupIDParams struct {
 	Username sql.NullString `json:"username"`
-	GroupKey uuid.UUID      `json:"group_key"`
+	ID       uuid.UUID      `json:"id"`
 }
 
-func (q *Queries) GetUserByUsernameAndGroupKey(ctx context.Context, arg GetUserByUsernameAndGroupKeyParams) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByUsernameAndGroupKey, arg.Username, arg.GroupKey)
+func (q *Queries) GetUserByUsernameAndGroupID(ctx context.Context, arg GetUserByUsernameAndGroupIDParams) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByUsernameAndGroupID, arg.Username, arg.ID)
 	var i User
 	err := row.Scan(
 		&i.ID,

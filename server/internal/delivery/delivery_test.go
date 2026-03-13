@@ -314,11 +314,7 @@ func (m *mockQuerier) UpdateUserProvider(_ context.Context, _ storage.UpdateUser
 	return storage.User{}, nil
 }
 
-func (m *mockQuerier) GetGroupByGroupKey(_ context.Context, _ uuid.UUID) (storage.Group, error) {
-	return storage.Group{}, nil
-}
-
-func (m *mockQuerier) GetUserByUsernameAndGroupKey(_ context.Context, _ storage.GetUserByUsernameAndGroupKeyParams) (storage.User, error) {
+func (m *mockQuerier) GetUserByUsernameAndGroupID(_ context.Context, _ storage.GetUserByUsernameAndGroupIDParams) (storage.User, error) {
 	return storage.User{}, nil
 }
 

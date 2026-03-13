@@ -101,9 +101,8 @@ GRP_RESP=$(curl -s -X POST "$API/groups" \
   -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"name":"e2e-test-group-a","monthly_limit":1000,"display_name":"E2E Test Group A"}')
 GRP_ID=$(jv id "$GRP_RESP")
-GRP_KEY=$(jv group_key "$GRP_RESP")
 [ -n "$GRP_ID" ] || fail_exit "Group A creation failed: $GRP_RESP"
-pass "Group A created: $GRP_ID (group_key: $GRP_KEY)"
+pass "Group A created: $GRP_ID"
 
 # 2.5 Create test group B (for cross-group provider tests)
 info "2.5 Create test group B"
@@ -111,7 +110,6 @@ GRPB_RESP=$(curl -s -X POST "$API/groups" \
   -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"name":"e2e-test-group-b","monthly_limit":500,"display_name":"E2E Test Group B"}')
 GRPB_ID=$(jv id "$GRPB_RESP")
-GRPB_KEY=$(jv group_key "$GRPB_RESP")
 [ -n "$GRPB_ID" ] || fail_exit "Group B creation failed: $GRPB_RESP"
 pass "Group B created: $GRPB_ID"
 
@@ -154,7 +152,7 @@ SA_KEY=$(jv api_key "$SA_RESP")
 pass "Service account created: $SA_ID (username: e2e-smtp)"
 
 echo ""
-info "SMTP login: e2e-smtp@$GRP_KEY"
+info "SMTP login: e2e-smtp@$GRP_ID"
 echo ""
 
 # =============================================================================
@@ -165,7 +163,7 @@ sleep 2
 
 # 3.1 Simple case
 info "3.1 Simple email (from, to, subject, body)"
-smtp_auth_test "e2e-smtp@$GRP_KEY" "$SA_KEY" > /dev/null
+smtp_auth_test "e2e-smtp@$GRP_ID" "$SA_KEY" > /dev/null
 pass "Simple email sent successfully"
 
 # 3.2 Complex case
@@ -176,7 +174,7 @@ echo "<html><body><h1>HTML Attachment</h1></body></html>" > test-data/sample.htm
 
 docker compose run --rm -T test-client \
   --host=smtp-server --port=587 --tls=starttls --insecure \
-  --user="e2e-smtp@$GRP_KEY" --password="$SA_KEY" \
+  --user="e2e-smtp@$GRP_ID" --password="$SA_KEY" \
   --from="sender@example.com" \
   --to="recipient@example.com" \
   --cc="cc-user@example.com" \
@@ -195,7 +193,7 @@ info "Step 4: SMTP auth negative cases"
 
 # 4.1 Human user cannot SMTP auth
 info "4.1 Human user SMTP auth (should fail)"
-if smtp_auth_test "testuser@example.com@$GRP_KEY" "testpass123" > /dev/null 2>&1; then
+if smtp_auth_test "testuser@example.com@$GRP_ID" "testpass123" > /dev/null 2>&1; then
   fail "Human user should NOT be able to SMTP auth"
 else
   pass "Human user SMTP auth correctly rejected"
@@ -210,7 +208,7 @@ SUSPEND_RESP=$(curl -s -X PATCH "$API/users/$SA_ID/status" \
 SUSPEND_STATUS=$(jv status "$SUSPEND_RESP")
 [ "$SUSPEND_STATUS" = "suspended" ] || fail "Failed to suspend user: $SUSPEND_RESP"
 
-if smtp_auth_test "e2e-smtp@$GRP_KEY" "$SA_KEY" > /dev/null 2>&1; then
+if smtp_auth_test "e2e-smtp@$GRP_ID" "$SA_KEY" > /dev/null 2>&1; then
   fail "Suspended account should NOT be able to SMTP auth"
 else
   pass "Suspended account SMTP auth correctly rejected"
@@ -230,7 +228,7 @@ info "4.3 Expired API key SMTP auth (should fail)"
 docker compose exec -T postgres psql -U smtp_proxy -d smtp_proxy -c \
   "UPDATE users SET api_key_expires_at = NOW() - INTERVAL '1 day' WHERE id = '$SA_ID';" > /dev/null
 
-if smtp_auth_test "e2e-smtp@$GRP_KEY" "$SA_KEY" > /dev/null 2>&1; then
+if smtp_auth_test "e2e-smtp@$GRP_ID" "$SA_KEY" > /dev/null 2>&1; then
   fail "Expired API key should NOT be able to SMTP auth"
 else
   pass "Expired API key SMTP auth correctly rejected"
@@ -242,7 +240,7 @@ docker compose exec -T postgres psql -U smtp_proxy -d smtp_proxy -c \
 info "API key expiration restored"
 
 # Verify SMTP auth works again after restoring expiration
-if smtp_auth_test "e2e-smtp@$GRP_KEY" "$SA_KEY" > /dev/null 2>&1; then
+if smtp_auth_test "e2e-smtp@$GRP_ID" "$SA_KEY" > /dev/null 2>&1; then
   pass "SMTP auth works after restoring expiration"
 else
   fail "SMTP auth should work after restoring expiration"
@@ -358,7 +356,7 @@ pass "API key reset successful (new key: ${NEW_KEY:0:12}...)"
 
 # 6.2 Old key should NOT work
 info "6.2 Old API key SMTP auth (should fail)"
-if smtp_auth_test "e2e-smtp@$GRP_KEY" "$OLD_KEY" > /dev/null 2>&1; then
+if smtp_auth_test "e2e-smtp@$GRP_ID" "$OLD_KEY" > /dev/null 2>&1; then
   fail "Old API key should NOT work after reset"
 else
   pass "Old API key correctly rejected after reset"
@@ -366,7 +364,7 @@ fi
 
 # 6.3 New key SHOULD work
 info "6.3 New API key SMTP auth (should succeed)"
-if smtp_auth_test "e2e-smtp@$GRP_KEY" "$NEW_KEY" > /dev/null 2>&1; then
+if smtp_auth_test "e2e-smtp@$GRP_ID" "$NEW_KEY" > /dev/null 2>&1; then
   pass "New API key works after reset"
 else
   fail "New API key should work after reset"
@@ -407,7 +405,7 @@ echo "  Group A: e2e-test-group-a ($GRP_ID)"
 echo "  Group B: e2e-test-group-b ($GRPB_ID)"
 echo "  Provider 1: private (system) | Provider 2: global"
 echo "  Provider 3: private (group A) | Provider 4: shared"
-echo "  Service account: e2e-smtp@$GRP_KEY"
+echo "  Service account: e2e-smtp@$GRP_ID"
 
 if [ "$FAIL_COUNT" -gt 0 ]; then
   exit 1

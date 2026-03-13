@@ -59,10 +59,10 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 	return sasl.NewPlainServer(func(identity, username, password string) error {
 		s.log.Info().Str("username", username).Msg("auth attempt")
 
-		// Step 1: Parse username@{group_key_uuid} format.
+		// Step 1: Parse username@{group_id_uuid} format.
 		atIdx := strings.LastIndex(username, "@")
 		if atIdx < 0 {
-			s.log.Warn().Str("username", username).Msg("auth failed: username must be in user@group-key format")
+			s.log.Warn().Str("username", username).Msg("auth failed: username must be in user@group-id format")
 			return &gosmtp.SMTPError{
 				Code:         535,
 				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
@@ -70,11 +70,11 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 		actualUsername := strings.ToLower(username[:atIdx])
-		groupKeyStr := username[atIdx+1:]
+		groupIDStr := username[atIdx+1:]
 
-		groupKeyUUID, err := uuid.Parse(groupKeyStr)
+		groupIDUUID, err := uuid.Parse(groupIDStr)
 		if err != nil {
-			s.log.Warn().Str("username", username).Msg("auth failed: invalid group key format")
+			s.log.Warn().Str("username", username).Msg("auth failed: invalid group id format")
 			return &gosmtp.SMTPError{
 				Code:         535,
 				EnhancedCode: gosmtp.EnhancedCode{5, 7, 8},
@@ -82,10 +82,10 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 
-		// Step 2: Look up user by username and group key.
-		user, err := s.queries.GetUserByUsernameAndGroupKey(s.ctx, storage.GetUserByUsernameAndGroupKeyParams{
+		// Step 2: Look up user by username and group id.
+		user, err := s.queries.GetUserByUsernameAndGroupID(s.ctx, storage.GetUserByUsernameAndGroupIDParams{
 			Username: sql.NullString{String: actualUsername, Valid: true},
-			GroupKey: groupKeyUUID,
+			ID:       groupIDUUID,
 		})
 		if err != nil {
 			s.log.Warn().Str("username", username).Msg("auth failed: user not found")

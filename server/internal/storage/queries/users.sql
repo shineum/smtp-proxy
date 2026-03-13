@@ -15,10 +15,10 @@ SELECT * FROM users WHERE username = $1 AND deleted_at IS NULL;
 -- name: GetUserByAPIKey :one
 SELECT * FROM users WHERE api_key = $1 AND deleted_at IS NULL;
 
--- name: GetUserByUsernameAndGroupKey :one
+-- name: GetUserByUsernameAndGroupID :one
 SELECT u.* FROM users u
 JOIN groups g ON u.home_group_id = g.id
-WHERE u.username = $1 AND g.group_key = $2
+WHERE u.username = $1 AND g.id = $2
 AND u.account_type = 'smtp'
 AND u.deleted_at IS NULL;
 

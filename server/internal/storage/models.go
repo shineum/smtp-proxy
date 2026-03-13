@@ -253,7 +253,6 @@ type Group struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	GroupType    string             `json:"group_type"`
-	GroupKey     uuid.UUID          `json:"group_key"`
 	DisplayName  sql.NullString     `json:"display_name"`
 	Description  pgtype.Text        `json:"description"`
 }

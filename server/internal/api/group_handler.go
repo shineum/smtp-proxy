@@ -42,7 +42,6 @@ type groupResponse struct {
 	Status       string     `json:"status"`
 	MonthlyLimit int32      `json:"monthly_limit"`
 	MonthlySent  int32      `json:"monthly_sent"`
-	GroupKey     uuid.UUID  `json:"group_key"`
 	DisplayName  *string    `json:"display_name,omitempty"`
 	Description  *string    `json:"description,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -69,7 +68,6 @@ func toGroupResponse(g storage.Group) groupResponse {
 		Status:       g.Status,
 		MonthlyLimit: g.MonthlyLimit,
 		MonthlySent:  g.MonthlySent,
-		GroupKey:     g.GroupKey,
 		CreatedAt:    timestampToTime(g.CreatedAt),
 		UpdatedAt:    timestampToTime(g.UpdatedAt),
 	}

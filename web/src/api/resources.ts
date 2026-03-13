@@ -2,7 +2,7 @@ import api from './client';
 import type {
   Group, GroupMember, Membership, User, Provider, ProviderHealth, ProviderAccess, ProviderUsage,
   RoutingRule, DashboardStats, TimeSeriesPoint,
-  UsageByUser, UsageByProvider, PaginatedMessages,
+  UsageByUser, UsageByGroup, UsageByProvider, PaginatedMessages,
   MessageDetail, ActivityLog,
 } from '../types/api';
 
@@ -99,6 +99,8 @@ export const fetchTimeSeries = async (from?: string, to?: string, group_id?: str
   (await api.get('/stats/timeseries', { params: { from, to, group_id } })).data;
 export const fetchUsageByUser = async (from?: string, to?: string, group_id?: string): Promise<UsageByUser[]> =>
   (await api.get('/stats/by-user', { params: { from, to, group_id } })).data;
+export const fetchUsageByGroup = async (from?: string, to?: string): Promise<UsageByGroup[]> =>
+  (await api.get('/stats/by-group', { params: { from, to } })).data;
 export const fetchUsageByProvider = async (from?: string, to?: string, group_id?: string): Promise<UsageByProvider[]> =>
   (await api.get('/stats/by-provider', { params: { from, to, group_id } })).data;
 

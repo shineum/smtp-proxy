@@ -124,6 +124,13 @@ export interface UsageByUser {
   count: number;
 }
 
+export interface UsageByGroup {
+  group_id: string;
+  group_name: string;
+  status: string;
+  count: number;
+}
+
 export interface UsageByProvider {
   provider: string;
   status: string;

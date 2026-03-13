@@ -7,9 +7,9 @@ import {
   MenuToggle, Badge,
 } from '@patternfly/react-core';
 import type { MenuToggleElement } from '@patternfly/react-core';
-import { fetchDashboardStats, fetchTimeSeries, fetchUsageByUser, fetchUsageByProvider, fetchGroups } from '../api/resources';
+import { fetchDashboardStats, fetchTimeSeries, fetchUsageByUser, fetchUsageByGroup, fetchUsageByProvider, fetchGroups } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
-import type { TimeSeriesPoint, UsageByUser, UsageByProvider } from '../types/api';
+import type { TimeSeriesPoint, UsageByUser, UsageByGroup, UsageByProvider } from '../types/api';
 
 function aggregateTimeSeries(points: TimeSeriesPoint[]) {
   const byDay = new Map<string, { sent: number; failed: number; total: number }>();
@@ -35,6 +35,19 @@ function aggregateByUser(points: UsageByUser[]) {
   }
   return Array.from(byUser.entries()).map(([user_id, counts]) => ({
     user_id, ...counts, total: counts.sent + counts.failed,
+  }));
+}
+
+function aggregateByGroup(points: UsageByGroup[]) {
+  const byGroup = new Map<string, { group_name: string; sent: number; failed: number }>();
+  for (const p of points) {
+    const entry = byGroup.get(p.group_id) || { group_name: p.group_name, sent: 0, failed: 0 };
+    if (p.status === 'delivered') entry.sent += p.count;
+    if (p.status === 'failed') entry.failed += p.count;
+    byGroup.set(p.group_id, entry);
+  }
+  return Array.from(byGroup.entries()).map(([group_id, { group_name, sent, failed }]) => ({
+    group_id, group_name, sent, failed, total: sent + failed,
   }));
 }
 
@@ -87,6 +100,14 @@ export default function DashboardPage() {
     queryKey: ['dashboard-usage-by-user', selectedGroupIds],
     queryFn: () => fetchUsageByUser(undefined, undefined, groupIdParam),
     refetchInterval: 15000,
+    enabled: !isSystemAdmin,
+  });
+
+  const { data: usageByGroup } = useQuery({
+    queryKey: ['dashboard-usage-by-group'],
+    queryFn: () => fetchUsageByGroup(),
+    refetchInterval: 15000,
+    enabled: isSystemAdmin,
   });
 
   const { data: usageByProvider } = useQuery({
@@ -115,6 +136,7 @@ export default function DashboardPage() {
 
   const daily = timeSeries ? aggregateTimeSeries(timeSeries) : [];
   const byUser = usageByUser ? aggregateByUser(usageByUser) : [];
+  const byGroup = usageByGroup ? aggregateByGroup(usageByGroup) : [];
   const byProvider = usageByProvider ? aggregateByProvider(usageByProvider) : [];
 
   return (
@@ -245,37 +267,71 @@ export default function DashboardPage() {
         </GridItem>
 
         <GridItem span={6}>
-          <Card>
-            <CardTitle>Usage by User</CardTitle>
-            <CardBody>
-              {byUser.length === 0 ? (
-                <p>No user usage data</p>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: 'left', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>User</th>
-                        <th style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>Sent</th>
-                        <th style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>Failed</th>
-                        <th style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {byUser.map((row) => (
-                        <tr key={row.user_id}>
-                          <td style={{ padding: '0.5rem', borderBottom: '1px solid #eee' }}>{row.user_id.slice(0, 8)}...</td>
-                          <td style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '1px solid #eee', color: '#3E8635' }}>{row.sent}</td>
-                          <td style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '1px solid #eee', color: '#C9190B' }}>{row.failed}</td>
-                          <td style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '1px solid #eee' }}>{row.total}</td>
+          {isSystemAdmin ? (
+            <Card>
+              <CardTitle>Usage by Group</CardTitle>
+              <CardBody>
+                {byGroup.length === 0 ? (
+                  <p>No group usage data</p>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>Group</th>
+                          <th style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>Sent</th>
+                          <th style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>Failed</th>
+                          <th style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>Total</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardBody>
-          </Card>
+                      </thead>
+                      <tbody>
+                        {byGroup.map((row) => (
+                          <tr key={row.group_id}>
+                            <td style={{ padding: '0.5rem', borderBottom: '1px solid #eee' }}>{row.group_name}</td>
+                            <td style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '1px solid #eee', color: '#3E8635' }}>{row.sent}</td>
+                            <td style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '1px solid #eee', color: '#C9190B' }}>{row.failed}</td>
+                            <td style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '1px solid #eee' }}>{row.total}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          ) : (
+            <Card>
+              <CardTitle>Usage by User</CardTitle>
+              <CardBody>
+                {byUser.length === 0 ? (
+                  <p>No user usage data</p>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>User</th>
+                          <th style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>Sent</th>
+                          <th style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>Failed</th>
+                          <th style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '2px solid #d2d2d2' }}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {byUser.map((row) => (
+                          <tr key={row.user_id}>
+                            <td style={{ padding: '0.5rem', borderBottom: '1px solid #eee' }}>{row.user_id.slice(0, 8)}...</td>
+                            <td style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '1px solid #eee', color: '#3E8635' }}>{row.sent}</td>
+                            <td style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '1px solid #eee', color: '#C9190B' }}>{row.failed}</td>
+                            <td style={{ textAlign: 'right', padding: '0.5rem', borderBottom: '1px solid #eee' }}>{row.total}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          )}
         </GridItem>
 
         <GridItem span={6}>

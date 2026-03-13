@@ -132,6 +132,7 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			r.Get("/dashboard", DashboardHandler(cfg.Queries))
 			r.Get("/timeseries", TimeSeriesHandler(cfg.Queries))
 			r.Get("/by-user", UsageByUserHandler(cfg.Queries))
+			r.Get("/by-group", UsageByGroupHandler(cfg.Queries))
 			r.Get("/by-provider", UsageByProviderHandler(cfg.Queries))
 		})
 

@@ -545,6 +545,10 @@ func (m *mockQuerier) DeliveryCountsByProviderAndGroupIDs(_ context.Context, _ s
 	return nil, nil
 }
 
+func (m *mockQuerier) DeliveryCountsByGroupAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DeliveryCountsByGroupAllRow, error) {
+	return nil, nil
+}
+
 func (m *mockQuerier) CountDeliveryLogsByProvider(_ context.Context, _ storage.CountDeliveryLogsByProviderParams) ([]storage.CountDeliveryLogsByProviderRow, error) {
 	return nil, nil
 }

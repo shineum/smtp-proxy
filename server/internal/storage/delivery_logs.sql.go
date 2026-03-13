@@ -690,6 +690,41 @@ func (q *Queries) DeliveryCountsByUserAll(ctx context.Context, arg DateRangePara
 	return items, nil
 }
 
+const deliveryCountsByGroupAll = `-- name: DeliveryCountsByGroupAll :many
+SELECT g.id as group_id, g.name as group_name, dl.status, COUNT(*)::integer as count
+FROM delivery_logs dl
+JOIN groups g ON g.id = dl.group_id
+WHERE dl.created_at >= $1 AND dl.created_at <= $2
+GROUP BY g.id, g.name, dl.status
+`
+
+type DeliveryCountsByGroupAllRow struct {
+	GroupID   pgtype.UUID `json:"group_id"`
+	GroupName string      `json:"group_name"`
+	Status    string      `json:"status"`
+	Count     int32       `json:"count"`
+}
+
+func (q *Queries) DeliveryCountsByGroupAll(ctx context.Context, arg DateRangeParams) ([]DeliveryCountsByGroupAllRow, error) {
+	rows, err := q.db.Query(ctx, deliveryCountsByGroupAll, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeliveryCountsByGroupAllRow
+	for rows.Next() {
+		var i DeliveryCountsByGroupAllRow
+		if err := rows.Scan(&i.GroupID, &i.GroupName, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 // MultiGroupDateRangeParams is a shared params type for multi-group date range queries.
 type MultiGroupDateRangeParams struct {
 	GroupIDs    []pgtype.UUID      `json:"group_ids"`

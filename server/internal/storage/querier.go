@@ -45,6 +45,7 @@ type Querier interface {
 	DeleteSession(ctx context.Context, id uuid.UUID) error
 	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	DeliveryCountsByGroupAll(ctx context.Context, arg DateRangeParams) ([]DeliveryCountsByGroupAllRow, error)
 	DeliveryCountsByGroupAndProvider(ctx context.Context, arg DeliveryCountsByGroupAndProviderParams) ([]DeliveryCountsByGroupAndProviderRow, error)
 	DeliveryCountsByGroupAndUser(ctx context.Context, arg DeliveryCountsByGroupAndUserParams) ([]DeliveryCountsByGroupAndUserRow, error)
 	DeliveryCountsByProviderAll(ctx context.Context, arg DateRangeParams) ([]DeliveryCountsByGroupAndProviderRow, error)

@@ -112,6 +112,13 @@ FROM delivery_logs
 WHERE created_at >= $1 AND created_at <= $2
 GROUP BY provider, status;
 
+-- name: DeliveryCountsByGroupAll :many
+SELECT g.id as group_id, g.name as group_name, dl.status, COUNT(*)::integer as count
+FROM delivery_logs dl
+JOIN groups g ON g.id = dl.group_id
+WHERE dl.created_at >= $1 AND dl.created_at <= $2
+GROUP BY g.id, g.name, dl.status;
+
 -- name: CountDeliveryLogsByGroupIDs :many
 SELECT status, COUNT(*)::integer as count
 FROM delivery_logs

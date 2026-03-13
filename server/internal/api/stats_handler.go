@@ -394,6 +394,58 @@ func UsageByProviderHandler(queries storage.Querier) http.HandlerFunc {
 	}
 }
 
+// usageByGroupRow represents per-group delivery counts.
+type usageByGroupRow struct {
+	GroupID   string `json:"group_id"`
+	GroupName string `json:"group_name"`
+	Status    string `json:"status"`
+	Count     int32  `json:"count"`
+}
+
+// UsageByGroupHandler handles GET /api/v1/stats/by-group.
+// Returns per-group delivery counts. Only available for system admins.
+func UsageByGroupHandler(queries storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		if !isSystemAdmin(r) {
+			respondError(w, http.StatusForbidden, "forbidden")
+			return
+		}
+
+		fromTS, toTS := parseDateRange(r)
+
+		rows, err := queries.DeliveryCountsByGroupAll(r.Context(), storage.DateRangeParams{
+			CreatedAt:   fromTS,
+			CreatedAt_2: toTS,
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		result := make([]usageByGroupRow, len(rows))
+		for i, row := range rows {
+			gid := ""
+			if row.GroupID.Valid {
+				gid = uuid.UUID(row.GroupID.Bytes).String()
+			}
+			result[i] = usageByGroupRow{
+				GroupID:   gid,
+				GroupName: row.GroupName,
+				Status:   row.Status,
+				Count:    row.Count,
+			}
+		}
+
+		respondJSON(w, http.StatusOK, result)
+	}
+}
+
 // ProviderHealthHandler handles GET /api/v1/providers/{id}/health.
 // Returns a basic health status for a provider.
 func ProviderHealthHandler(queries storage.Querier) http.HandlerFunc {

@@ -2,9 +2,9 @@ package delivery
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 
 	"github.com/sungwon/smtp-proxy/server/internal/queue"
@@ -31,9 +31,9 @@ func TestAsyncService_ImplementsInterface(t *testing.T) {
 }
 
 func TestRequest_Fields(t *testing.T) {
-	msgID := uuid.New()
-	userID := uuid.New()
-	groupID := uuid.New()
+	var msgID int64 = 1001
+	var userID int32 = 10
+	var groupID int32 = 20
 
 	req := &Request{
 		MessageID: msgID,
@@ -42,13 +42,13 @@ func TestRequest_Fields(t *testing.T) {
 	}
 
 	if req.MessageID != msgID {
-		t.Errorf("expected MessageID=%s, got %s", msgID, req.MessageID)
+		t.Errorf("expected MessageID=%d, got %d", msgID, req.MessageID)
 	}
 	if req.UserID != userID {
-		t.Errorf("expected UserID=%s, got %s", userID, req.UserID)
+		t.Errorf("expected UserID=%d, got %d", userID, req.UserID)
 	}
 	if req.GroupID != groupID {
-		t.Errorf("expected GroupID=%s, got %s", groupID, req.GroupID)
+		t.Errorf("expected GroupID=%d, got %d", groupID, req.GroupID)
 	}
 }
 
@@ -77,9 +77,9 @@ func TestAsyncService_DeliverMessage(t *testing.T) {
 	svc := NewAsyncService(mock, "smtp-proxy", log)
 
 	req := &Request{
-		MessageID: uuid.New(),
-		UserID:    uuid.New(),
-		GroupID:   uuid.New(),
+		MessageID: 1001,
+		UserID:    10,
+		GroupID:   20,
 	}
 
 	err := svc.DeliverMessage(context.Background(), req)
@@ -90,11 +90,13 @@ func TestAsyncService_DeliverMessage(t *testing.T) {
 	if capturedMsg == nil {
 		t.Fatal("expected Enqueue to be called")
 	}
-	if capturedMsg.ID != req.MessageID.String() {
-		t.Errorf("message ID = %q, want %q", capturedMsg.ID, req.MessageID.String())
+	expectedID := fmt.Sprintf("%d", req.MessageID)
+	if capturedMsg.ID != expectedID {
+		t.Errorf("message ID = %q, want %q", capturedMsg.ID, expectedID)
 	}
-	if capturedMsg.AccountID != req.GroupID.String() {
-		t.Errorf("account ID (group) = %q, want %q", capturedMsg.AccountID, req.GroupID.String())
+	expectedAccountID := fmt.Sprintf("%d", req.GroupID)
+	if capturedMsg.AccountID != expectedAccountID {
+		t.Errorf("account ID (group) = %q, want %q", capturedMsg.AccountID, expectedAccountID)
 	}
 	if capturedMsg.TenantID != "smtp-proxy" {
 		t.Errorf("tenant ID (stream) = %q, want %q", capturedMsg.TenantID, "smtp-proxy")

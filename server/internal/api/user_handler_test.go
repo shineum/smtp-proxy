@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -19,7 +18,7 @@ import (
 func TestToUserResponse(t *testing.T) {
 	now := time.Now()
 	user := storage.User{
-		ID:          uuid.New(),
+		ID:          1,
 		Email:       "user@example.com",
 		AccountType: "user",
 		Status:      "active",
@@ -54,7 +53,7 @@ func TestToUserResponse(t *testing.T) {
 func TestToUserResponse_NoLastLogin(t *testing.T) {
 	now := time.Now()
 	user := storage.User{
-		ID:          uuid.New(),
+		ID:          1,
 		Email:       "user@example.com",
 		AccountType: "user",
 		Status:      "active",
@@ -72,7 +71,7 @@ func TestToUserResponse_NoLastLogin(t *testing.T) {
 
 func TestToUserResponseWithAPIKey(t *testing.T) {
 	user := storage.User{
-		ID:          uuid.New(),
+		ID:          1,
 		Email:       "smtp@example.com",
 		AccountType: "smtp",
 		Status:      "active",
@@ -127,7 +126,7 @@ func TestCreateUserHandler_HumanUser(t *testing.T) {
 		},
 		createGroupMemberFn: func(ctx context.Context, arg storage.CreateGroupMemberParams) (storage.GroupMember, error) {
 			if arg.GroupID != groupID {
-				t.Errorf("expected group ID %s, got %s", groupID, arg.GroupID)
+				t.Errorf("expected group ID %d, got %d", groupID, arg.GroupID)
 			}
 			if arg.Role != "member" {
 				t.Errorf("expected role member, got %s", arg.Role)
@@ -136,7 +135,7 @@ func TestCreateUserHandler_HumanUser(t *testing.T) {
 		},
 	}
 
-	body := `{"email":"new@example.com","password":"pass123","account_type":"user","group_id":"` + groupID.String() + `"}`
+	body := `{"email":"new@example.com","password":"pass123","account_type":"user","group_id":"` + int32ToStr(groupID) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -158,7 +157,7 @@ func TestCreateUserHandler_SMTPAccount(t *testing.T) {
 	smtpUser.ApiKey = sql.NullString{String: "generated-api-key", Valid: true}
 
 	groupID := testGroup().ID
-	providerID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var providerID int32 = 99
 
 	mock := &mockQuerier{
 		createUserFn: func(ctx context.Context, arg storage.CreateUserParams) (storage.User, error) {
@@ -176,12 +175,12 @@ func TestCreateUserHandler_SMTPAccount(t *testing.T) {
 		createGroupMemberFn: func(ctx context.Context, arg storage.CreateGroupMemberParams) (storage.GroupMember, error) {
 			return testGroupMember(), nil
 		},
-		getProviderByIDFn: func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error) {
+		getProviderByIDFn: func(ctx context.Context, id int32) (storage.EspProvider, error) {
 			return storage.EspProvider{ID: providerID, GroupID: groupID, Enabled: true}, nil
 		},
 	}
 
-	body := `{"email":"smtp@example.com","account_type":"smtp","username":"smtp-bot","group_id":"` + groupID.String() + `","provider_id":"` + providerID.String() + `"}`
+	body := `{"email":"smtp@example.com","account_type":"smtp","username":"smtp-bot","group_id":"` + int32ToStr(groupID) + `","provider_id":"` + int32ToStr(providerID) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -228,11 +227,11 @@ func TestCreateUserHandler_SMTPAccount_RequiresGroupAndProvider(t *testing.T) {
 
 func TestCreateUserHandler_SMTPAccount_ProviderMustBelongToGroup(t *testing.T) {
 	groupID := testGroup().ID
-	providerID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
-	otherGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000077")
+	var providerID int32 = 99
+	var otherGroupID int32 = 77
 
 	mock := &mockQuerier{
-		getProviderByIDFn: func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error) {
+		getProviderByIDFn: func(ctx context.Context, id int32) (storage.EspProvider, error) {
 			// Provider belongs to a different group
 			return storage.EspProvider{ID: providerID, GroupID: otherGroupID, Enabled: true}, nil
 		},
@@ -242,7 +241,7 @@ func TestCreateUserHandler_SMTPAccount_ProviderMustBelongToGroup(t *testing.T) {
 		},
 	}
 
-	body := `{"account_type":"smtp","username":"smtp-bot","group_id":"` + groupID.String() + `","provider_id":"` + providerID.String() + `"}`
+	body := `{"account_type":"smtp","username":"smtp-bot","group_id":"` + int32ToStr(groupID) + `","provider_id":"` + int32ToStr(providerID) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -369,16 +368,16 @@ func TestListUsersHandler_MemberDenied(t *testing.T) {
 func TestGetUserHandler_Found(t *testing.T) {
 	usr := testUser()
 	mock := &mockQuerier{
-		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+		getUserByIDFn: func(ctx context.Context, id int32) (storage.User, error) {
 			return usr, nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+usr.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+int32ToStr(usr.ID), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", usr.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(usr.ID))
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	handler := GetUserHandler(mock)
@@ -391,17 +390,17 @@ func TestGetUserHandler_Found(t *testing.T) {
 
 func TestGetUserHandler_NotFound(t *testing.T) {
 	mock := &mockQuerier{
-		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+		getUserByIDFn: func(ctx context.Context, id int32) (storage.User, error) {
 			return storage.User{}, errNotFound
 		},
 	}
 
-	id := uuid.New()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+id.String(), nil)
+	var id int32 = 999
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+int32ToStr(id), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", id.String())
+	rctx.URLParams.Add("id", int32ToStr(id))
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	handler := GetUserHandler(mock)
@@ -425,12 +424,12 @@ func TestUpdateUserStatusHandler(t *testing.T) {
 	}
 
 	body := `{"status":"suspended"}`
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+usr.ID.String()+"/status", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+int32ToStr(usr.ID)+"/status", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", usr.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(usr.ID))
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	handler := UpdateUserStatusHandler(mock, nil)
@@ -444,13 +443,14 @@ func TestUpdateUserStatusHandler(t *testing.T) {
 func TestUpdateUserStatusHandler_InvalidStatus(t *testing.T) {
 	mock := &mockQuerier{}
 
+	var id int32 = 999
 	body := `{"status":"deleted"}`
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+uuid.New().String()+"/status", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+int32ToStr(id)+"/status", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", uuid.New().String())
+	rctx.URLParams.Add("id", int32ToStr(id))
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	handler := UpdateUserStatusHandler(mock, nil)
@@ -464,18 +464,18 @@ func TestUpdateUserStatusHandler_InvalidStatus(t *testing.T) {
 func TestDeleteUserHandler_Success(t *testing.T) {
 	deleteCalled := false
 	mock := &mockQuerier{
-		softDeleteUserFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+		softDeleteUserFn: func(ctx context.Context, id int32) (storage.User, error) {
 			deleteCalled = true
 			return storage.User{}, nil
 		},
 	}
 
-	id := uuid.New()
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+id.String(), nil)
+	var id int32 = 999
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/users/"+int32ToStr(id), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", id.String())
+	rctx.URLParams.Add("id", int32ToStr(id))
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	handler := DeleteUserHandler(mock, nil)

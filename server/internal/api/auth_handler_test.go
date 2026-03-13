@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -42,8 +41,8 @@ func TestHashToken(t *testing.T) {
 }
 
 func TestLoginHandler_Success(t *testing.T) {
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	groupID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	var userID int32 = 1
+	var groupID int32 = 10
 
 	hash, _ := auth.HashPassword("password123")
 	user := storage.User{
@@ -62,7 +61,6 @@ func TestLoginHandler_Success(t *testing.T) {
 	}
 
 	member := storage.GroupMember{
-		ID:      uuid.New(),
 		GroupID:  groupID,
 		UserID:  userID,
 		Role:    "admin",
@@ -75,7 +73,7 @@ func TestLoginHandler_Success(t *testing.T) {
 			}
 			return user, nil
 		},
-		listGroupsByUserIDFn: func(ctx context.Context, uid uuid.UUID) ([]storage.Group, error) {
+		listGroupsByUserIDFn: func(ctx context.Context, uid int32) ([]storage.Group, error) {
 			return []storage.Group{grp}, nil
 		},
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
@@ -83,9 +81,9 @@ func TestLoginHandler_Success(t *testing.T) {
 		},
 		createSessionFn: func(ctx context.Context, arg storage.CreateSessionParams) (storage.Session, error) {
 			if arg.GroupID != groupID {
-				t.Errorf("expected session GroupID %s, got %s", groupID, arg.GroupID)
+				t.Errorf("expected session GroupID %d, got %d", groupID, arg.GroupID)
 			}
-			return storage.Session{ID: uuid.New()}, nil
+			return storage.Session{ID: 1}, nil
 		},
 	}
 
@@ -123,8 +121,8 @@ func TestLoginHandler_Success(t *testing.T) {
 }
 
 func TestLoginHandler_WithGroupID(t *testing.T) {
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	groupID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	var userID int32 = 1
+	var groupID int32 = 10
 
 	hash, _ := auth.HashPassword("password123")
 	user := storage.User{
@@ -143,7 +141,6 @@ func TestLoginHandler_WithGroupID(t *testing.T) {
 	}
 
 	member := storage.GroupMember{
-		ID:      uuid.New(),
 		GroupID:  groupID,
 		UserID:  userID,
 		Role:    "owner",
@@ -155,15 +152,15 @@ func TestLoginHandler_WithGroupID(t *testing.T) {
 		},
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
 			if arg.GroupID != groupID {
-				t.Errorf("expected group ID %s, got %s", groupID, arg.GroupID)
+				t.Errorf("expected group ID %d, got %d", groupID, arg.GroupID)
 			}
 			return member, nil
 		},
-		getGroupByIDFn: func(ctx context.Context, id uuid.UUID) (storage.Group, error) {
+		getGroupByIDFn: func(ctx context.Context, id int32) (storage.Group, error) {
 			return grp, nil
 		},
 		createSessionFn: func(ctx context.Context, arg storage.CreateSessionParams) (storage.Session, error) {
-			return storage.Session{ID: uuid.New()}, nil
+			return storage.Session{ID: 1}, nil
 		},
 	}
 
@@ -173,7 +170,7 @@ func TestLoginHandler_WithGroupID(t *testing.T) {
 		RefreshTokenExpiry: 7 * 24 * time.Hour,
 	})
 
-	body := `{"email":"test@example.com","password":"password123","group_id":"` + groupID.String() + `"}`
+	body := `{"email":"test@example.com","password":"password123","group_id":"` + int32ToStr(groupID) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
@@ -215,7 +212,7 @@ func TestLoginHandler_InvalidCredentials(t *testing.T) {
 func TestLoginHandler_InactiveUser(t *testing.T) {
 	hash, _ := auth.HashPassword("password123")
 	user := storage.User{
-		ID:           uuid.New(),
+		ID:           1,
 		Email:        "test@example.com",
 		PasswordHash: hash,
 		Status:       "suspended",
@@ -250,7 +247,7 @@ func TestLoginHandler_InactiveUser(t *testing.T) {
 func TestLoginHandler_NoGroupMembership(t *testing.T) {
 	hash, _ := auth.HashPassword("password123")
 	user := storage.User{
-		ID:           uuid.New(),
+		ID:           1,
 		Email:        "test@example.com",
 		PasswordHash: hash,
 		Status:       "active",
@@ -261,7 +258,7 @@ func TestLoginHandler_NoGroupMembership(t *testing.T) {
 		getUserByEmailFn: func(ctx context.Context, email string) (storage.User, error) {
 			return user, nil
 		},
-		listGroupsByUserIDFn: func(ctx context.Context, uid uuid.UUID) ([]storage.Group, error) {
+		listGroupsByUserIDFn: func(ctx context.Context, uid int32) ([]storage.Group, error) {
 			return []storage.Group{}, nil // No groups
 		},
 	}
@@ -307,9 +304,9 @@ func TestLoginHandler_MissingFields(t *testing.T) {
 }
 
 func TestRefreshHandler_Success(t *testing.T) {
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	groupID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
-	sessionID := uuid.New()
+	var userID int32 = 1
+	var groupID int32 = 10
+	var sessionID int32 = 100
 
 	jwtSvc := auth.NewJWTService(auth.JWTConfig{
 		SigningKey:         "test-secret-key-that-is-long-enough-32",
@@ -340,20 +337,19 @@ func TestRefreshHandler_Success(t *testing.T) {
 	}
 
 	member := storage.GroupMember{
-		ID:      uuid.New(),
 		GroupID:  groupID,
 		UserID:  userID,
 		Role:    "admin",
 	}
 
 	mock := &mockQuerier{
-		getSessionByIDFn: func(ctx context.Context, id uuid.UUID) (storage.Session, error) {
+		getSessionByIDFn: func(ctx context.Context, id int32) (storage.Session, error) {
 			return session, nil
 		},
-		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+		getUserByIDFn: func(ctx context.Context, id int32) (storage.User, error) {
 			return user, nil
 		},
-		getGroupByIDFn: func(ctx context.Context, id uuid.UUID) (storage.Group, error) {
+		getGroupByIDFn: func(ctx context.Context, id int32) (storage.Group, error) {
 			return grp, nil
 		},
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
@@ -404,9 +400,9 @@ func TestRefreshHandler_InvalidToken(t *testing.T) {
 }
 
 func TestLogoutHandler_Success(t *testing.T) {
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	groupID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
-	sessionID := uuid.New()
+	var userID int32 = 1
+	var groupID int32 = 10
+	var sessionID int32 = 100
 
 	jwtSvc := auth.NewJWTService(auth.JWTConfig{
 		SigningKey:         "test-secret-key-that-is-long-enough-32",
@@ -417,10 +413,10 @@ func TestLogoutHandler_Success(t *testing.T) {
 
 	deleteCalled := false
 	mock := &mockQuerier{
-		deleteSessionFn: func(ctx context.Context, id uuid.UUID) error {
+		deleteSessionFn: func(ctx context.Context, id int32) error {
 			deleteCalled = true
 			if id != sessionID {
-				t.Errorf("expected session ID %s, got %s", sessionID, id)
+				t.Errorf("expected session ID %d, got %d", sessionID, id)
 			}
 			return nil
 		},
@@ -465,9 +461,9 @@ func TestLogoutHandler_InvalidToken(t *testing.T) {
 }
 
 func TestSwitchGroupHandler_Success(t *testing.T) {
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	currentGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
-	targetGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000020")
+	var userID int32 = 1
+	var currentGroupID int32 = 10
+	var targetGroupID int32 = 20
 
 	user := storage.User{
 		ID:          userID,
@@ -484,30 +480,29 @@ func TestSwitchGroupHandler_Success(t *testing.T) {
 	}
 
 	member := storage.GroupMember{
-		ID:      uuid.New(),
 		GroupID:  targetGroupID,
 		UserID:  userID,
 		Role:    "member",
 	}
 
 	mock := &mockQuerier{
-		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+		getUserByIDFn: func(ctx context.Context, id int32) (storage.User, error) {
 			return user, nil
 		},
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
 			if arg.GroupID != targetGroupID {
-				t.Errorf("expected target group ID %s, got %s", targetGroupID, arg.GroupID)
+				t.Errorf("expected target group ID %d, got %d", targetGroupID, arg.GroupID)
 			}
 			return member, nil
 		},
-		getGroupByIDFn: func(ctx context.Context, id uuid.UUID) (storage.Group, error) {
+		getGroupByIDFn: func(ctx context.Context, id int32) (storage.Group, error) {
 			return targetGroup, nil
 		},
 		createSessionFn: func(ctx context.Context, arg storage.CreateSessionParams) (storage.Session, error) {
 			if arg.GroupID != targetGroupID {
-				t.Errorf("expected session GroupID %s, got %s", targetGroupID, arg.GroupID)
+				t.Errorf("expected session GroupID %d, got %d", targetGroupID, arg.GroupID)
 			}
-			return storage.Session{ID: uuid.New()}, nil
+			return storage.Session{ID: 1}, nil
 		},
 	}
 
@@ -517,7 +512,7 @@ func TestSwitchGroupHandler_Success(t *testing.T) {
 		RefreshTokenExpiry: 7 * 24 * time.Hour,
 	})
 
-	body := `{"group_id":"` + targetGroupID.String() + `"}`
+	body := `{"group_id":"` + int32ToStr(targetGroupID) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/switch-group", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -543,9 +538,9 @@ func TestSwitchGroupHandler_Success(t *testing.T) {
 }
 
 func TestSwitchGroupHandler_NotMember(t *testing.T) {
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	currentGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
-	targetGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000020")
+	var userID int32 = 1
+	var currentGroupID int32 = 10
+	var targetGroupID int32 = 20
 
 	user := storage.User{
 		ID:          userID,
@@ -555,7 +550,7 @@ func TestSwitchGroupHandler_NotMember(t *testing.T) {
 	}
 
 	mock := &mockQuerier{
-		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+		getUserByIDFn: func(ctx context.Context, id int32) (storage.User, error) {
 			return user, nil
 		},
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
@@ -569,7 +564,7 @@ func TestSwitchGroupHandler_NotMember(t *testing.T) {
 		RefreshTokenExpiry: 7 * 24 * time.Hour,
 	})
 
-	body := `{"group_id":"` + targetGroupID.String() + `"}`
+	body := `{"group_id":"` + int32ToStr(targetGroupID) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/switch-group", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -598,8 +593,8 @@ func TestSwitchGroupHandler_MissingGroupID(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/switch-group", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	groupID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
+	var userID int32 = 1
+	var groupID int32 = 10
 	ctx := setJWTContext(req.Context(), userID, groupID, "admin", "organization")
 	req = req.WithContext(ctx)
 

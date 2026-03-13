@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -16,12 +15,12 @@ import (
 func TestListActivityLogsHandler_Success(t *testing.T) {
 	grp := testGroup()
 	log := storage.ActivityLog{
-		ID:           uuid.New(),
+		ID:           1,
 		GroupID:      grp.ID,
-		ActorID:      pgtype.UUID{Bytes: testUser().ID, Valid: true},
+		ActorID:      pgtype.Int4{Int32: testUser().ID, Valid: true},
 		Action:       "admin.create_user",
 		ResourceType: "user",
-		ResourceID:   pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		ResourceID:   pgtype.Int4{Int32: 5, Valid: true},
 		Changes:      []byte(`{"email":"new@test.com"}`),
 		CreatedAt:    pgtype.Timestamptz{Valid: true},
 	}
@@ -29,7 +28,7 @@ func TestListActivityLogsHandler_Success(t *testing.T) {
 	mock := &mockQuerier{
 		listActivityLogsByGroupIDFn: func(ctx context.Context, arg storage.ListActivityLogsByGroupIDParams) ([]storage.ActivityLog, error) {
 			if arg.GroupID != grp.ID {
-				t.Errorf("expected group ID %s, got %s", grp.ID, arg.GroupID)
+				t.Errorf("expected group ID %d, got %d", grp.ID, arg.GroupID)
 			}
 			if arg.Limit != 50 {
 				t.Errorf("expected default limit 50, got %d", arg.Limit)
@@ -41,11 +40,11 @@ func TestListActivityLogsHandler_Success(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+grp.ID.String()+"/activity", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+int32ToStr(grp.ID)+"/activity", nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	ctx = setJWTContext(ctx, testUser().ID, grp.ID, "admin", "organization")
 	req = req.WithContext(ctx)
@@ -84,11 +83,11 @@ func TestListActivityLogsHandler_WithPagination(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+grp.ID.String()+"/activity?limit=10&offset=20", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+int32ToStr(grp.ID)+"/activity?limit=10&offset=20", nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	ctx = setJWTContext(ctx, testUser().ID, grp.ID, "admin", "organization")
 	req = req.WithContext(ctx)
@@ -105,14 +104,14 @@ func TestListActivityLogsHandler_Forbidden(t *testing.T) {
 	grp := testGroup()
 	mock := &mockQuerier{}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+grp.ID.String()+"/activity", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+int32ToStr(grp.ID)+"/activity", nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	// Different group, not system type
-	otherGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var otherGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, otherGroupID, "admin", "company")
 	req = req.WithContext(ctx)
 
@@ -132,13 +131,13 @@ func TestListActivityLogsHandler_SystemAdminCanAccessAnyGroup(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+grp.ID.String()+"/activity", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+int32ToStr(grp.ID)+"/activity", nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -182,11 +181,11 @@ func TestListActivityLogsHandler_LimitCap(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+grp.ID.String()+"/activity?limit=999", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+int32ToStr(grp.ID)+"/activity?limit=999", nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	ctx = setJWTContext(ctx, testUser().ID, grp.ID, "admin", "organization")
 	req = req.WithContext(ctx)

@@ -56,7 +56,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 |-------|-------|
 | **Precondition** | TC-002 passed. |
 | **Steps** | POST `/api/v1/groups` for Group A and Group B |
-| **Expected** | 201 Created for both. Each has unique `id`, `group_key` (UUID), `group_type: "company"`. |
+| **Expected** | 201 Created for both. Each has unique `id` (integer), `group_type: "company"`. |
 
 ### TC-007: Switch Group Context
 
@@ -99,7 +99,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 | Field | Value |
 |-------|-------|
 | **Precondition** | TC-010 passed. |
-| **Steps** | SMTP AUTH PLAIN with `e2e-smtp@<group_key>` / `<api_key>`. Send: From, To, Subject, plain text body. |
+| **Steps** | SMTP AUTH PLAIN with `e2e-smtp@<group_id>` / `<api_key>`. Send: From, To, Subject, plain text body. |
 | **Expected** | 250 OK. Auth log: `auth successful`. Message persisted and delivered via stdout provider. |
 
 ### TC-012: SMTP Send - Complex Case
@@ -119,7 +119,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 | Field | Value |
 |-------|-------|
 | **Precondition** | TC-009 passed. Human user exists. |
-| **Steps** | SMTP AUTH PLAIN with `testuser@example.com@<group_key>` / `testpass123` |
+| **Steps** | SMTP AUTH PLAIN with `testuser@example.com@<group_id>` / `testpass123` |
 | **Expected** | 535 5.7.8 "Authentication failed". Human (`account_type: "user"`) accounts are not eligible for SMTP. |
 
 ### TC-014: Suspended Account Cannot SMTP Auth
@@ -248,7 +248,7 @@ bash e2e-test.sh
 # Manual SMTP test
 docker compose run --rm test-client \
   --host=smtp-server --port=587 --tls=starttls --insecure \
-  --user="<username>@<group_key>" --password="<api_key>" \
+  --user="<username>@<group_id>" --password="<api_key>" \
   --from="sender@example.com" --to="recipient@example.com" \
   --subject="Test" --body="Hello"
 ```

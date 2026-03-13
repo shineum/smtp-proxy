@@ -6,12 +6,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/google/uuid"
 )
 
 func TestDLQReprocessHandler_Unauthorized(t *testing.T) {
-	// No auth context set -- AccountFromContext returns uuid.Nil
+	// No auth context set -- AccountFromContext returns 0
 	body := `{"message_ids":["id1","id2"]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/dlq/reprocess", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -34,7 +32,7 @@ func TestDLQReprocessHandler_Unauthorized(t *testing.T) {
 }
 
 func TestDLQReprocessHandler_InvalidJSON(t *testing.T) {
-	accountID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	var accountID int32 = 1
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/dlq/reprocess", strings.NewReader("not json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -60,7 +58,7 @@ func TestDLQReprocessHandler_InvalidJSON(t *testing.T) {
 }
 
 func TestDLQReprocessHandler_EmptyMessageIDs(t *testing.T) {
-	accountID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	var accountID int32 = 1
 
 	body := `{"message_ids":[]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/dlq/reprocess", strings.NewReader(body))
@@ -87,7 +85,7 @@ func TestDLQReprocessHandler_EmptyMessageIDs(t *testing.T) {
 }
 
 func TestDLQReprocessHandler_MissingMessageIDsField(t *testing.T) {
-	accountID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	var accountID int32 = 1
 
 	// Valid JSON but no message_ids field -- Go zero-value for []string is nil, len 0
 	body := `{"reset_retry_count":true}`

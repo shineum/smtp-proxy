@@ -6,17 +6,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/google/uuid"
 )
 
 func TestBearerAuth_ValidKey(t *testing.T) {
-	expectedID := uuid.New()
-	lookup := func(ctx context.Context, apiKey string) (uuid.UUID, error) {
+	var expectedID int32 = 42
+	lookup := func(ctx context.Context, apiKey string) (int32, error) {
 		if apiKey == "valid-key" {
 			return expectedID, nil
 		}
-		return uuid.Nil, errors.New("not found")
+		return 0, errors.New("not found")
 	}
 
 	handler := BearerAuth(lookup)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,8 +37,8 @@ func TestBearerAuth_ValidKey(t *testing.T) {
 }
 
 func TestBearerAuth_MissingHeader(t *testing.T) {
-	lookup := func(ctx context.Context, apiKey string) (uuid.UUID, error) {
-		return uuid.Nil, errors.New("not found")
+	lookup := func(ctx context.Context, apiKey string) (int32, error) {
+		return 0, errors.New("not found")
 	}
 
 	handler := BearerAuth(lookup)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -58,8 +56,8 @@ func TestBearerAuth_MissingHeader(t *testing.T) {
 }
 
 func TestBearerAuth_InvalidFormat(t *testing.T) {
-	lookup := func(ctx context.Context, apiKey string) (uuid.UUID, error) {
-		return uuid.Nil, errors.New("not found")
+	lookup := func(ctx context.Context, apiKey string) (int32, error) {
+		return 0, errors.New("not found")
 	}
 
 	handler := BearerAuth(lookup)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -78,8 +76,8 @@ func TestBearerAuth_InvalidFormat(t *testing.T) {
 }
 
 func TestBearerAuth_InvalidKey(t *testing.T) {
-	lookup := func(ctx context.Context, apiKey string) (uuid.UUID, error) {
-		return uuid.Nil, errors.New("not found")
+	lookup := func(ctx context.Context, apiKey string) (int32, error) {
+		return 0, errors.New("not found")
 	}
 
 	handler := BearerAuth(lookup)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +99,7 @@ func TestAccountFromContext_NoAccount(t *testing.T) {
 	ctx := context.Background()
 	id := AccountFromContext(ctx)
 
-	if id != uuid.Nil {
-		t.Errorf("AccountFromContext() = %v, want uuid.Nil", id)
+	if id != 0 {
+		t.Errorf("AccountFromContext() = %v, want 0", id)
 	}
 }

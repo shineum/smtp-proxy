@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
@@ -109,7 +108,7 @@ func TestListGroupsHandler(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups", nil)
 	// System admin sees all groups
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx := setJWTContext(req.Context(), testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
@@ -134,7 +133,7 @@ func TestGetGroupHandler_Found(t *testing.T) {
 	grp := testGroup()
 	member := testGroupMember()
 	mock := &mockQuerier{
-		getGroupByIDFn: func(ctx context.Context, id uuid.UUID) (storage.Group, error) {
+		getGroupByIDFn: func(ctx context.Context, id int32) (storage.Group, error) {
 			return grp, nil
 		},
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
@@ -142,11 +141,11 @@ func TestGetGroupHandler_Found(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+grp.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+int32ToStr(grp.ID), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	// Set JWT context with matching group (non-system, so requireGroupRole checks membership)
 	ctx = setJWTContext(ctx, testUser().ID, grp.ID, "admin", "organization")
@@ -163,19 +162,19 @@ func TestGetGroupHandler_Found(t *testing.T) {
 func TestGetGroupHandler_SystemAdmin(t *testing.T) {
 	grp := testGroup()
 	mock := &mockQuerier{
-		getGroupByIDFn: func(ctx context.Context, id uuid.UUID) (storage.Group, error) {
+		getGroupByIDFn: func(ctx context.Context, id int32) (storage.Group, error) {
 			return grp, nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+grp.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+int32ToStr(grp.ID), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	// System admin can access any group
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -191,14 +190,14 @@ func TestGetGroupHandler_Forbidden(t *testing.T) {
 	grp := testGroup()
 	mock := &mockQuerier{}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+grp.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+int32ToStr(grp.ID), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	// Different group, not system
-	otherGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var otherGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, otherGroupID, "admin", "company")
 	req = req.WithContext(ctx)
 
@@ -214,7 +213,7 @@ func TestDeleteGroupHandler_Success(t *testing.T) {
 	grp := testGroup()
 	grp.GroupType = "company"
 	mock := &mockQuerier{
-		getGroupByIDFn: func(ctx context.Context, id uuid.UUID) (storage.Group, error) {
+		getGroupByIDFn: func(ctx context.Context, id int32) (storage.Group, error) {
 			return grp, nil
 		},
 		updateGroupStatusFn: func(ctx context.Context, arg storage.UpdateGroupStatusParams) (storage.Group, error) {
@@ -224,19 +223,19 @@ func TestDeleteGroupHandler_Success(t *testing.T) {
 			grp.Status = arg.Status
 			return grp, nil
 		},
-		listGroupMembersByGroupIDFn: func(ctx context.Context, groupID uuid.UUID) ([]storage.GroupMember, error) {
+		listGroupMembersByGroupIDFn: func(ctx context.Context, groupID int32) ([]storage.GroupMember, error) {
 			return nil, nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/groups/"+grp.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/groups/"+int32ToStr(grp.ID), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	// System admin can delete any group
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -252,18 +251,18 @@ func TestDeleteGroupHandler_SystemGroupForbidden(t *testing.T) {
 	grp := testGroup()
 	grp.GroupType = "system"
 	mock := &mockQuerier{
-		getGroupByIDFn: func(ctx context.Context, id uuid.UUID) (storage.Group, error) {
+		getGroupByIDFn: func(ctx context.Context, id int32) (storage.Group, error) {
 			return grp, nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/groups/"+grp.ID.String(), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/groups/"+int32ToStr(grp.ID), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -279,7 +278,7 @@ func TestListGroupMembersHandler(t *testing.T) {
 	grp := testGroup()
 	member := testGroupMember()
 	mock := &mockQuerier{
-		listGroupMembersByGroupIDFn: func(ctx context.Context, groupID uuid.UUID) ([]storage.GroupMember, error) {
+		listGroupMembersByGroupIDFn: func(ctx context.Context, groupID int32) ([]storage.GroupMember, error) {
 			return []storage.GroupMember{member}, nil
 		},
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
@@ -287,11 +286,11 @@ func TestListGroupMembersHandler(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+grp.ID.String()+"/members", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/"+int32ToStr(grp.ID)+"/members", nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	ctx = setJWTContext(ctx, testUser().ID, grp.ID, "admin", "organization")
 	req = req.WithContext(ctx)
@@ -319,28 +318,28 @@ func TestAddGroupMemberHandler_Valid(t *testing.T) {
 	usr.AccountType = "user"
 
 	mock := &mockQuerier{
-		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+		getUserByIDFn: func(ctx context.Context, id int32) (storage.User, error) {
 			return usr, nil
 		},
-		listGroupsByUserIDFn: func(ctx context.Context, userID uuid.UUID) ([]storage.Group, error) {
+		listGroupsByUserIDFn: func(ctx context.Context, userID int32) ([]storage.Group, error) {
 			return nil, nil
 		},
 		createGroupMemberFn: func(ctx context.Context, arg storage.CreateGroupMemberParams) (storage.GroupMember, error) {
 			if arg.GroupID != grp.ID {
-				t.Errorf("expected group ID %s, got %s", grp.ID, arg.GroupID)
+				t.Errorf("expected group ID %d, got %d", grp.ID, arg.GroupID)
 			}
 			return member, nil
 		},
 	}
 
-	body := `{"user_id":"` + usr.ID.String() + `","role":"member"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+grp.ID.String()+"/members", strings.NewReader(body))
+	body := `{"user_id":"` + int32ToStr(usr.ID) + `","role":"member"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+int32ToStr(grp.ID)+"/members", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -359,22 +358,22 @@ func TestAddGroupMemberHandler_SMTPAlreadyInGroup(t *testing.T) {
 	usr.AccountType = "smtp"
 
 	mock := &mockQuerier{
-		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+		getUserByIDFn: func(ctx context.Context, id int32) (storage.User, error) {
 			return usr, nil
 		},
-		listGroupsByUserIDFn: func(ctx context.Context, userID uuid.UUID) ([]storage.Group, error) {
+		listGroupsByUserIDFn: func(ctx context.Context, userID int32) ([]storage.Group, error) {
 			return []storage.Group{grp}, nil
 		},
 	}
 
-	body := `{"user_id":"` + usr.ID.String() + `","role":"member"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+grp.ID.String()+"/members", strings.NewReader(body))
+	body := `{"user_id":"` + int32ToStr(usr.ID) + `","role":"member"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/groups/"+int32ToStr(grp.ID)+"/members", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -403,15 +402,15 @@ func TestUpdateGroupMemberRoleHandler_Valid(t *testing.T) {
 	}
 
 	body := `{"role":"admin"}`
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+grp.ID.String()+"/members/"+member.UserID.String(), strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+int32ToStr(grp.ID)+"/members/"+int32ToStr(member.UserID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
-	rctx.URLParams.Add("uid", member.UserID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
+	rctx.URLParams.Add("uid", int32ToStr(member.UserID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	// System admin bypasses role check (promoting to admin requires owner)
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -433,20 +432,20 @@ func TestUpdateGroupMemberRoleHandler_LastOwner(t *testing.T) {
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
 			return member, nil
 		},
-		countGroupOwnersFn: func(ctx context.Context, groupID uuid.UUID) (int64, error) {
+		countGroupOwnersFn: func(ctx context.Context, groupID int32) (int64, error) {
 			return 1, nil
 		},
 	}
 
 	body := `{"role":"member"}`
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+grp.ID.String()+"/members/"+member.UserID.String(), strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+int32ToStr(grp.ID)+"/members/"+int32ToStr(member.UserID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
-	rctx.URLParams.Add("uid", member.UserID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
+	rctx.URLParams.Add("uid", int32ToStr(member.UserID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -469,19 +468,19 @@ func TestRemoveGroupMemberHandler_Success(t *testing.T) {
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
 			return member, nil
 		},
-		deleteGroupMemberFn: func(ctx context.Context, id uuid.UUID) error {
+		deleteGroupMemberFn: func(ctx context.Context, arg storage.DeleteGroupMemberParams) error {
 			deleteCalled = true
 			return nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/groups/"+grp.ID.String()+"/members/"+member.UserID.String(), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/groups/"+int32ToStr(grp.ID)+"/members/"+int32ToStr(member.UserID), nil)
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
-	rctx.URLParams.Add("uid", member.UserID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
+	rctx.URLParams.Add("uid", int32ToStr(member.UserID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -506,18 +505,18 @@ func TestRemoveGroupMemberHandler_LastOwner(t *testing.T) {
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
 			return member, nil
 		},
-		countGroupOwnersFn: func(ctx context.Context, groupID uuid.UUID) (int64, error) {
+		countGroupOwnersFn: func(ctx context.Context, groupID int32) (int64, error) {
 			return 1, nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/groups/"+grp.ID.String()+"/members/"+member.UserID.String(), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/groups/"+int32ToStr(grp.ID)+"/members/"+int32ToStr(member.UserID), nil)
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
-	rctx.URLParams.Add("uid", member.UserID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
+	rctx.URLParams.Add("uid", int32ToStr(member.UserID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -545,7 +544,7 @@ func TestUpdateServiceAccountHandler_Success(t *testing.T) {
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
 			return member, nil
 		},
-		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+		getUserByIDFn: func(ctx context.Context, id int32) (storage.User, error) {
 			return saUser, nil
 		},
 		updateUserFn: func(ctx context.Context, arg storage.UpdateUserParams) (storage.User, error) {
@@ -559,14 +558,14 @@ func TestUpdateServiceAccountHandler_Success(t *testing.T) {
 		},
 	}
 
-	body := `{"allowed_domains":["example.com"],"provider_id":"00000000-0000-0000-0000-000000000002"}`
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+grp.ID.String()+"/service-accounts/"+saUser.ID.String(), strings.NewReader(body))
+	body := `{"allowed_domains":["example.com"],"provider_id":"` + int32ToStr(int32(2)) + `"}`
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+int32ToStr(grp.ID)+"/service-accounts/"+int32ToStr(saUser.ID), strings.NewReader(body))
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
-	rctx.URLParams.Add("uid", saUser.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
+	rctx.URLParams.Add("uid", int32ToStr(saUser.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 
@@ -581,8 +580,8 @@ func TestUpdateServiceAccountHandler_Success(t *testing.T) {
 
 func TestUpdateServiceAccountHandler_Forbidden(t *testing.T) {
 	grp := testGroup()
-	callerID := uuid.MustParse("00000000-0000-0000-0000-000000000050")
-	saUserID := uuid.MustParse("00000000-0000-0000-0000-000000000051")
+	var callerID int32 = 50
+	var saUserID int32 = 51
 
 	mock := &mockQuerier{
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
@@ -594,11 +593,11 @@ func TestUpdateServiceAccountHandler_Forbidden(t *testing.T) {
 	}
 
 	body := `{"allowed_domains":["example.com"]}`
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+grp.ID.String()+"/service-accounts/"+saUserID.String(), strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+int32ToStr(grp.ID)+"/service-accounts/"+int32ToStr(saUserID), strings.NewReader(body))
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
-	rctx.URLParams.Add("uid", saUserID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
+	rctx.URLParams.Add("uid", int32ToStr(saUserID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	ctx = setJWTContext(ctx, callerID, grp.ID, "member", "company")
 	req = req.WithContext(ctx)
@@ -623,19 +622,19 @@ func TestUpdateServiceAccountHandler_NotSMTP(t *testing.T) {
 		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
 			return member, nil
 		},
-		getUserByIDFn: func(ctx context.Context, id uuid.UUID) (storage.User, error) {
+		getUserByIDFn: func(ctx context.Context, id int32) (storage.User, error) {
 			return humanUser, nil
 		},
 	}
 
 	body := `{"allowed_domains":["example.com"]}`
-	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+grp.ID.String()+"/service-accounts/"+humanUser.ID.String(), strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/groups/"+int32ToStr(grp.ID)+"/service-accounts/"+int32ToStr(humanUser.ID), strings.NewReader(body))
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", grp.ID.String())
-	rctx.URLParams.Add("uid", humanUser.ID.String())
+	rctx.URLParams.Add("id", int32ToStr(grp.ID))
+	rctx.URLParams.Add("uid", int32ToStr(humanUser.ID))
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-	systemGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
+	var systemGroupID int32 = 99
 	ctx = setJWTContext(ctx, testUser().ID, systemGroupID, "admin", "system")
 	req = req.WithContext(ctx)
 

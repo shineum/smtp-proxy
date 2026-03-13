@@ -22,17 +22,17 @@ func TestNewMessage(t *testing.T) {
 		t.Fatal("NewMessage() returned nil")
 	}
 
-	t.Run("ID is a valid UUID", func(t *testing.T) {
+	t.Run("ID is a valid numeric string", func(t *testing.T) {
 		if msg.ID == "" {
 			t.Fatal("NewMessage() ID is empty")
 		}
-		// UUID v4 format: 8-4-4-4-12 hex characters
-		if len(msg.ID) != 36 {
-			t.Errorf("NewMessage() ID length = %d, want 36 (UUID format)", len(msg.ID))
-		}
-		// Verify dash positions
-		if msg.ID[8] != '-' || msg.ID[13] != '-' || msg.ID[18] != '-' || msg.ID[23] != '-' {
-			t.Errorf("NewMessage() ID = %q, does not match UUID dash pattern", msg.ID)
+		// ID is now a timestamp-based integer (UnixNano), so it should be
+		// a numeric string of reasonable length (typically 19 digits).
+		for _, c := range msg.ID {
+			if c < '0' || c > '9' {
+				t.Errorf("NewMessage() ID = %q, contains non-numeric character %q", msg.ID, c)
+				break
+			}
 		}
 	})
 

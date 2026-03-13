@@ -57,6 +57,42 @@ func (m *mockQuerier) AverageDeliveryDuration(_ context.Context, _ storage.Avera
 	return nil, nil
 }
 
+func (m *mockQuerier) CountAllDeliveryLogsByDateRange(_ context.Context, _ storage.DateRangeParams) ([]storage.CountDeliveryLogsByGroupDateRangeRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) CountDeliveryLogsByGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.CountDeliveryLogsByGroupDateRangeRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DailyDeliveryCountsByGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DailyDeliveryCountsByGroupRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DailyDeliveryCountsAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DailyDeliveryCountsByGroupRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DeliveryCountsByGroupAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DeliveryCountsByGroupAllRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DeliveryCountsByProviderAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DeliveryCountsByGroupAndProviderRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DeliveryCountsByProviderAndGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DeliveryCountsByGroupAndProviderRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DeliveryCountsByUserAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DeliveryCountsByGroupAndUserRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DeliveryCountsByUserAndGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DeliveryCountsByGroupAndUserRow, error) {
+	return nil, nil
+}
+
 func (m *mockQuerier) CountDeliveryLogsByGroup(_ context.Context, _ storage.CountDeliveryLogsByGroupParams) ([]storage.CountDeliveryLogsByGroupRow, error) {
 	return nil, nil
 }

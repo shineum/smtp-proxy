@@ -224,9 +224,9 @@ info "Service account reactivated"
 
 # 4.3 Expired API key cannot SMTP auth
 info "4.3 Expired API key SMTP auth (should fail)"
-# Directly set api_key_expires_at to the past via DB
+# Directly set expires_at to the past via DB (api_keys table)
 docker compose exec -T postgres psql -U smtp_proxy -d smtp_proxy -c \
-  "UPDATE users SET api_key_expires_at = NOW() - INTERVAL '1 day' WHERE id = '$SA_ID';" > /dev/null
+  "UPDATE api_keys SET expires_at = NOW() - INTERVAL '1 day' WHERE user_id = '$SA_ID';" > /dev/null
 
 if smtp_auth_test "e2e-smtp@$GRP_ID" "$SA_KEY" > /dev/null 2>&1; then
   fail "Expired API key should NOT be able to SMTP auth"
@@ -236,7 +236,7 @@ fi
 
 # Restore expiration to future
 docker compose exec -T postgres psql -U smtp_proxy -d smtp_proxy -c \
-  "UPDATE users SET api_key_expires_at = NOW() + INTERVAL '30 days' WHERE id = '$SA_ID';" > /dev/null
+  "UPDATE api_keys SET expires_at = NOW() + INTERVAL '30 days' WHERE user_id = '$SA_ID';" > /dev/null
 info "API key expiration restored"
 
 # Verify SMTP auth works again after restoring expiration

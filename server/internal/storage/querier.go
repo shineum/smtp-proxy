@@ -19,6 +19,7 @@ type Querier interface {
 	CountAllDeliveryLogsByDateRange(ctx context.Context, arg DateRangeParams) ([]CountDeliveryLogsByGroupDateRangeRow, error)
 	CountDeliveryLogsByGroup(ctx context.Context, arg CountDeliveryLogsByGroupParams) ([]CountDeliveryLogsByGroupRow, error)
 	CountDeliveryLogsByGroupDateRange(ctx context.Context, arg CountDeliveryLogsByGroupDateRangeParams) ([]CountDeliveryLogsByGroupDateRangeRow, error)
+	CountDeliveryLogsByGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]CountDeliveryLogsByGroupDateRangeRow, error)
 	CountDeliveryLogsByProvider(ctx context.Context, arg CountDeliveryLogsByProviderParams) ([]CountDeliveryLogsByProviderRow, error)
 	CountDeliveryLogsByStatus(ctx context.Context, arg CountDeliveryLogsByStatusParams) ([]CountDeliveryLogsByStatusRow, error)
 	CountGroupOwners(ctx context.Context, groupID uuid.UUID) (int64, error)
@@ -33,6 +34,7 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DailyDeliveryCountsByGroup(ctx context.Context, arg DailyDeliveryCountsByGroupParams) ([]DailyDeliveryCountsByGroupRow, error)
+	DailyDeliveryCountsByGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]DailyDeliveryCountsByGroupRow, error)
 	DailyDeliveryCountsAll(ctx context.Context, arg DateRangeParams) ([]DailyDeliveryCountsByGroupRow, error)
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteGroup(ctx context.Context, id uuid.UUID) error
@@ -46,7 +48,9 @@ type Querier interface {
 	DeliveryCountsByGroupAndProvider(ctx context.Context, arg DeliveryCountsByGroupAndProviderParams) ([]DeliveryCountsByGroupAndProviderRow, error)
 	DeliveryCountsByGroupAndUser(ctx context.Context, arg DeliveryCountsByGroupAndUserParams) ([]DeliveryCountsByGroupAndUserRow, error)
 	DeliveryCountsByProviderAll(ctx context.Context, arg DateRangeParams) ([]DeliveryCountsByGroupAndProviderRow, error)
+	DeliveryCountsByProviderAndGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]DeliveryCountsByGroupAndProviderRow, error)
 	DeliveryCountsByUserAll(ctx context.Context, arg DateRangeParams) ([]DeliveryCountsByGroupAndUserRow, error)
+	DeliveryCountsByUserAndGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]DeliveryCountsByGroupAndUserRow, error)
 	EnqueueMessage(ctx context.Context, arg EnqueueMessageParams) (Message, error)
 	EnqueueMessageMetadata(ctx context.Context, arg EnqueueMessageMetadataParams) (Message, error)
 	GetActivityLogByID(ctx context.Context, id uuid.UUID) (ActivityLog, error)

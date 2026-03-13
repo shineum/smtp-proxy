@@ -690,6 +690,122 @@ func (q *Queries) DeliveryCountsByUserAll(ctx context.Context, arg DateRangePara
 	return items, nil
 }
 
+// MultiGroupDateRangeParams is a shared params type for multi-group date range queries.
+type MultiGroupDateRangeParams struct {
+	GroupIDs    []pgtype.UUID      `json:"group_ids"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
+}
+
+const countDeliveryLogsByGroupIDs = `-- name: CountDeliveryLogsByGroupIDs :many
+SELECT status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = ANY($1::uuid[]) AND created_at >= $2 AND created_at <= $3
+GROUP BY status
+`
+
+func (q *Queries) CountDeliveryLogsByGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]CountDeliveryLogsByGroupDateRangeRow, error) {
+	rows, err := q.db.Query(ctx, countDeliveryLogsByGroupIDs, arg.GroupIDs, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountDeliveryLogsByGroupDateRangeRow
+	for rows.Next() {
+		var i CountDeliveryLogsByGroupDateRangeRow
+		if err := rows.Scan(&i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dailyDeliveryCountsByGroupIDs = `-- name: DailyDeliveryCountsByGroupIDs :many
+SELECT created_at::date as day, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = ANY($1::uuid[]) AND created_at >= $2 AND created_at <= $3
+GROUP BY created_at::date, status
+ORDER BY created_at::date
+`
+
+func (q *Queries) DailyDeliveryCountsByGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]DailyDeliveryCountsByGroupRow, error) {
+	rows, err := q.db.Query(ctx, dailyDeliveryCountsByGroupIDs, arg.GroupIDs, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DailyDeliveryCountsByGroupRow
+	for rows.Next() {
+		var i DailyDeliveryCountsByGroupRow
+		if err := rows.Scan(&i.Day, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deliveryCountsByUserAndGroupIDs = `-- name: DeliveryCountsByUserAndGroupIDs :many
+SELECT user_id, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = ANY($1::uuid[]) AND user_id IS NOT NULL AND created_at >= $2 AND created_at <= $3
+GROUP BY user_id, status
+`
+
+func (q *Queries) DeliveryCountsByUserAndGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]DeliveryCountsByGroupAndUserRow, error) {
+	rows, err := q.db.Query(ctx, deliveryCountsByUserAndGroupIDs, arg.GroupIDs, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeliveryCountsByGroupAndUserRow
+	for rows.Next() {
+		var i DeliveryCountsByGroupAndUserRow
+		if err := rows.Scan(&i.UserID, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deliveryCountsByProviderAndGroupIDs = `-- name: DeliveryCountsByProviderAndGroupIDs :many
+SELECT provider, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE group_id = ANY($1::uuid[]) AND created_at >= $2 AND created_at <= $3
+GROUP BY provider, status
+`
+
+func (q *Queries) DeliveryCountsByProviderAndGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]DeliveryCountsByGroupAndProviderRow, error) {
+	rows, err := q.db.Query(ctx, deliveryCountsByProviderAndGroupIDs, arg.GroupIDs, arg.CreatedAt, arg.CreatedAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeliveryCountsByGroupAndProviderRow
+	for rows.Next() {
+		var i DeliveryCountsByGroupAndProviderRow
+		if err := rows.Scan(&i.Provider, &i.Status, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deliveryCountsByProviderAll = `-- name: DeliveryCountsByProviderAll :many
 SELECT provider, status, COUNT(*)::integer as count
 FROM delivery_logs

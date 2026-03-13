@@ -529,6 +529,22 @@ func (m *mockQuerier) CountDeliveryLogsByGroupDateRange(_ context.Context, _ sto
 	return nil, nil
 }
 
+func (m *mockQuerier) CountDeliveryLogsByGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.CountDeliveryLogsByGroupDateRangeRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DailyDeliveryCountsByGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DailyDeliveryCountsByGroupRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DeliveryCountsByUserAndGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DeliveryCountsByGroupAndUserRow, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) DeliveryCountsByProviderAndGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DeliveryCountsByGroupAndProviderRow, error) {
+	return nil, nil
+}
+
 func (m *mockQuerier) CountDeliveryLogsByProvider(_ context.Context, _ storage.CountDeliveryLogsByProviderParams) ([]storage.CountDeliveryLogsByProviderRow, error) {
 	return nil, nil
 }

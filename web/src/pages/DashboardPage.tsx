@@ -3,8 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import {
   PageSection, Title, Grid, GridItem, Card, CardTitle, CardBody,
   Spinner, EmptyState, EmptyStateBody,
-  FormGroup, FormSelect, FormSelectOption,
+  Select, SelectOption, SelectList,
+  MenuToggle, Badge,
 } from '@patternfly/react-core';
+import type { MenuToggleElement } from '@patternfly/react-core';
 import { fetchDashboardStats, fetchTimeSeries, fetchUsageByUser, fetchUsageByProvider, fetchGroups } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
 import type { TimeSeriesPoint, UsageByUser, UsageByProvider } from '../types/api';
@@ -51,7 +53,8 @@ function aggregateByProvider(points: UsageByProvider[]) {
 
 export default function DashboardPage() {
   const { isSystemAdmin } = useAuth();
-  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const { data: groups } = useQuery({
     queryKey: ['groups'],
@@ -59,28 +62,35 @@ export default function DashboardPage() {
     enabled: isSystemAdmin,
   });
 
-  const groupIdParam = selectedGroupId || undefined;
+  const groupIdParam = selectedGroupIds.length > 0 ? selectedGroupIds.join(',') : undefined;
+
+  const onGroupSelect = (_event: React.MouseEvent | undefined, value: string | number | undefined) => {
+    const id = String(value);
+    setSelectedGroupIds(prev =>
+      prev.includes(id) ? prev.filter(g => g !== id) : [...prev, id]
+    );
+  };
 
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['dashboard-stats', selectedGroupId],
+    queryKey: ['dashboard-stats', selectedGroupIds],
     queryFn: () => fetchDashboardStats(undefined, undefined, groupIdParam),
     refetchInterval: 15000,
   });
 
   const { data: timeSeries } = useQuery({
-    queryKey: ['dashboard-timeseries', selectedGroupId],
+    queryKey: ['dashboard-timeseries', selectedGroupIds],
     queryFn: () => fetchTimeSeries(undefined, undefined, groupIdParam),
     refetchInterval: 15000,
   });
 
   const { data: usageByUser } = useQuery({
-    queryKey: ['dashboard-usage-by-user', selectedGroupId],
+    queryKey: ['dashboard-usage-by-user', selectedGroupIds],
     queryFn: () => fetchUsageByUser(undefined, undefined, groupIdParam),
     refetchInterval: 15000,
   });
 
   const { data: usageByProvider } = useQuery({
-    queryKey: ['dashboard-usage-by-provider', selectedGroupId],
+    queryKey: ['dashboard-usage-by-provider', selectedGroupIds],
     queryFn: () => fetchUsageByProvider(undefined, undefined, groupIdParam),
     refetchInterval: 15000,
   });
@@ -115,24 +125,43 @@ export default function DashboardPage() {
 
       {isSystemAdmin && (
         <div style={{ marginBottom: '1rem' }}>
-          <FormGroup fieldId="group-filter">
-            <FormSelect
-              id="group-filter"
-              value={selectedGroupId}
-              onChange={(_event, value) => setSelectedGroupId(value)}
-              aria-label="Filter by Group"
-              style={{ maxWidth: '300px' }}
-            >
-              <FormSelectOption value="" label="All Groups" />
+          <Select
+            role="menu"
+            id="group-filter"
+            isOpen={isFilterOpen}
+            selected={selectedGroupIds}
+            onSelect={onGroupSelect}
+            onOpenChange={setIsFilterOpen}
+            toggle={(toggleRef: React.Ref<MenuToggleElement>) => (
+              <MenuToggle
+                ref={toggleRef}
+                onClick={() => setIsFilterOpen(prev => !prev)}
+                isExpanded={isFilterOpen}
+                style={{ minWidth: '200px' }}
+              >
+                Filter by Group
+                {selectedGroupIds.length > 0 && (
+                  <>
+                    {' '}
+                    <Badge isRead>{selectedGroupIds.length}</Badge>
+                  </>
+                )}
+              </MenuToggle>
+            )}
+          >
+            <SelectList>
               {groups?.map((group) => (
-                <FormSelectOption
+                <SelectOption
                   key={group.id}
                   value={group.id}
-                  label={group.display_name || group.name}
-                />
+                  hasCheckbox
+                  isSelected={selectedGroupIds.includes(group.id)}
+                >
+                  {group.display_name || group.name}
+                </SelectOption>
               ))}
-            </FormSelect>
-          </FormGroup>
+            </SelectList>
+          </Select>
         </div>
       )}
 

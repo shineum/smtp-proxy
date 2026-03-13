@@ -242,7 +242,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 ## Running
 
 ```bash
-# Full E2E suite (clean build + all 24 test cases)
+# Full E2E suite (clean build + 28 assertions across 24 test cases)
 bash e2e-test.sh
 
 # Manual SMTP test

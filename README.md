@@ -507,7 +507,7 @@ The script performs:
 4. **SMTP send (complex)** - Email with from, to, CC, BCC, HTML body, and file attachments
 5. **Delivery verification** - Check SMTP server and queue-worker logs for successful delivery
 
-Test case documentation: [`docs/e2e-test-cases.md`](docs/e2e-test-cases.md) (11 test cases with preconditions, steps, and expected results).
+Test case documentation: [`docs/e2e-test-cases.md`](docs/e2e-test-cases.md) (24 test cases, 28 assertions).
 
 ### Manual SMTP Test
 

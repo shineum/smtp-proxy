@@ -37,6 +37,22 @@ func uuidToPgtype(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: id != uuid.Nil}
 }
 
+// isSystemAdmin returns true if the authenticated user belongs to a system group.
+func isSystemAdmin(r *http.Request) bool {
+	return auth.GroupTypeFromContext(r.Context()) == "system"
+}
+
+// filterGroupID extracts an optional group_id query parameter for admin filtering.
+// Returns the parsed UUID and true if present and valid, otherwise uuid.Nil and false.
+func filterGroupID(r *http.Request) (uuid.UUID, bool) {
+	if v := r.URL.Query().Get("group_id"); v != "" {
+		if id, err := uuid.Parse(v); err == nil {
+			return id, true
+		}
+	}
+	return uuid.Nil, false
+}
+
 // dashboardResponse contains aggregated stats for the dashboard.
 type dashboardResponse struct {
 	TotalMessages int32            `json:"total_messages"`
@@ -44,10 +60,13 @@ type dashboardResponse struct {
 	SuccessRate   float64          `json:"success_rate"`
 	From          string           `json:"from"`
 	To            string           `json:"to"`
+	GroupID       string           `json:"group_id"`
+	GroupName     string           `json:"group_name"`
 }
 
 // DashboardHandler handles GET /api/v1/stats/dashboard.
-// Returns aggregated delivery counts and success rate for the current group.
+// Returns aggregated delivery counts and success rate.
+// System admins see all groups by default; optionally filter by group_id.
 func DashboardHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
@@ -58,11 +77,35 @@ func DashboardHandler(queries storage.Querier) http.HandlerFunc {
 
 		fromTS, toTS := parseDateRange(r)
 
-		rows, err := queries.CountDeliveryLogsByGroupDateRange(r.Context(), storage.CountDeliveryLogsByGroupDateRangeParams{
-			GroupID:     uuidToPgtype(groupID),
-			CreatedAt:   fromTS,
-			CreatedAt_2: toTS,
-		})
+		var rows []storage.CountDeliveryLogsByGroupDateRangeRow
+		var err error
+		respGroupID := ""
+		respGroupName := ""
+
+		sysAdmin := isSystemAdmin(r)
+		filterID, hasFilter := filterGroupID(r)
+
+		if sysAdmin && !hasFilter {
+			// System admin with no filter: query across all groups.
+			rows, err = queries.CountAllDeliveryLogsByDateRange(r.Context(), storage.DateRangeParams{
+				CreatedAt:   fromTS,
+				CreatedAt_2: toTS,
+			})
+			respGroupName = "All Groups"
+		} else {
+			// Non-admin or admin with explicit group_id filter.
+			targetID := groupID
+			if sysAdmin && hasFilter {
+				targetID = filterID
+			}
+			rows, err = queries.CountDeliveryLogsByGroupDateRange(r.Context(), storage.CountDeliveryLogsByGroupDateRangeParams{
+				GroupID:     uuidToPgtype(targetID),
+				CreatedAt:   fromTS,
+				CreatedAt_2: toTS,
+			})
+			respGroupID = targetID.String()
+		}
+
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -77,8 +120,8 @@ func DashboardHandler(queries storage.Querier) http.HandlerFunc {
 
 		var successRate float64
 		if total > 0 {
-			sent := statusCounts["sent"]
-			successRate = float64(sent) / float64(total) * 100
+			delivered := statusCounts["delivered"]
+			successRate = float64(delivered) / float64(total) * 100
 		}
 
 		respondJSON(w, http.StatusOK, dashboardResponse{
@@ -87,6 +130,8 @@ func DashboardHandler(queries storage.Querier) http.HandlerFunc {
 			SuccessRate:   successRate,
 			From:          fromTS.Time.Format(time.RFC3339),
 			To:            toTS.Time.Format(time.RFC3339),
+			GroupID:       respGroupID,
+			GroupName:     respGroupName,
 		})
 	}
 }
@@ -99,7 +144,8 @@ type timeSeriesPoint struct {
 }
 
 // TimeSeriesHandler handles GET /api/v1/stats/timeseries.
-// Returns daily delivery counts by status for the current group.
+// Returns daily delivery counts by status.
+// System admins see all groups by default; optionally filter by group_id.
 func TimeSeriesHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
@@ -110,11 +156,29 @@ func TimeSeriesHandler(queries storage.Querier) http.HandlerFunc {
 
 		fromTS, toTS := parseDateRange(r)
 
-		rows, err := queries.DailyDeliveryCountsByGroup(r.Context(), storage.DailyDeliveryCountsByGroupParams{
-			GroupID:     uuidToPgtype(groupID),
-			CreatedAt:   fromTS,
-			CreatedAt_2: toTS,
-		})
+		var rows []storage.DailyDeliveryCountsByGroupRow
+		var err error
+
+		sysAdmin := isSystemAdmin(r)
+		filterID, hasFilter := filterGroupID(r)
+
+		if sysAdmin && !hasFilter {
+			rows, err = queries.DailyDeliveryCountsAll(r.Context(), storage.DateRangeParams{
+				CreatedAt:   fromTS,
+				CreatedAt_2: toTS,
+			})
+		} else {
+			targetID := groupID
+			if sysAdmin && hasFilter {
+				targetID = filterID
+			}
+			rows, err = queries.DailyDeliveryCountsByGroup(r.Context(), storage.DailyDeliveryCountsByGroupParams{
+				GroupID:     uuidToPgtype(targetID),
+				CreatedAt:   fromTS,
+				CreatedAt_2: toTS,
+			})
+		}
+
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -145,7 +209,8 @@ type usageByUserRow struct {
 }
 
 // UsageByUserHandler handles GET /api/v1/stats/by-user.
-// Returns per-user delivery counts for the current group.
+// Returns per-user delivery counts.
+// System admins see all groups by default; optionally filter by group_id.
 func UsageByUserHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
@@ -156,11 +221,29 @@ func UsageByUserHandler(queries storage.Querier) http.HandlerFunc {
 
 		fromTS, toTS := parseDateRange(r)
 
-		rows, err := queries.DeliveryCountsByGroupAndUser(r.Context(), storage.DeliveryCountsByGroupAndUserParams{
-			GroupID:     uuidToPgtype(groupID),
-			CreatedAt:   fromTS,
-			CreatedAt_2: toTS,
-		})
+		var rows []storage.DeliveryCountsByGroupAndUserRow
+		var err error
+
+		sysAdmin := isSystemAdmin(r)
+		filterID, hasFilter := filterGroupID(r)
+
+		if sysAdmin && !hasFilter {
+			rows, err = queries.DeliveryCountsByUserAll(r.Context(), storage.DateRangeParams{
+				CreatedAt:   fromTS,
+				CreatedAt_2: toTS,
+			})
+		} else {
+			targetID := groupID
+			if sysAdmin && hasFilter {
+				targetID = filterID
+			}
+			rows, err = queries.DeliveryCountsByGroupAndUser(r.Context(), storage.DeliveryCountsByGroupAndUserParams{
+				GroupID:     uuidToPgtype(targetID),
+				CreatedAt:   fromTS,
+				CreatedAt_2: toTS,
+			})
+		}
+
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -191,7 +274,8 @@ type usageByProviderRow struct {
 }
 
 // UsageByProviderHandler handles GET /api/v1/stats/by-provider.
-// Returns per-provider delivery counts for the current group.
+// Returns per-provider delivery counts.
+// System admins see all groups by default; optionally filter by group_id.
 func UsageByProviderHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
@@ -202,11 +286,29 @@ func UsageByProviderHandler(queries storage.Querier) http.HandlerFunc {
 
 		fromTS, toTS := parseDateRange(r)
 
-		rows, err := queries.DeliveryCountsByGroupAndProvider(r.Context(), storage.DeliveryCountsByGroupAndProviderParams{
-			GroupID:     uuidToPgtype(groupID),
-			CreatedAt:   fromTS,
-			CreatedAt_2: toTS,
-		})
+		var rows []storage.DeliveryCountsByGroupAndProviderRow
+		var err error
+
+		sysAdmin := isSystemAdmin(r)
+		filterID, hasFilter := filterGroupID(r)
+
+		if sysAdmin && !hasFilter {
+			rows, err = queries.DeliveryCountsByProviderAll(r.Context(), storage.DateRangeParams{
+				CreatedAt:   fromTS,
+				CreatedAt_2: toTS,
+			})
+		} else {
+			targetID := groupID
+			if sysAdmin && hasFilter {
+				targetID = filterID
+			}
+			rows, err = queries.DeliveryCountsByGroupAndProvider(r.Context(), storage.DeliveryCountsByGroupAndProviderParams{
+				GroupID:     uuidToPgtype(targetID),
+				CreatedAt:   fromTS,
+				CreatedAt_2: toTS,
+			})
+		}
+
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -267,7 +369,7 @@ func ProviderHealthHandler(queries storage.Querier) http.HandlerFunc {
 		for _, row := range rows {
 			if row.Provider.Valid && row.Provider.String == providerName {
 				switch row.Status {
-				case "sent":
+				case "delivered":
 					sent += row.Count
 				case "failed":
 					failed += row.Count

@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   PageSection, Title, Grid, GridItem, Card, CardTitle, CardBody,
   Spinner, EmptyState, EmptyStateBody,
+  FormGroup, FormSelect, FormSelectOption,
 } from '@patternfly/react-core';
-import { fetchDashboardStats, fetchTimeSeries, fetchUsageByUser, fetchUsageByProvider } from '../api/resources';
+import { fetchDashboardStats, fetchTimeSeries, fetchUsageByUser, fetchUsageByProvider, fetchGroups } from '../api/resources';
+import { useAuth } from '../context/AuthContext';
 import type { TimeSeriesPoint, UsageByUser, UsageByProvider } from '../types/api';
 
 function aggregateTimeSeries(points: TimeSeriesPoint[]) {
@@ -11,7 +14,7 @@ function aggregateTimeSeries(points: TimeSeriesPoint[]) {
   for (const p of points) {
     const entry = byDay.get(p.day) || { sent: 0, failed: 0, total: 0 };
     entry.total += p.count;
-    if (p.status === 'sent') entry.sent += p.count;
+    if (p.status === 'delivered') entry.sent += p.count;
     if (p.status === 'failed') entry.failed += p.count;
     byDay.set(p.day, entry);
   }
@@ -24,7 +27,7 @@ function aggregateByUser(points: UsageByUser[]) {
   const byUser = new Map<string, { sent: number; failed: number }>();
   for (const p of points) {
     const entry = byUser.get(p.user_id) || { sent: 0, failed: 0 };
-    if (p.status === 'sent') entry.sent += p.count;
+    if (p.status === 'delivered') entry.sent += p.count;
     if (p.status === 'failed') entry.failed += p.count;
     byUser.set(p.user_id, entry);
   }
@@ -37,7 +40,7 @@ function aggregateByProvider(points: UsageByProvider[]) {
   const byProvider = new Map<string, { sent: number; failed: number }>();
   for (const p of points) {
     const entry = byProvider.get(p.provider) || { sent: 0, failed: 0 };
-    if (p.status === 'sent') entry.sent += p.count;
+    if (p.status === 'delivered') entry.sent += p.count;
     if (p.status === 'failed') entry.failed += p.count;
     byProvider.set(p.provider, entry);
   }
@@ -47,27 +50,38 @@ function aggregateByProvider(points: UsageByProvider[]) {
 }
 
 export default function DashboardPage() {
+  const { isSystemAdmin } = useAuth();
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+
+  const { data: groups } = useQuery({
+    queryKey: ['groups'],
+    queryFn: fetchGroups,
+    enabled: isSystemAdmin,
+  });
+
+  const groupIdParam = selectedGroupId || undefined;
+
   const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['dashboard-stats'],
-    queryFn: () => fetchDashboardStats(),
+    queryKey: ['dashboard-stats', selectedGroupId],
+    queryFn: () => fetchDashboardStats(undefined, undefined, groupIdParam),
     refetchInterval: 15000,
   });
 
   const { data: timeSeries } = useQuery({
-    queryKey: ['dashboard-timeseries'],
-    queryFn: () => fetchTimeSeries(),
+    queryKey: ['dashboard-timeseries', selectedGroupId],
+    queryFn: () => fetchTimeSeries(undefined, undefined, groupIdParam),
     refetchInterval: 15000,
   });
 
   const { data: usageByUser } = useQuery({
-    queryKey: ['dashboard-usage-by-user'],
-    queryFn: () => fetchUsageByUser(),
+    queryKey: ['dashboard-usage-by-user', selectedGroupId],
+    queryFn: () => fetchUsageByUser(undefined, undefined, groupIdParam),
     refetchInterval: 15000,
   });
 
   const { data: usageByProvider } = useQuery({
-    queryKey: ['dashboard-usage-by-provider'],
-    queryFn: () => fetchUsageByProvider(),
+    queryKey: ['dashboard-usage-by-provider', selectedGroupId],
+    queryFn: () => fetchUsageByProvider(undefined, undefined, groupIdParam),
     refetchInterval: 15000,
   });
 
@@ -99,6 +113,29 @@ export default function DashboardPage() {
         Dashboard
       </Title>
 
+      {isSystemAdmin && (
+        <div style={{ marginBottom: '1rem' }}>
+          <FormGroup fieldId="group-filter">
+            <FormSelect
+              id="group-filter"
+              value={selectedGroupId}
+              onChange={(_event, value) => setSelectedGroupId(value)}
+              aria-label="Filter by Group"
+              style={{ maxWidth: '300px' }}
+            >
+              <FormSelectOption value="" label="All Groups" />
+              {groups?.map((group) => (
+                <FormSelectOption
+                  key={group.id}
+                  value={group.id}
+                  label={group.display_name || group.name}
+                />
+              ))}
+            </FormSelect>
+          </FormGroup>
+        </div>
+      )}
+
       <Grid hasGutter>
         <GridItem span={3}>
           <Card>
@@ -124,10 +161,10 @@ export default function DashboardPage() {
 
         <GridItem span={3}>
           <Card>
-            <CardTitle>Sent</CardTitle>
+            <CardTitle>Delivered</CardTitle>
             <CardBody>
               <span style={{ fontSize: '2rem', fontWeight: 'bold', color: '#3E8635' }}>
-                {(stats.status_counts['sent'] || 0).toLocaleString()}
+                {(stats.status_counts['delivered'] || 0).toLocaleString()}
               </span>
             </CardBody>
           </Card>

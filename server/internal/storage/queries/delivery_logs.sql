@@ -86,3 +86,28 @@ SELECT provider, status, COUNT(*)::integer as count
 FROM delivery_logs
 WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3
 GROUP BY provider, status;
+
+-- name: CountAllDeliveryLogsByDateRange :many
+SELECT status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE created_at >= $1 AND created_at <= $2
+GROUP BY status;
+
+-- name: DailyDeliveryCountsAll :many
+SELECT created_at::date as day, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE created_at >= $1 AND created_at <= $2
+GROUP BY created_at::date, status
+ORDER BY created_at::date;
+
+-- name: DeliveryCountsByUserAll :many
+SELECT user_id, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE user_id IS NOT NULL AND created_at >= $1 AND created_at <= $2
+GROUP BY user_id, status;
+
+-- name: DeliveryCountsByProviderAll :many
+SELECT provider, status, COUNT(*)::integer as count
+FROM delivery_logs
+WHERE created_at >= $1 AND created_at <= $2
+GROUP BY provider, status;

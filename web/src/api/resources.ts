@@ -93,14 +93,14 @@ export const updateRoutingRule = async (id: string, data: Record<string, unknown
 export const deleteRoutingRule = async (id: string): Promise<void> => { await api.delete(`/routing-rules/${id}`); };
 
 // Stats
-export const fetchDashboardStats = async (from?: string, to?: string): Promise<DashboardStats> =>
-  (await api.get('/stats/dashboard', { params: { from, to } })).data;
-export const fetchTimeSeries = async (from?: string, to?: string): Promise<TimeSeriesPoint[]> =>
-  (await api.get('/stats/timeseries', { params: { from, to } })).data;
-export const fetchUsageByUser = async (from?: string, to?: string): Promise<UsageByUser[]> =>
-  (await api.get('/stats/by-user', { params: { from, to } })).data;
-export const fetchUsageByProvider = async (from?: string, to?: string): Promise<UsageByProvider[]> =>
-  (await api.get('/stats/by-provider', { params: { from, to } })).data;
+export const fetchDashboardStats = async (from?: string, to?: string, group_id?: string): Promise<DashboardStats> =>
+  (await api.get('/stats/dashboard', { params: { from, to, group_id } })).data;
+export const fetchTimeSeries = async (from?: string, to?: string, group_id?: string): Promise<TimeSeriesPoint[]> =>
+  (await api.get('/stats/timeseries', { params: { from, to, group_id } })).data;
+export const fetchUsageByUser = async (from?: string, to?: string, group_id?: string): Promise<UsageByUser[]> =>
+  (await api.get('/stats/by-user', { params: { from, to, group_id } })).data;
+export const fetchUsageByProvider = async (from?: string, to?: string, group_id?: string): Promise<UsageByProvider[]> =>
+  (await api.get('/stats/by-provider', { params: { from, to, group_id } })).data;
 
 // Messages
 export const fetchMessages = async (page = 1, pageSize = 20, status?: string): Promise<PaginatedMessages> =>

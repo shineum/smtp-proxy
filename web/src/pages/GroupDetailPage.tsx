@@ -8,7 +8,7 @@ import {
   FormSelect, FormSelectOption, ClipboardCopy, Switch,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect } from 'react';
 import {
   fetchGroup, fetchGroupMembers, fetchActivityLogs,
   addGroupMember, removeMember, updateMemberRole,
@@ -326,97 +326,93 @@ export default function GroupDetailPage() {
                 )}
               </div>
               <Table aria-label="Service accounts">
-                <Thead><Tr><Th></Th><Th>Username</Th><Th>Email</Th><Th>Role</Th><Th>Joined</Th>{isOwnerOrAdmin && <Th>Actions</Th>}</Tr></Thead>
+                <Thead><Tr><Th>Username</Th><Th>Email</Th><Th>Role</Th><Th>Joined</Th>{isOwnerOrAdmin && <Th>Actions</Th>}</Tr></Thead>
                 <Tbody>
                   {serviceAccounts.map((m) => (
-                    <Fragment key={m.id}>
-                      <Tr>
+                    <Tr key={m.id} isClickable isRowSelected={expandedSA === m.user_id}
+                      onRowClick={() => setExpandedSA(expandedSA === m.user_id ? null : m.user_id)}>
+                      <Td>{m.username || '-'}</Td>
+                      <Td>{m.email || m.user_id}</Td>
+                      <Td><Label>{m.role}</Label></Td>
+                      <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
+                      {isOwnerOrAdmin && (
                         <Td>
-                          <Button variant="plain" size="sm"
-                            onClick={() => setExpandedSA(expandedSA === m.user_id ? null : m.user_id)}>
-                            {expandedSA === m.user_id ? '▼' : '▶'}
-                          </Button>
+                          <div className="action-buttons">
+                            <Button variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); openEditSAModal(m.user_id); }}>
+                              Edit
+                            </Button>
+                            <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); if (confirm('Remove this service account?')) removeMemberMutation.mutate(m.user_id); }}>
+                              Remove
+                            </Button>
+                          </div>
                         </Td>
-                        <Td>{m.username || '-'}</Td>
-                        <Td>{m.email || m.user_id}</Td>
-                        <Td><Label>{m.role}</Label></Td>
-                        <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
-                        {isOwnerOrAdmin && (
-                          <Td>
-                            <div className="action-buttons">
-                              <Button variant="secondary" size="sm" onClick={() => openEditSAModal(m.user_id)}>
-                                Edit
-                              </Button>
-                              <Button variant="danger" size="sm" onClick={() => { if (confirm('Remove this service account?')) removeMemberMutation.mutate(m.user_id); }}>
-                                Remove
-                              </Button>
-                            </div>
-                          </Td>
-                        )}
-                      </Tr>
-                      {expandedSA === m.user_id && (
-                        <Tr key={`${m.id}-keys`}>
-                          <Td colSpan={isOwnerOrAdmin ? 6 : 5}>
-                            <div style={{ padding: '1rem', background: 'var(--pf-v5-global--BackgroundColor--200)' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                                <Title headingLevel="h4" size="md">API Keys</Title>
-                                {isOwnerOrAdmin && (
-                                  <Button size="sm" onClick={() => {
-                                    setCreateKeyUserId(m.user_id);
-                                    setIsCreateKeyOpen(true);
-                                    setCreatedKeyResult(null);
-                                  }}>Add Key</Button>
-                                )}
-                              </div>
-                              <Table aria-label="API keys" variant="compact">
-                                <Thead><Tr><Th>Prefix</Th><Th>Label</Th><Th>Active</Th><Th>Expires</Th><Th>Last Used</Th><Th>Created</Th>{isOwnerOrAdmin && <Th>Actions</Th>}</Tr></Thead>
-                                <Tbody>
-                                  {apiKeys?.map((k) => (
-                                    <Tr key={k.id}>
-                                      <Td><code>{k.key_prefix}</code></Td>
-                                      <Td>{k.label || '-'}</Td>
-                                      <Td>
-                                        {isOwnerOrAdmin ? (
-                                          <Switch
-                                            id={`key-active-${k.id}`}
-                                            isChecked={k.is_active}
-                                            onChange={(_e, checked) => toggleKeyMutation.mutate({ userId: m.user_id, keyId: k.id, isActive: checked })}
-                                            isDisabled={toggleKeyMutation.isPending}
-                                          />
-                                        ) : (
-                                          <Label color={k.is_active ? 'green' : 'grey'}>{k.is_active ? 'Active' : 'Inactive'}</Label>
-                                        )}
-                                      </Td>
-                                      <Td>{k.expires_at ? new Date(k.expires_at).toLocaleDateString() : 'Never'}</Td>
-                                      <Td>{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'Never'}</Td>
-                                      <Td>{new Date(k.created_at).toLocaleDateString()}</Td>
-                                      {isOwnerOrAdmin && (
-                                        <Td>
-                                          <Button variant="danger" size="sm"
-                                            onClick={() => { if (confirm('Delete this API key?')) deleteKeyMutation.mutate({ userId: m.user_id, keyId: k.id }); }}
-                                            isDisabled={deleteKeyMutation.isPending}>
-                                            Delete
-                                          </Button>
-                                        </Td>
-                                      )}
-                                    </Tr>
-                                  ))}
-                                  {(!apiKeys || apiKeys.length === 0) && (
-                                    <Tr><Td colSpan={isOwnerOrAdmin ? 7 : 6}>No API keys. Add one to enable SMTP authentication.</Td></Tr>
-                                  )}
-                                </Tbody>
-                              </Table>
-                            </div>
-                          </Td>
-                        </Tr>
                       )}
-                    </Fragment>
+                    </Tr>
                   ))}
                   {serviceAccounts.length === 0 && (
-                    <Tr><Td colSpan={isOwnerOrAdmin ? 6 : 5}>No service accounts</Td></Tr>
+                    <Tr><Td colSpan={isOwnerOrAdmin ? 5 : 4}>No service accounts</Td></Tr>
                   )}
                 </Tbody>
               </Table>
+
+              {expandedSA && (
+                <Card style={{ marginTop: '1rem' }}>
+                  <CardBody>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                      <Title headingLevel="h4" size="md">
+                        API Keys: {serviceAccounts.find(m => m.user_id === expandedSA)?.username || expandedSA}
+                      </Title>
+                      {isOwnerOrAdmin && (
+                        <Button size="sm" onClick={() => {
+                          setCreateKeyUserId(expandedSA);
+                          setIsCreateKeyOpen(true);
+                          setCreatedKeyResult(null);
+                        }}>Add Key</Button>
+                      )}
+                    </div>
+                    <Table aria-label="API keys" variant="compact">
+                      <Thead><Tr><Th>Prefix</Th><Th>Label</Th><Th>Active</Th><Th>Expires</Th><Th>Last Used</Th><Th>Created</Th>{isOwnerOrAdmin && <Th>Actions</Th>}</Tr></Thead>
+                      <Tbody>
+                        {apiKeys?.map((k) => (
+                          <Tr key={k.id}>
+                            <Td><code>{k.key_prefix}</code></Td>
+                            <Td>{k.label || '-'}</Td>
+                            <Td>
+                              {isOwnerOrAdmin ? (
+                                <Switch
+                                  id={`key-active-${k.id}`}
+                                  label="Active"
+                                  labelOff="Inactive"
+                                  isChecked={k.is_active}
+                                  onChange={(_e, checked) => toggleKeyMutation.mutate({ userId: expandedSA, keyId: k.id, isActive: checked })}
+                                  isDisabled={toggleKeyMutation.isPending}
+                                />
+                              ) : (
+                                <Label color={k.is_active ? 'green' : 'grey'}>{k.is_active ? 'Active' : 'Inactive'}</Label>
+                              )}
+                            </Td>
+                            <Td>{k.expires_at ? new Date(k.expires_at).toLocaleDateString() : 'Never'}</Td>
+                            <Td>{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'Never'}</Td>
+                            <Td>{new Date(k.created_at).toLocaleDateString()}</Td>
+                            {isOwnerOrAdmin && (
+                              <Td>
+                                <Button variant="danger" size="sm"
+                                  onClick={() => { if (confirm('Delete this API key?')) deleteKeyMutation.mutate({ userId: expandedSA, keyId: k.id }); }}
+                                  isDisabled={deleteKeyMutation.isPending}>
+                                  Delete
+                                </Button>
+                              </Td>
+                            )}
+                          </Tr>
+                        ))}
+                        {(!apiKeys || apiKeys.length === 0) && (
+                          <Tr><Td colSpan={isOwnerOrAdmin ? 7 : 6}>No API keys. Add one to enable SMTP authentication.</Td></Tr>
+                        )}
+                      </Tbody>
+                    </Table>
+                  </CardBody>
+                </Card>
+              )}
             </CardBody>
           </Card>
         </Tab>

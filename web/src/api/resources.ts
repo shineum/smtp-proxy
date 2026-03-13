@@ -3,7 +3,7 @@ import type {
   Group, GroupMember, Membership, User, Provider, ProviderHealth, ProviderAccess, ProviderUsage,
   RoutingRule, DashboardStats, TimeSeriesPoint,
   UsageByUser, UsageByGroup, UsageByProvider, PaginatedMessages,
-  MessageDetail, ActivityLog,
+  MessageDetail, ActivityLog, ApiKeyInfo,
 } from '../types/api';
 
 // Groups
@@ -28,8 +28,27 @@ export const removeMember = async (groupId: string, userId: string): Promise<voi
 // Service accounts (group-scoped)
 export const createServiceAccount = async (
   groupId: string,
-  data: { username: string; email?: string; allowed_domains?: string[]; provider_id?: string; api_key_expires_in?: string }
+  data: { username: string; email?: string; allowed_domains?: string[]; provider_id?: string }
 ): Promise<User> => (await api.post(`/groups/${groupId}/service-accounts`, data)).data;
+
+// API Keys for service accounts
+export const fetchApiKeys = async (groupId: string, userId: string): Promise<ApiKeyInfo[]> =>
+  (await api.get(`/groups/${groupId}/service-accounts/${userId}/api-keys`)).data;
+
+export const createApiKey = async (
+  groupId: string, userId: string,
+  data: { label: string; api_key_expires_in?: string }
+): Promise<ApiKeyInfo> =>
+  (await api.post(`/groups/${groupId}/service-accounts/${userId}/api-keys`, data)).data;
+
+export const updateApiKeyStatus = async (
+  groupId: string, userId: string, keyId: string, is_active: boolean
+): Promise<ApiKeyInfo> =>
+  (await api.patch(`/groups/${groupId}/service-accounts/${userId}/api-keys/${keyId}`, { is_active })).data;
+
+export const deleteApiKey = async (
+  groupId: string, userId: string, keyId: string
+): Promise<void> => { await api.delete(`/groups/${groupId}/service-accounts/${userId}/api-keys/${keyId}`); };
 
 export const updateServiceAccount = async (
   groupId: string, userId: string,

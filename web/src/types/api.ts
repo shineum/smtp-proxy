@@ -206,6 +206,17 @@ export interface ProviderUsage {
   group_name: string;
 }
 
+export interface ApiKeyInfo {
+  id: string;
+  key_prefix: string;
+  label: string;
+  is_active: boolean;
+  expires_at?: string;
+  last_used_at?: string;
+  created_at: string;
+  api_key?: string; // only present on creation response
+}
+
 export interface ApiError {
   error: string;
   details?: string[];

@@ -13,7 +13,7 @@ import (
 )
 
 const countAPIKeysByUserID = `-- name: CountAPIKeysByUserID :one
-SELECT COUNT(*)::integer FROM api_keys WHERE user_id = $1
+SELECT COUNT(*)::integer FROM api_keys WHERE user_id = $1 AND is_active = true
 `
 
 func (q *Queries) CountAPIKeysByUserID(ctx context.Context, userID uuid.UUID) (int32, error) {
@@ -24,9 +24,9 @@ func (q *Queries) CountAPIKeysByUserID(ctx context.Context, userID uuid.UUID) (i
 }
 
 const createAPIKey = `-- name: CreateAPIKey :one
-INSERT INTO api_keys (user_id, key_prefix, key_hash, label, expires_at)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, key_prefix, key_hash, label, expires_at, last_used_at, created_at
+INSERT INTO api_keys (user_id, key_prefix, key_hash, label, expires_at, is_active)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, user_id, key_prefix, key_hash, label, is_active, expires_at, last_used_at, created_at
 `
 
 type CreateAPIKeyParams struct {
@@ -35,6 +35,7 @@ type CreateAPIKeyParams struct {
 	KeyHash   string             `json:"key_hash"`
 	Label     string             `json:"label"`
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	IsActive  bool               `json:"is_active"`
 }
 
 func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error) {
@@ -44,6 +45,7 @@ func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (Api
 		arg.KeyHash,
 		arg.Label,
 		arg.ExpiresAt,
+		arg.IsActive,
 	)
 	var i ApiKey
 	err := row.Scan(
@@ -52,6 +54,7 @@ func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (Api
 		&i.KeyPrefix,
 		&i.KeyHash,
 		&i.Label,
+		&i.IsActive,
 		&i.ExpiresAt,
 		&i.LastUsedAt,
 		&i.CreatedAt,
@@ -83,8 +86,8 @@ func (q *Queries) DeleteAllAPIKeysByUserID(ctx context.Context, userID uuid.UUID
 }
 
 const getAPIKeyByPrefix = `-- name: GetAPIKeyByPrefix :one
-SELECT id, user_id, key_prefix, key_hash, label, expires_at, last_used_at, created_at FROM api_keys
-WHERE key_prefix = $1
+SELECT id, user_id, key_prefix, key_hash, label, is_active, expires_at, last_used_at, created_at FROM api_keys
+WHERE key_prefix = $1 AND is_active = true
 `
 
 func (q *Queries) GetAPIKeyByPrefix(ctx context.Context, keyPrefix string) (ApiKey, error) {
@@ -96,6 +99,7 @@ func (q *Queries) GetAPIKeyByPrefix(ctx context.Context, keyPrefix string) (ApiK
 		&i.KeyPrefix,
 		&i.KeyHash,
 		&i.Label,
+		&i.IsActive,
 		&i.ExpiresAt,
 		&i.LastUsedAt,
 		&i.CreatedAt,
@@ -104,7 +108,7 @@ func (q *Queries) GetAPIKeyByPrefix(ctx context.Context, keyPrefix string) (ApiK
 }
 
 const listAPIKeysByUserID = `-- name: ListAPIKeysByUserID :many
-SELECT id, user_id, key_prefix, label, expires_at, last_used_at, created_at
+SELECT id, user_id, key_prefix, label, is_active, expires_at, last_used_at, created_at
 FROM api_keys
 WHERE user_id = $1
 ORDER BY created_at DESC
@@ -115,6 +119,7 @@ type ListAPIKeysByUserIDRow struct {
 	UserID     uuid.UUID          `json:"user_id"`
 	KeyPrefix  string             `json:"key_prefix"`
 	Label      string             `json:"label"`
+	IsActive   bool               `json:"is_active"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
@@ -134,6 +139,7 @@ func (q *Queries) ListAPIKeysByUserID(ctx context.Context, userID uuid.UUID) ([]
 			&i.UserID,
 			&i.KeyPrefix,
 			&i.Label,
+			&i.IsActive,
 			&i.ExpiresAt,
 			&i.LastUsedAt,
 			&i.CreatedAt,
@@ -155,4 +161,32 @@ UPDATE api_keys SET last_used_at = NOW() WHERE id = $1
 func (q *Queries) UpdateAPIKeyLastUsed(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, updateAPIKeyLastUsed, id)
 	return err
+}
+
+const updateAPIKeyStatus = `-- name: UpdateAPIKeyStatus :one
+UPDATE api_keys SET is_active = $3 WHERE id = $1 AND user_id = $2
+RETURNING id, user_id, key_prefix, key_hash, label, is_active, expires_at, last_used_at, created_at
+`
+
+type UpdateAPIKeyStatusParams struct {
+	ID       uuid.UUID `json:"id"`
+	UserID   uuid.UUID `json:"user_id"`
+	IsActive bool      `json:"is_active"`
+}
+
+func (q *Queries) UpdateAPIKeyStatus(ctx context.Context, arg UpdateAPIKeyStatusParams) (ApiKey, error) {
+	row := q.db.QueryRow(ctx, updateAPIKeyStatus, arg.ID, arg.UserID, arg.IsActive)
+	var i ApiKey
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.KeyPrefix,
+		&i.KeyHash,
+		&i.Label,
+		&i.IsActive,
+		&i.ExpiresAt,
+		&i.LastUsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }

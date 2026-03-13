@@ -320,6 +320,10 @@ func (m *mockQuerier) UpdateAPIKeyLastUsed(_ context.Context, _ uuid.UUID) error
 	return nil
 }
 
+func (m *mockQuerier) UpdateAPIKeyStatus(_ context.Context, _ storage.UpdateAPIKeyStatusParams) (storage.ApiKey, error) {
+	return storage.ApiKey{}, nil
+}
+
 func (m *mockQuerier) GetUserByEmail(_ context.Context, _ string) (storage.User, error) {
 	return storage.User{}, nil
 }

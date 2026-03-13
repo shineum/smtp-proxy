@@ -150,6 +150,10 @@ func (m *mockQuerier) UpdateAPIKeyLastUsed(_ context.Context, _ uuid.UUID) error
 	return nil
 }
 
+func (m *mockQuerier) UpdateAPIKeyStatus(_ context.Context, _ storage.UpdateAPIKeyStatusParams) (storage.ApiKey, error) {
+	return storage.ApiKey{}, nil
+}
+
 func (m *mockQuerier) ListUsers(ctx context.Context) ([]storage.User, error) {
 	if m.listUsersFn != nil {
 		return m.listUsersFn(ctx)

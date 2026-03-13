@@ -84,6 +84,12 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 				r.Patch("/service-accounts/{uid}", UpdateServiceAccountHandler(cfg.Queries, cfg.AuditLogger))
 				r.Post("/service-accounts/{uid}/reset-api-key", ResetServiceAccountAPIKeyHandler(cfg.Queries, cfg.AuditLogger))
 
+				// API keys management for service accounts
+				r.Post("/service-accounts/{uid}/api-keys", CreateAPIKeyHandler(cfg.Queries, cfg.AuditLogger))
+				r.Get("/service-accounts/{uid}/api-keys", ListAPIKeysHandler(cfg.Queries))
+				r.Patch("/service-accounts/{uid}/api-keys/{keyId}", UpdateAPIKeyStatusHandler(cfg.Queries, cfg.AuditLogger))
+				r.Delete("/service-accounts/{uid}/api-keys/{keyId}", DeleteAPIKeyHandler(cfg.Queries, cfg.AuditLogger))
+
 				// Activity logs
 				r.Get("/activity", ListActivityLogsHandler(cfg.Queries))
 			})

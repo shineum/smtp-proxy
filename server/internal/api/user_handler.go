@@ -348,6 +348,7 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 				KeyHash:   keyHash,
 				Label:     "default",
 				ExpiresAt: apiKeyExpiresAt,
+				IsActive:  true,
 			})
 			if createErr != nil {
 				respondError(w, http.StatusInternalServerError, "failed to create API key")
@@ -680,6 +681,7 @@ func ResetAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 			KeyHash:   keyHash,
 			Label:     "default",
 			ExpiresAt: apiKeyExpiresAt,
+			IsActive:  true,
 		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "failed to create API key")

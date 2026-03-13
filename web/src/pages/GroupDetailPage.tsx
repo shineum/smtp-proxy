@@ -5,18 +5,19 @@ import {
   Card, CardBody, DescriptionList, DescriptionListGroup,
   DescriptionListTerm, DescriptionListDescription, Label, Spinner,
   Button, Modal, ModalVariant, Form, FormGroup, TextInput,
-  FormSelect, FormSelectOption, ClipboardCopy,
+  FormSelect, FormSelectOption, ClipboardCopy, Switch,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import {
   fetchGroup, fetchGroupMembers, fetchActivityLogs,
   addGroupMember, removeMember, updateMemberRole,
   createServiceAccount, updateServiceAccount, fetchUser,
-  fetchProviders, updateGroup, resetServiceAccountApiKey,
+  fetchProviders, updateGroup,
+  fetchApiKeys, createApiKey, updateApiKeyStatus, deleteApiKey,
 } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
-import type { User } from '../types/api';
+import type { ApiKeyInfo } from '../types/api';
 
 export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,8 +31,6 @@ export default function GroupDetailPage() {
   const [saEmail, setSaEmail] = useState('');
   const [saDomains, setSaDomains] = useState('');
   const [saProviderId, setSaProviderId] = useState('');
-  const [saKeyExpiry, setSaKeyExpiry] = useState('');
-  const [createdSA, setCreatedSA] = useState<User | null>(null);
 
   // Edit service account state
   const [isEditSAOpen, setIsEditSAOpen] = useState(false);
@@ -51,11 +50,13 @@ export default function GroupDetailPage() {
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editDescription, setEditDescription] = useState('');
 
-  // Reset API key state
-  const [resetKeyResult, setResetKeyResult] = useState<User | null>(null);
-  const [resetKeyExpiry, setResetKeyExpiry] = useState('');
-  const [isResetKeyModalOpen, setIsResetKeyModalOpen] = useState(false);
-  const [resetKeyUserId, setResetKeyUserId] = useState('');
+  // API key management state
+  const [expandedSA, setExpandedSA] = useState<string | null>(null);
+  const [isCreateKeyOpen, setIsCreateKeyOpen] = useState(false);
+  const [createKeyUserId, setCreateKeyUserId] = useState('');
+  const [createKeyLabel, setCreateKeyLabel] = useState('');
+  const [createKeyExpiry, setCreateKeyExpiry] = useState('');
+  const [createdKeyResult, setCreatedKeyResult] = useState<ApiKeyInfo | null>(null);
 
   const callerRole = me?.memberships?.find(m => m.group_id === id)?.role;
   const isOwnerOrAdmin = isSystemAdmin || callerRole === 'owner' || callerRole === 'admin';
@@ -84,6 +85,12 @@ export default function GroupDetailPage() {
     enabled: (isCreateSAOpen || isEditSAOpen) && !!id,
   });
 
+  const { data: apiKeys, refetch: refetchApiKeys } = useQuery({
+    queryKey: ['api-keys', id, expandedSA],
+    queryFn: () => fetchApiKeys(id!, expandedSA!),
+    enabled: !!id && !!expandedSA,
+  });
+
   // Auto-select stdout provider as default when providers load
   useEffect(() => {
     if (providers && !saProviderId) {
@@ -101,17 +108,15 @@ export default function GroupDetailPage() {
         email: saEmail || undefined,
         allowed_domains: domains,
         provider_id: saProviderId || undefined,
-        api_key_expires_in: saKeyExpiry || undefined,
       });
     },
-    onSuccess: (data) => {
-      setCreatedSA(data);
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group-members', id] });
+      setIsCreateSAOpen(false);
       setSaUsername('');
       setSaEmail('');
       setSaDomains('');
       setSaProviderId('');
-      setSaKeyExpiry('');
     },
   });
 
@@ -157,14 +162,29 @@ export default function GroupDetailPage() {
     },
   });
 
-  const resetKeyMutation = useMutation({
-    mutationFn: ({ userId, expiresIn }: { userId: string; expiresIn?: string }) =>
-      resetServiceAccountApiKey(id!, userId, expiresIn || undefined),
+  const createKeyMutation = useMutation({
+    mutationFn: () => createApiKey(id!, createKeyUserId, {
+      label: createKeyLabel || 'default',
+      api_key_expires_in: createKeyExpiry || undefined,
+    }),
     onSuccess: (data) => {
-      setResetKeyResult(data);
-      setIsResetKeyModalOpen(false);
-      setResetKeyExpiry('');
+      setCreatedKeyResult(data);
+      refetchApiKeys();
+      setCreateKeyLabel('');
+      setCreateKeyExpiry('');
     },
+  });
+
+  const toggleKeyMutation = useMutation({
+    mutationFn: ({ userId, keyId, isActive }: { userId: string; keyId: string; isActive: boolean }) =>
+      updateApiKeyStatus(id!, userId, keyId, isActive),
+    onSuccess: () => refetchApiKeys(),
+  });
+
+  const deleteKeyMutation = useMutation({
+    mutationFn: ({ userId, keyId }: { userId: string; keyId: string }) =>
+      deleteApiKey(id!, userId, keyId),
+    onSuccess: () => refetchApiKeys(),
   });
 
   const openEditSAModal = async (userId: string) => {
@@ -186,12 +206,6 @@ export default function GroupDetailPage() {
     setEditDisplayName(group?.display_name || '');
     setEditDescription(group?.description || '');
     setIsEditOpen(true);
-  };
-
-  const handleResetKey = (userId: string) => {
-    setResetKeyUserId(userId);
-    setResetKeyExpiry('');
-    setIsResetKeyModalOpen(true);
   };
 
   if (isLoading || !group) return <PageSection><Spinner size="xl" /></PageSection>;
@@ -312,33 +326,94 @@ export default function GroupDetailPage() {
                 )}
               </div>
               <Table aria-label="Service accounts">
-                <Thead><Tr><Th>Username</Th><Th>Email</Th><Th>Role</Th><Th>Joined</Th>{isOwnerOrAdmin && <Th>Actions</Th>}</Tr></Thead>
+                <Thead><Tr><Th></Th><Th>Username</Th><Th>Email</Th><Th>Role</Th><Th>Joined</Th>{isOwnerOrAdmin && <Th>Actions</Th>}</Tr></Thead>
                 <Tbody>
                   {serviceAccounts.map((m) => (
-                    <Tr key={m.id}>
-                      <Td>{m.username || '-'}</Td>
-                      <Td>{m.email || m.user_id}</Td>
-                      <Td><Label>{m.role}</Label></Td>
-                      <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
-                      {isOwnerOrAdmin && (
+                    <Fragment key={m.id}>
+                      <Tr>
                         <Td>
-                          <div className="action-buttons">
-                            <Button variant="secondary" size="sm" onClick={() => openEditSAModal(m.user_id)}>
-                              Edit
-                            </Button>
-                            <Button variant="secondary" size="sm" onClick={() => handleResetKey(m.user_id)} isDisabled={resetKeyMutation.isPending}>
-                              Reset Key
-                            </Button>
-                            <Button variant="danger" size="sm" onClick={() => { if (confirm('Remove this service account?')) removeMemberMutation.mutate(m.user_id); }}>
-                              Remove
-                            </Button>
-                          </div>
+                          <Button variant="plain" size="sm"
+                            onClick={() => setExpandedSA(expandedSA === m.user_id ? null : m.user_id)}>
+                            {expandedSA === m.user_id ? '▼' : '▶'}
+                          </Button>
                         </Td>
+                        <Td>{m.username || '-'}</Td>
+                        <Td>{m.email || m.user_id}</Td>
+                        <Td><Label>{m.role}</Label></Td>
+                        <Td>{new Date(m.created_at).toLocaleDateString()}</Td>
+                        {isOwnerOrAdmin && (
+                          <Td>
+                            <div className="action-buttons">
+                              <Button variant="secondary" size="sm" onClick={() => openEditSAModal(m.user_id)}>
+                                Edit
+                              </Button>
+                              <Button variant="danger" size="sm" onClick={() => { if (confirm('Remove this service account?')) removeMemberMutation.mutate(m.user_id); }}>
+                                Remove
+                              </Button>
+                            </div>
+                          </Td>
+                        )}
+                      </Tr>
+                      {expandedSA === m.user_id && (
+                        <Tr key={`${m.id}-keys`}>
+                          <Td colSpan={isOwnerOrAdmin ? 6 : 5}>
+                            <div style={{ padding: '1rem', background: 'var(--pf-v5-global--BackgroundColor--200)' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                                <Title headingLevel="h4" size="md">API Keys</Title>
+                                {isOwnerOrAdmin && (
+                                  <Button size="sm" onClick={() => {
+                                    setCreateKeyUserId(m.user_id);
+                                    setIsCreateKeyOpen(true);
+                                    setCreatedKeyResult(null);
+                                  }}>Add Key</Button>
+                                )}
+                              </div>
+                              <Table aria-label="API keys" variant="compact">
+                                <Thead><Tr><Th>Prefix</Th><Th>Label</Th><Th>Active</Th><Th>Expires</Th><Th>Last Used</Th><Th>Created</Th>{isOwnerOrAdmin && <Th>Actions</Th>}</Tr></Thead>
+                                <Tbody>
+                                  {apiKeys?.map((k) => (
+                                    <Tr key={k.id}>
+                                      <Td><code>{k.key_prefix}</code></Td>
+                                      <Td>{k.label || '-'}</Td>
+                                      <Td>
+                                        {isOwnerOrAdmin ? (
+                                          <Switch
+                                            id={`key-active-${k.id}`}
+                                            isChecked={k.is_active}
+                                            onChange={(_e, checked) => toggleKeyMutation.mutate({ userId: m.user_id, keyId: k.id, isActive: checked })}
+                                            isDisabled={toggleKeyMutation.isPending}
+                                          />
+                                        ) : (
+                                          <Label color={k.is_active ? 'green' : 'grey'}>{k.is_active ? 'Active' : 'Inactive'}</Label>
+                                        )}
+                                      </Td>
+                                      <Td>{k.expires_at ? new Date(k.expires_at).toLocaleDateString() : 'Never'}</Td>
+                                      <Td>{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'Never'}</Td>
+                                      <Td>{new Date(k.created_at).toLocaleDateString()}</Td>
+                                      {isOwnerOrAdmin && (
+                                        <Td>
+                                          <Button variant="danger" size="sm"
+                                            onClick={() => { if (confirm('Delete this API key?')) deleteKeyMutation.mutate({ userId: m.user_id, keyId: k.id }); }}
+                                            isDisabled={deleteKeyMutation.isPending}>
+                                            Delete
+                                          </Button>
+                                        </Td>
+                                      )}
+                                    </Tr>
+                                  ))}
+                                  {(!apiKeys || apiKeys.length === 0) && (
+                                    <Tr><Td colSpan={isOwnerOrAdmin ? 7 : 6}>No API keys. Add one to enable SMTP authentication.</Td></Tr>
+                                  )}
+                                </Tbody>
+                              </Table>
+                            </div>
+                          </Td>
+                        </Tr>
                       )}
-                    </Tr>
+                    </Fragment>
                   ))}
                   {serviceAccounts.length === 0 && (
-                    <Tr><Td colSpan={isOwnerOrAdmin ? 5 : 4}>No service accounts</Td></Tr>
+                    <Tr><Td colSpan={isOwnerOrAdmin ? 6 : 5}>No service accounts</Td></Tr>
                   )}
                 </Tbody>
               </Table>
@@ -371,64 +446,36 @@ export default function GroupDetailPage() {
         variant={ModalVariant.small}
         title="Create Service Account"
         isOpen={isCreateSAOpen}
-        onClose={() => { setIsCreateSAOpen(false); setCreatedSA(null); }}
-        actions={createdSA ? [
-          <Button key="close" onClick={() => { setIsCreateSAOpen(false); setCreatedSA(null); }}>Close</Button>,
-        ] : [
+        onClose={() => setIsCreateSAOpen(false)}
+        actions={[
           <Button key="create" onClick={() => createSAMutation.mutate()} isDisabled={!saUsername || createSAMutation.isPending}>
             {createSAMutation.isPending ? 'Creating...' : 'Create'}
           </Button>,
           <Button key="cancel" variant="link" onClick={() => setIsCreateSAOpen(false)}>Cancel</Button>,
         ]}
       >
-        {createdSA ? (
-          <div>
-            <p style={{ marginBottom: '1rem' }}>Service account created. Copy the credentials below - the API key will not be shown again.</p>
-            <FormGroup label="SMTP Login" fieldId="sa-smtp-login">
-              <ClipboardCopy isReadOnly className="mono">{`${saUsername || createdSA.username || ''}@${group.id}`}</ClipboardCopy>
-            </FormGroup>
-            <FormGroup label="Password (API Key)" fieldId="sa-api-key" style={{ marginTop: '0.75rem' }}>
-              <ClipboardCopy isReadOnly className="mono">{createdSA.api_key || ''}</ClipboardCopy>
-            </FormGroup>
-            {createdSA.api_key_expires_at && (
-              <p style={{ marginTop: '0.5rem', color: 'var(--pf-v5-global--Color--200)' }}>
-                Key expires: {new Date(createdSA.api_key_expires_at).toLocaleString()}
-              </p>
-            )}
-          </div>
-        ) : (
-          <Form>
-            <FormGroup label="Username" isRequired fieldId="sa-username">
-              <TextInput id="sa-username" value={saUsername} onChange={(_e, v) => setSaUsername(v)} isRequired />
-            </FormGroup>
-            <FormGroup label="Provider (defaults to stdout)" fieldId="sa-provider">
-              <FormSelect id="sa-provider" value={saProviderId} onChange={(_e, v) => setSaProviderId(v)}>
-                <FormSelectOption value="" label="Select a provider" isPlaceholder />
-                {providers?.filter(p => p.enabled).map((p) => (
-                  <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.provider_type})`} />
-                ))}
-              </FormSelect>
-            </FormGroup>
-            <FormGroup label="Email (optional, defaults to username@smtp.internal)" fieldId="sa-email">
-              <TextInput id="sa-email" value={saEmail} onChange={(_e, v) => setSaEmail(v)} />
-            </FormGroup>
-            <FormGroup label="Allowed Domains (comma-separated, optional)" fieldId="sa-domains">
-              <TextInput id="sa-domains" value={saDomains} onChange={(_e, v) => setSaDomains(v)} placeholder="example.com, other.com" />
-            </FormGroup>
-            <FormGroup label="API Key Expiration" fieldId="sa-key-expiry">
-              <FormSelect id="sa-key-expiry" value={saKeyExpiry} onChange={(_e, v) => setSaKeyExpiry(v)}>
-                <FormSelectOption value="" label="No expiration" />
-                <FormSelectOption value="1d" label="1 day" />
-                <FormSelectOption value="7d" label="7 days" />
-                <FormSelectOption value="30d" label="30 days" />
-                <FormSelectOption value="365d" label="1 year" />
-              </FormSelect>
-            </FormGroup>
-            {createSAMutation.isError && (
-              <p style={{ color: 'red' }}>Failed to create service account. Username may already be in use.</p>
-            )}
-          </Form>
-        )}
+        <Form>
+          <FormGroup label="Username" isRequired fieldId="sa-username">
+            <TextInput id="sa-username" value={saUsername} onChange={(_e, v) => setSaUsername(v)} isRequired />
+          </FormGroup>
+          <FormGroup label="Provider (defaults to stdout)" fieldId="sa-provider">
+            <FormSelect id="sa-provider" value={saProviderId} onChange={(_e, v) => setSaProviderId(v)}>
+              <FormSelectOption value="" label="Select a provider" isPlaceholder />
+              {providers?.filter(p => p.enabled).map((p) => (
+                <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.provider_type})`} />
+              ))}
+            </FormSelect>
+          </FormGroup>
+          <FormGroup label="Email (optional, defaults to username@smtp.internal)" fieldId="sa-email">
+            <TextInput id="sa-email" value={saEmail} onChange={(_e, v) => setSaEmail(v)} />
+          </FormGroup>
+          <FormGroup label="Allowed Domains (comma-separated, optional)" fieldId="sa-domains">
+            <TextInput id="sa-domains" value={saDomains} onChange={(_e, v) => setSaDomains(v)} placeholder="example.com, other.com" />
+          </FormGroup>
+          {createSAMutation.isError && (
+            <p style={{ color: 'red' }}>Failed to create service account. Username may already be in use.</p>
+          )}
+        </Form>
       </Modal>
 
       {/* Add Member Modal */}
@@ -520,54 +567,53 @@ export default function GroupDetailPage() {
         </Form>
       </Modal>
 
-      {/* Reset API Key Modal */}
+      {/* Create API Key Modal */}
       <Modal
         variant={ModalVariant.small}
-        title="Reset API Key"
-        isOpen={isResetKeyModalOpen}
-        onClose={() => setIsResetKeyModalOpen(false)}
-        actions={[
-          <Button key="reset" variant="danger" onClick={() => resetKeyMutation.mutate({ userId: resetKeyUserId, expiresIn: resetKeyExpiry })} isDisabled={resetKeyMutation.isPending}>
-            {resetKeyMutation.isPending ? 'Resetting...' : 'Reset Key'}
+        title="Create API Key"
+        isOpen={isCreateKeyOpen}
+        onClose={() => { setIsCreateKeyOpen(false); setCreatedKeyResult(null); }}
+        actions={createdKeyResult ? [
+          <Button key="close" onClick={() => { setIsCreateKeyOpen(false); setCreatedKeyResult(null); }}>Close</Button>,
+        ] : [
+          <Button key="create" onClick={() => createKeyMutation.mutate()} isDisabled={createKeyMutation.isPending}>
+            {createKeyMutation.isPending ? 'Creating...' : 'Create Key'}
           </Button>,
-          <Button key="cancel" variant="link" onClick={() => setIsResetKeyModalOpen(false)}>Cancel</Button>,
+          <Button key="cancel" variant="link" onClick={() => setIsCreateKeyOpen(false)}>Cancel</Button>,
         ]}
       >
-        <p style={{ marginBottom: '1rem' }}>The current API key will be invalidated immediately.</p>
-        <Form>
-          <FormGroup label="New Key Expiration" fieldId="reset-key-expiry">
-            <FormSelect id="reset-key-expiry" value={resetKeyExpiry} onChange={(_e, v) => setResetKeyExpiry(v)}>
-              <FormSelectOption value="" label="No expiration" />
-              <FormSelectOption value="1d" label="1 day" />
-              <FormSelectOption value="7d" label="7 days" />
-              <FormSelectOption value="30d" label="30 days" />
-              <FormSelectOption value="365d" label="1 year" />
-            </FormSelect>
-          </FormGroup>
-        </Form>
-      </Modal>
-
-      {/* Reset API Key Result Modal */}
-      <Modal
-        variant={ModalVariant.small}
-        title="API Key Reset"
-        isOpen={!!resetKeyResult}
-        onClose={() => setResetKeyResult(null)}
-        actions={[
-          <Button key="close" onClick={() => setResetKeyResult(null)}>Close</Button>,
-        ]}
-      >
-        <div>
-          <p style={{ marginBottom: '1rem' }}>API key has been reset. Copy the new key below - it will not be shown again.</p>
-          <FormGroup label="New API Key" fieldId="reset-api-key">
-            <ClipboardCopy isReadOnly className="mono">{resetKeyResult?.api_key || ''}</ClipboardCopy>
-          </FormGroup>
-          {resetKeyResult?.api_key_expires_at && (
-            <p style={{ marginTop: '0.5rem', color: 'var(--pf-v5-global--Color--200)' }}>
-              Expires: {new Date(resetKeyResult.api_key_expires_at).toLocaleString()}
-            </p>
-          )}
-        </div>
+        {createdKeyResult ? (
+          <div>
+            <p style={{ marginBottom: '1rem' }}>API key created. Copy it now - it will not be shown again.</p>
+            <FormGroup label="API Key" fieldId="new-api-key">
+              <ClipboardCopy isReadOnly className="mono">{createdKeyResult.api_key || ''}</ClipboardCopy>
+            </FormGroup>
+            {createdKeyResult.expires_at && (
+              <p style={{ marginTop: '0.5rem', color: 'var(--pf-v5-global--Color--200)' }}>
+                Expires: {new Date(createdKeyResult.expires_at).toLocaleString()}
+              </p>
+            )}
+          </div>
+        ) : (
+          <Form>
+            <FormGroup label="Label" fieldId="key-label">
+              <TextInput id="key-label" value={createKeyLabel} onChange={(_e, v) => setCreateKeyLabel(v)} placeholder="e.g. production, ci-pipeline" />
+            </FormGroup>
+            <FormGroup label="Expiration" fieldId="key-expiry">
+              <FormSelect id="key-expiry" value={createKeyExpiry} onChange={(_e, v) => setCreateKeyExpiry(v)}>
+                <FormSelectOption value="" label="No expiration" />
+                <FormSelectOption value="1d" label="1 day" />
+                <FormSelectOption value="7d" label="7 days" />
+                <FormSelectOption value="30d" label="30 days" />
+                <FormSelectOption value="90d" label="90 days" />
+                <FormSelectOption value="365d" label="1 year" />
+              </FormSelect>
+            </FormGroup>
+            {createKeyMutation.isError && (
+              <p style={{ color: 'red' }}>Failed to create API key.</p>
+            )}
+          </Form>
+        )}
       </Modal>
     </PageSection>
   );

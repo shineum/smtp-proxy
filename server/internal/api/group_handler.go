@@ -95,16 +95,38 @@ func toGroupMemberResponse(gm storage.GroupMember) groupMemberResponse {
 
 // createServiceAccountRequest is the JSON body for POST /api/v1/groups/{id}/service-accounts.
 type createServiceAccountRequest struct {
-	Username         string   `json:"username"`
-	Email            string   `json:"email,omitempty"`
-	AllowedDomains   []string `json:"allowed_domains,omitempty"`
-	ProviderID       string   `json:"provider_id"`
-	ApiKeyExpiresIn  string   `json:"api_key_expires_in,omitempty"`
+	Username       string   `json:"username"`
+	Email          string   `json:"email,omitempty"`
+	AllowedDomains []string `json:"allowed_domains,omitempty"`
+	ProviderID     string   `json:"provider_id"`
 }
 
 // resetAPIKeyRequest is the JSON body for reset-api-key endpoints.
 type resetAPIKeyRequest struct {
 	ApiKeyExpiresIn string `json:"api_key_expires_in,omitempty"`
+}
+
+// createAPIKeyRequest is the JSON body for POST /groups/{id}/service-accounts/{uid}/api-keys.
+type createAPIKeyRequest struct {
+	Label           string `json:"label"`
+	ApiKeyExpiresIn string `json:"api_key_expires_in,omitempty"`
+}
+
+// updateAPIKeyStatusRequest is the JSON body for PATCH /groups/{id}/service-accounts/{uid}/api-keys/{keyId}.
+type updateAPIKeyStatusRequest struct {
+	IsActive bool `json:"is_active"`
+}
+
+// apiKeyResponse is the JSON response for an API key.
+type apiKeyResponse struct {
+	ID         uuid.UUID  `json:"id"`
+	KeyPrefix  string     `json:"key_prefix"`
+	Label      string     `json:"label"`
+	IsActive   bool       `json:"is_active"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ApiKey     *string    `json:"api_key,omitempty"` // only on creation
 }
 
 // requireGroupRole checks that the caller has one of the allowed roles in the specified group.
@@ -763,13 +785,6 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			return
 		}
 
-		// Auto-generate API key
-		apiKey, err := auth.GenerateAPIKey()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-
 		// Marshal allowed domains
 		var domainsJSON []byte
 		if len(req.AllowedDomains) > 0 {
@@ -778,13 +793,6 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 				respondError(w, http.StatusInternalServerError, "internal server error")
 				return
 			}
-		}
-
-		// Parse API key expiration
-		apiKeyExpiresAt, err := parseAPIKeyExpiration(req.ApiKeyExpiresIn)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, err.Error())
-			return
 		}
 
 		user, err := queries.CreateUser(r.Context(), storage.CreateUserParams{
@@ -802,25 +810,6 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			} else {
 				respondError(w, http.StatusInternalServerError, "failed to create service account")
 			}
-			return
-		}
-
-		// Create API key in api_keys table
-		keyPrefix := auth.APIKeyPrefix(apiKey)
-		keyHash, err := auth.HashAPIKey(apiKey)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-		apiKeyRecord, err := queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
-			UserID:    user.ID,
-			KeyPrefix: keyPrefix,
-			KeyHash:   keyHash,
-			Label:     "default",
-			ExpiresAt: apiKeyExpiresAt,
-		})
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to create API key")
 			return
 		}
 
@@ -842,13 +831,7 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			})
 		}
 
-		resp := toUserResponse(user)
-		resp.ApiKey = &apiKey
-		if apiKeyRecord.ExpiresAt.Valid {
-			t := apiKeyRecord.ExpiresAt.Time
-			resp.ApiKeyExpiresAt = &t
-		}
-		respondJSON(w, http.StatusCreated, resp)
+		respondJSON(w, http.StatusCreated, toUserResponse(user))
 	}
 }
 
@@ -931,6 +914,7 @@ func ResetServiceAccountAPIKeyHandler(queries storage.Querier, auditLogger *auth
 			KeyHash:   keyHash,
 			Label:     "default",
 			ExpiresAt: apiKeyExpiresAt,
+			IsActive:  true,
 		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "failed to create API key")
@@ -950,5 +934,300 @@ func ResetServiceAccountAPIKeyHandler(queries storage.Querier, auditLogger *auth
 			resp.ApiKeyExpiresAt = &t
 		}
 		respondJSON(w, http.StatusOK, resp)
+	}
+}
+
+// toAPIKeyResponse converts a storage.ApiKey to an apiKeyResponse.
+func toAPIKeyResponse(k storage.ApiKey) apiKeyResponse {
+	resp := apiKeyResponse{
+		ID:        k.ID,
+		KeyPrefix: k.KeyPrefix,
+		Label:     k.Label,
+		IsActive:  k.IsActive,
+		CreatedAt: timestampToTime(k.CreatedAt),
+	}
+	if k.ExpiresAt.Valid {
+		t := k.ExpiresAt.Time
+		resp.ExpiresAt = &t
+	}
+	if k.LastUsedAt.Valid {
+		t := k.LastUsedAt.Time
+		resp.LastUsedAt = &t
+	}
+	return resp
+}
+
+// toAPIKeyResponseFromRow converts a storage.ListAPIKeysByUserIDRow to an apiKeyResponse.
+func toAPIKeyResponseFromRow(k storage.ListAPIKeysByUserIDRow) apiKeyResponse {
+	resp := apiKeyResponse{
+		ID:        k.ID,
+		KeyPrefix: k.KeyPrefix,
+		Label:     k.Label,
+		IsActive:  k.IsActive,
+		CreatedAt: timestampToTime(k.CreatedAt),
+	}
+	if k.ExpiresAt.Valid {
+		t := k.ExpiresAt.Time
+		resp.ExpiresAt = &t
+	}
+	if k.LastUsedAt.Valid {
+		t := k.LastUsedAt.Time
+		resp.LastUsedAt = &t
+	}
+	return resp
+}
+
+// CreateAPIKeyHandler handles POST /api/v1/groups/{id}/service-accounts/{uid}/api-keys.
+// Creates a new API key for an SMTP service account in the group.
+// Requires owner or admin role.
+func CreateAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		groupID, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid group ID format")
+			return
+		}
+
+		uidStr := chi.URLParam(r, "uid")
+		userID, err := uuid.Parse(uidStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
+			return
+		}
+
+		// Verify user belongs to this group
+		_, err = queries.GetGroupMemberByUserAndGroup(r.Context(), storage.GetGroupMemberByUserAndGroupParams{
+			UserID:  userID,
+			GroupID: groupID,
+		})
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user is not a member of this group")
+			return
+		}
+
+		// Verify user is an SMTP service account
+		user, err := queries.GetUserByID(r.Context(), userID)
+		if err != nil || user.AccountType != "smtp" {
+			respondError(w, http.StatusBadRequest, "user is not an SMTP service account")
+			return
+		}
+
+		var req createAPIKeyRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		label := req.Label
+		if label == "" {
+			label = "default"
+		}
+
+		apiKeyExpiresAt, err := parseAPIKeyExpiration(req.ApiKeyExpiresIn)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		newKey, err := auth.GenerateAPIKey()
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		keyPrefix := auth.APIKeyPrefix(newKey)
+		keyHash, err := auth.HashAPIKey(newKey)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		apiKeyRecord, err := queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
+			UserID:    userID,
+			KeyPrefix: keyPrefix,
+			KeyHash:   keyHash,
+			Label:     label,
+			ExpiresAt: apiKeyExpiresAt,
+			IsActive:  true,
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to create API key")
+			return
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "admin.create_api_key", "api_key", apiKeyRecord.ID.String(), map[string]interface{}{
+				"user_id":  userID.String(),
+				"group_id": groupID.String(),
+				"label":    label,
+			})
+		}
+
+		resp := toAPIKeyResponse(apiKeyRecord)
+		resp.ApiKey = &newKey
+		respondJSON(w, http.StatusCreated, resp)
+	}
+}
+
+// ListAPIKeysHandler handles GET /api/v1/groups/{id}/service-accounts/{uid}/api-keys.
+// Lists all API keys for an SMTP service account in the group.
+// Requires owner or admin role.
+func ListAPIKeysHandler(queries storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		groupID, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid group ID format")
+			return
+		}
+
+		uidStr := chi.URLParam(r, "uid")
+		userID, err := uuid.Parse(uidStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
+			return
+		}
+
+		// Verify user belongs to this group
+		_, err = queries.GetGroupMemberByUserAndGroup(r.Context(), storage.GetGroupMemberByUserAndGroupParams{
+			UserID:  userID,
+			GroupID: groupID,
+		})
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user is not a member of this group")
+			return
+		}
+
+		keys, err := queries.ListAPIKeysByUserID(r.Context(), userID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to list API keys")
+			return
+		}
+
+		resp := make([]apiKeyResponse, len(keys))
+		for i, k := range keys {
+			resp[i] = toAPIKeyResponseFromRow(k)
+		}
+		respondJSON(w, http.StatusOK, resp)
+	}
+}
+
+// UpdateAPIKeyStatusHandler handles PATCH /api/v1/groups/{id}/service-accounts/{uid}/api-keys/{keyId}.
+// Updates the active status of an API key.
+// Requires owner or admin role.
+func UpdateAPIKeyStatusHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		groupID, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid group ID format")
+			return
+		}
+
+		uidStr := chi.URLParam(r, "uid")
+		userID, err := uuid.Parse(uidStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		keyIDStr := chi.URLParam(r, "keyId")
+		keyID, err := uuid.Parse(keyIDStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid key ID format")
+			return
+		}
+
+		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
+			return
+		}
+
+		var req updateAPIKeyStatusRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		apiKeyRecord, err := queries.UpdateAPIKeyStatus(r.Context(), storage.UpdateAPIKeyStatusParams{
+			ID:       keyID,
+			UserID:   userID,
+			IsActive: req.IsActive,
+		})
+		if err != nil {
+			respondError(w, http.StatusNotFound, "API key not found")
+			return
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "admin.update_api_key_status", "api_key", keyID.String(), map[string]interface{}{
+				"user_id":   userID.String(),
+				"group_id":  groupID.String(),
+				"is_active": req.IsActive,
+			})
+		}
+
+		respondJSON(w, http.StatusOK, toAPIKeyResponse(apiKeyRecord))
+	}
+}
+
+// DeleteAPIKeyHandler handles DELETE /api/v1/groups/{id}/service-accounts/{uid}/api-keys/{keyId}.
+// Deletes an API key for an SMTP service account.
+// Requires owner or admin role.
+func DeleteAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		groupID, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid group ID format")
+			return
+		}
+
+		uidStr := chi.URLParam(r, "uid")
+		userID, err := uuid.Parse(uidStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		keyIDStr := chi.URLParam(r, "keyId")
+		keyID, err := uuid.Parse(keyIDStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid key ID format")
+			return
+		}
+
+		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
+			return
+		}
+
+		if err := queries.DeleteAPIKey(r.Context(), storage.DeleteAPIKeyParams{
+			ID:     keyID,
+			UserID: userID,
+		}); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to delete API key")
+			return
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "admin.delete_api_key", "api_key", keyID.String(), map[string]interface{}{
+				"user_id":  userID.String(),
+				"group_id": groupID.String(),
+			})
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	}
 }

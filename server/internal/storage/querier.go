@@ -108,6 +108,7 @@ type Querier interface {
 	ResetMonthlySent(ctx context.Context, id uuid.UUID) error
 	ListAPIKeysByUserID(ctx context.Context, userID uuid.UUID) ([]ListAPIKeysByUserIDRow, error)
 	UpdateAPIKeyLastUsed(ctx context.Context, id uuid.UUID) error
+	UpdateAPIKeyStatus(ctx context.Context, arg UpdateAPIKeyStatusParams) (ApiKey, error)
 	RestoreUser(ctx context.Context, id uuid.UUID) (User, error)
 	RevokeProviderAccess(ctx context.Context, arg RevokeProviderAccessParams) error
 	SoftDeleteUser(ctx context.Context, id uuid.UUID) (User, error)

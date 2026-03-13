@@ -177,7 +177,7 @@ export default function DashboardPage() {
                   key={group.id}
                   value={group.id}
                   hasCheckbox
-                  isSelected={selectedGroupIds.includes(group.id)}
+                  isSelected={selectedGroupIds.includes(String(group.id))}
                 >
                   {group.display_name || group.name}
                 </SelectOption>

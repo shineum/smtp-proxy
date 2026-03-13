@@ -40,8 +40,8 @@ export default function ActivityLogPage() {
           {logs?.map((a) => (
             <Tr key={a.id}>
               <Td>{a.action}</Td>
-              <Td>{a.resource_type}{a.resource_id ? ` (${a.resource_id.slice(0, 8)}...)` : ''}</Td>
-              <Td>{a.actor_id ? `${a.actor_id.slice(0, 8)}...` : 'System'}</Td>
+              <Td>{a.resource_type}{a.resource_id ? ` (${a.resource_id})` : ''}</Td>
+              <Td>{a.actor_id ?? 'System'}</Td>
               <Td>{a.ip_address || '-'}</Td>
               <Td>{a.comment || '-'}</Td>
               <Td>{new Date(a.created_at).toLocaleString()}</Td>

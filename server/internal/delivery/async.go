@@ -3,7 +3,6 @@ package delivery
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"github.com/rs/zerolog"
 
@@ -33,20 +32,18 @@ func NewAsyncService(enqueuer queue.Enqueuer, streamName string, log zerolog.Log
 // The actual ESP delivery is handled asynchronously by the queue-worker process,
 // which fetches the full message body from the message store.
 func (a *AsyncService) DeliverMessage(ctx context.Context, req *Request) error {
-	messageIDStr := strconv.FormatInt(req.MessageID, 10)
-	groupIDStr := strconv.FormatInt(int64(req.GroupID), 10)
-	msg := queue.NewIDOnlyMessage(messageIDStr, groupIDStr, a.streamName)
+	msg := queue.NewIDOnlyMessage(req.MessageID.String(), req.GroupID.String(), a.streamName)
 
 	entryID, err := a.enqueuer.Enqueue(ctx, msg)
 	if err != nil {
 		a.log.Error().Err(err).
-			Int64("message_id", req.MessageID).
+			Stringer("message_id", req.MessageID).
 			Msg("failed to enqueue message to Redis")
 		return fmt.Errorf("enqueue to redis: %w", err)
 	}
 
 	a.log.Info().
-		Int64("message_id", req.MessageID).
+		Stringer("message_id", req.MessageID).
 		Str("entry_id", entryID).
 		Msg("message enqueued for async delivery")
 

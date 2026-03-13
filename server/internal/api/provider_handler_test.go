@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
@@ -28,7 +29,7 @@ func TestCreateProviderHandler_Valid(t *testing.T) {
 		getGroupMemberByUserAndGroupFn: adminMemberFn(),
 		createProviderFn: func(ctx context.Context, arg storage.CreateProviderParams) (storage.EspProvider, error) {
 			if arg.GroupID != groupID {
-				t.Errorf("expected group ID %d, got %d", groupID, arg.GroupID)
+				t.Errorf("expected group ID %s, got %s", groupID, arg.GroupID)
 			}
 			if arg.Name != "my-sendgrid" {
 				t.Errorf("expected name my-sendgrid, got %s", arg.Name)
@@ -60,7 +61,7 @@ func TestCreateProviderHandler_Valid(t *testing.T) {
 		t.Errorf("expected name %s, got %s", prov.Name, resp.Name)
 	}
 	if resp.GroupID != groupID {
-		t.Errorf("expected group_id %d, got %d", groupID, resp.GroupID)
+		t.Errorf("expected group_id %s, got %s", groupID, resp.GroupID)
 	}
 }
 
@@ -91,9 +92,9 @@ func TestListProvidersHandler_FilteredByGroup(t *testing.T) {
 	prov := testProvider()
 
 	mock := &mockQuerier{
-		listAccessibleProvidersFn: func(ctx context.Context, gID int32) ([]storage.EspProvider, error) {
+		listAccessibleProvidersFn: func(ctx context.Context, gID uuid.UUID) ([]storage.EspProvider, error) {
 			if gID != groupID {
-				t.Errorf("expected group ID %d, got %d", groupID, gID)
+				t.Errorf("expected group ID %s, got %s", groupID, gID)
 			}
 			return []storage.EspProvider{prov}, nil
 		},
@@ -128,7 +129,7 @@ func TestGetProviderHandler_Found(t *testing.T) {
 	groupID := testGroup().ID
 
 	mock := &mockQuerier{
-		getProviderByIDFn: func(ctx context.Context, id int32) (storage.EspProvider, error) {
+		getProviderByIDFn: func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error) {
 			return prov, nil
 		},
 		isProviderAccessibleFn: func(arg storage.IsProviderAccessibleParams) (bool, error) {
@@ -136,11 +137,11 @@ func TestGetProviderHandler_Found(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+int32ToStr(prov.ID), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+prov.ID.String(), nil)
 	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(prov.ID))
+	rctx.URLParams.Add("id", prov.ID.String())
 	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
 	req = req.WithContext(ctx)
 
@@ -156,17 +157,17 @@ func TestGetProviderHandler_Found(t *testing.T) {
 func TestGetProviderHandler_NotFound(t *testing.T) {
 	groupID := testGroup().ID
 	mock := &mockQuerier{
-		getProviderByIDFn: func(ctx context.Context, id int32) (storage.EspProvider, error) {
+		getProviderByIDFn: func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error) {
 			return storage.EspProvider{}, errNotFound
 		},
 	}
 
-	var id int32 = 999
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+int32ToStr(id), nil)
+	id := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+id.String(), nil)
 	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(id))
+	rctx.URLParams.Add("id", id.String())
 	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
 	req = req.WithContext(ctx)
 
@@ -185,7 +186,7 @@ func TestUpdateProviderHandler(t *testing.T) {
 
 	mock := &mockQuerier{
 		getGroupMemberByUserAndGroupFn: adminMemberFn(),
-		getProviderByIDFn: func(ctx context.Context, id int32) (storage.EspProvider, error) {
+		getProviderByIDFn: func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error) {
 			return prov, nil
 		},
 		updateProviderFn: func(ctx context.Context, arg storage.UpdateProviderParams) (storage.EspProvider, error) {
@@ -196,12 +197,12 @@ func TestUpdateProviderHandler(t *testing.T) {
 	}
 
 	body := `{"name":"updated-provider","provider_type":"mailgun","enabled":false}`
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/"+int32ToStr(prov.ID), strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/providers/"+prov.ID.String(), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(prov.ID))
+	rctx.URLParams.Add("id", prov.ID.String())
 	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
 	req = req.WithContext(ctx)
 
@@ -219,13 +220,13 @@ func TestProviderUsageHandler_Success(t *testing.T) {
 	groupID := testGroup().ID
 
 	mock := &mockQuerier{
-		getProviderByIDFn: func(_ context.Context, id int32) (storage.EspProvider, error) {
+		getProviderByIDFn: func(_ context.Context, id uuid.UUID) (storage.EspProvider, error) {
 			return prov, nil
 		},
-		listUsersByProviderIDFn: func(_ context.Context, _ pgtype.Int4) ([]storage.ListUsersByProviderIDRow, error) {
+		listUsersByProviderIDFn: func(_ context.Context, _ pgtype.UUID) ([]storage.ListUsersByProviderIDRow, error) {
 			return []storage.ListUsersByProviderIDRow{
 				{
-					ID:          99,
+					ID:          uuid.MustParse("00000000-0000-0000-0000-000000000099"),
 					Email:       "user@example.com",
 					AccountType: "user",
 					Role:        "member",
@@ -236,11 +237,11 @@ func TestProviderUsageHandler_Success(t *testing.T) {
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+int32ToStr(prov.ID)+"/usage", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+prov.ID.String()+"/usage", nil)
 	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(prov.ID))
+	rctx.URLParams.Add("id", prov.ID.String())
 	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
 	req = req.WithContext(ctx)
 
@@ -253,7 +254,7 @@ func TestProviderUsageHandler_Success(t *testing.T) {
 	}
 
 	var resp []struct {
-		UserID    int32  `json:"user_id"`
+		UserID    string `json:"user_id"`
 		Email     string `json:"email"`
 		GroupName string `json:"group_name"`
 	}
@@ -273,11 +274,11 @@ func TestProviderUsageHandler_InvalidID(t *testing.T) {
 
 	mock := &mockQuerier{}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/not-a-number/usage", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/not-a-uuid/usage", nil)
 	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", "not-a-number")
+	rctx.URLParams.Add("id", "not-a-uuid")
 	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
 	req = req.WithContext(ctx)
 
@@ -295,19 +296,19 @@ func TestProviderUsageHandler_EmptyResult(t *testing.T) {
 	groupID := testGroup().ID
 
 	mock := &mockQuerier{
-		getProviderByIDFn: func(_ context.Context, _ int32) (storage.EspProvider, error) {
+		getProviderByIDFn: func(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
 			return prov, nil
 		},
-		listUsersByProviderIDFn: func(_ context.Context, _ pgtype.Int4) ([]storage.ListUsersByProviderIDRow, error) {
+		listUsersByProviderIDFn: func(_ context.Context, _ pgtype.UUID) ([]storage.ListUsersByProviderIDRow, error) {
 			return []storage.ListUsersByProviderIDRow{}, nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+int32ToStr(prov.ID)+"/usage", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+prov.ID.String()+"/usage", nil)
 	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(prov.ID))
+	rctx.URLParams.Add("id", prov.ID.String())
 	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
 	req = req.WithContext(ctx)
 
@@ -331,12 +332,11 @@ func TestProviderUsageHandler_EmptyResult(t *testing.T) {
 func TestProviderUsageHandler_Unauthorized(t *testing.T) {
 	mock := &mockQuerier{}
 
-	var id int32 = 999
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+int32ToStr(id)+"/usage", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+uuid.New().String()+"/usage", nil)
 	// No JWT context set
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(id))
+	rctx.URLParams.Add("id", uuid.New().String())
 	ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
 	req = req.WithContext(ctx)
 
@@ -351,19 +351,19 @@ func TestProviderUsageHandler_Unauthorized(t *testing.T) {
 
 func TestProviderUsageHandler_Forbidden(t *testing.T) {
 	prov := testProvider()
-	var otherGroupID int32 = 99
+	otherGroupID := uuid.MustParse("00000000-0000-0000-0000-000000000099")
 
 	mock := &mockQuerier{
-		getProviderByIDFn: func(_ context.Context, _ int32) (storage.EspProvider, error) {
+		getProviderByIDFn: func(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
 			return prov, nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+int32ToStr(prov.ID)+"/usage", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/providers/"+prov.ID.String()+"/usage", nil)
 	ctx := setJWTContext(req.Context(), testUser().ID, otherGroupID, "admin", "organization")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(prov.ID))
+	rctx.URLParams.Add("id", prov.ID.String())
 	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
 	req = req.WithContext(ctx)
 
@@ -383,20 +383,20 @@ func TestDeleteProviderHandler(t *testing.T) {
 
 	mock := &mockQuerier{
 		getGroupMemberByUserAndGroupFn: adminMemberFn(),
-		getProviderByIDFn: func(ctx context.Context, id int32) (storage.EspProvider, error) {
+		getProviderByIDFn: func(ctx context.Context, id uuid.UUID) (storage.EspProvider, error) {
 			return prov, nil
 		},
-		deleteProviderFn: func(ctx context.Context, delID int32) error {
+		deleteProviderFn: func(ctx context.Context, delID uuid.UUID) error {
 			deleteCalled = true
 			return nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/providers/"+int32ToStr(prov.ID), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/providers/"+prov.ID.String(), nil)
 	ctx := setJWTContext(req.Context(), testUser().ID, groupID, "admin", "organization")
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(prov.ID))
+	rctx.URLParams.Add("id", prov.ID.String())
 	ctx = context.WithValue(ctx, chi.RouteCtxKey, rctx)
 	req = req.WithContext(ctx)
 

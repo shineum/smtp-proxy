@@ -3,13 +3,12 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -33,15 +32,15 @@ type createUserRequest struct {
 
 // userResponse is the JSON response for a user, excluding sensitive fields.
 type userResponse struct {
-	ID               int32      `json:"id"`
+	ID               uuid.UUID  `json:"id"`
 	Email            string     `json:"email"`
 	Username         *string    `json:"username,omitempty"`
 	AccountType      string     `json:"account_type"`
 	Status           string     `json:"status"`
 	AllowedDomains   []string   `json:"allowed_domains,omitempty"`
 	ApiKey           *string    `json:"api_key,omitempty"`
-	ProviderID       *int32     `json:"provider_id,omitempty"`
-	HomeGroupID      *int32     `json:"home_group_id,omitempty"`
+	ProviderID       *uuid.UUID `json:"provider_id,omitempty"`
+	HomeGroupID      *uuid.UUID `json:"home_group_id,omitempty"`
 	DisplayName      *string    `json:"display_name,omitempty"`
 	Description      *string    `json:"description,omitempty"`
 	PasswordDisabled bool       `json:"password_disabled"`
@@ -74,11 +73,11 @@ func toUserResponse(u storage.User) userResponse {
 		resp.AllowedDomains = decodeDomains(u.AllowedDomains)
 	}
 	if u.ProviderID.Valid {
-		id := u.ProviderID.Int32
+		id := uuid.UUID(u.ProviderID.Bytes)
 		resp.ProviderID = &id
 	}
 	if u.HomeGroupID.Valid {
-		id := u.HomeGroupID.Int32
+		id := uuid.UUID(u.HomeGroupID.Bytes)
 		resp.HomeGroupID = &id
 	}
 	if u.DisplayName.Valid {
@@ -193,12 +192,7 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			passwordHash = hash
 		} else if req.AccountType == "smtp" {
 			// Generate a random password hash for SMTP accounts that don't log in
-			randomPwd, err := auth.GenerateAPIKey()
-			if err != nil {
-				respondError(w, http.StatusInternalServerError, "internal server error")
-				return
-			}
-			hash, err := auth.HashPassword(randomPwd)
+			hash, err := auth.HashPassword(uuid.New().String())
 			if err != nil {
 				respondError(w, http.StatusInternalServerError, "internal server error")
 				return
@@ -235,14 +229,13 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 		}
 
 		// Parse and validate provider_id for SMTP accounts
-		var providerPgID pgtype.Int4
+		var providerPgID pgtype.UUID
 		if req.ProviderID != "" {
-			pn, err := strconv.ParseInt(req.ProviderID, 10, 32)
+			pid, err := uuid.Parse(req.ProviderID)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid provider_id format")
 				return
 			}
-			pid := int32(pn)
 			// Verify the provider exists and is enabled
 			esp, err := queries.GetProviderByID(r.Context(), pid)
 			if err != nil {
@@ -253,18 +246,18 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 				respondError(w, http.StatusBadRequest, "provider is not enabled")
 				return
 			}
-			providerPgID = pgtype.Int4{Int32: pid, Valid: true}
+			providerPgID = pgtype.UUID{Bytes: pid, Valid: true}
 		}
 
 		// Parse group_id early so we can validate provider belongs to the group
-		var groupID int32
+		var groupID uuid.UUID
 		if req.GroupID != "" {
-			gn, err := strconv.ParseInt(req.GroupID, 10, 32)
+			var err error
+			groupID, err = uuid.Parse(req.GroupID)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid group_id format")
 				return
 			}
-			groupID = int32(gn)
 
 			// Verify the caller has access to this group
 			callerGroupID := auth.GroupIDFromContext(r.Context())
@@ -276,8 +269,7 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 
 			// For SMTP accounts, verify provider is accessible to this group
 			if req.ProviderID != "" {
-				pn, _ := strconv.ParseInt(req.ProviderID, 10, 32)
-				pid := int32(pn)
+				pid, _ := uuid.Parse(req.ProviderID)
 				accessible, accessErr := queries.IsProviderAccessible(r.Context(), storage.IsProviderAccessibleParams{
 					ID:      pid,
 					GroupID: groupID,
@@ -293,13 +285,13 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 					respondError(w, http.StatusBadRequest, "no default stdout provider available")
 					return
 				}
-				providerPgID = pgtype.Int4{Int32: stdoutProvider.ID, Valid: true}
+				providerPgID = pgtype.UUID{Bytes: stdoutProvider.ID, Valid: true}
 			}
 		}
 
-		var homeGroupPgID pgtype.Int4
-		if req.AccountType == "smtp" && groupID != 0 {
-			homeGroupPgID = pgtype.Int4{Int32: groupID, Valid: true}
+		var homeGroupPgID pgtype.UUID
+		if req.AccountType == "smtp" && groupID != uuid.Nil {
+			homeGroupPgID = pgtype.UUID{Bytes: groupID, Valid: true}
 		}
 
 		apiKeyExpiresAt, err := parseAPIKeyExpiration(req.ApiKeyExpiresIn)
@@ -345,7 +337,7 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, auth.AuditActionCreateUser, "user", fmt.Sprintf("%d", user.ID), map[string]interface{}{
+			auditLogger.LogAdminAction(r.Context(), r, auth.AuditActionCreateUser, "user", user.ID.String(), map[string]interface{}{
 				"email":        req.Email,
 				"account_type": req.AccountType,
 			})
@@ -366,12 +358,11 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 func ListUserMembershipsHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		n, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		id := int32(n)
 
 		memberships, err := queries.ListMembershipsByUserID(r.Context(), id)
 		if err != nil {
@@ -380,7 +371,8 @@ func ListUserMembershipsHandler(queries storage.Querier) http.HandlerFunc {
 		}
 
 		type membershipResponse struct {
-			GroupID   int32     `json:"group_id"`
+			ID        uuid.UUID `json:"id"`
+			GroupID   uuid.UUID `json:"group_id"`
 			GroupName string    `json:"group_name"`
 			GroupType string    `json:"group_type"`
 			Role      string    `json:"role"`
@@ -390,6 +382,7 @@ func ListUserMembershipsHandler(queries storage.Querier) http.HandlerFunc {
 		resp := make([]membershipResponse, len(memberships))
 		for i, m := range memberships {
 			resp[i] = membershipResponse{
+				ID:        m.ID,
 				GroupID:   m.GroupID,
 				GroupName: m.GroupName,
 				GroupType: m.GroupType,
@@ -444,12 +437,11 @@ func ListUsersHandler(queries storage.Querier) http.HandlerFunc {
 func GetUserHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		n, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		id := int32(n)
 
 		user, err := queries.GetUserByID(r.Context(), id)
 		if err != nil {
@@ -471,12 +463,11 @@ type updateUserStatusRequest struct {
 func UpdateUserStatusHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		n, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		id := int32(n)
 
 		var req updateUserStatusRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -503,7 +494,7 @@ func UpdateUserStatusHandler(queries storage.Querier, auditLogger *auth.AuditLog
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.update_user_status", "user", fmt.Sprintf("%d", id), map[string]interface{}{
+			auditLogger.LogAdminAction(r.Context(), r, "admin.update_user_status", "user", id.String(), map[string]interface{}{
 				"status": req.Status,
 			})
 		}
@@ -517,12 +508,11 @@ func UpdateUserStatusHandler(queries storage.Querier, auditLogger *auth.AuditLog
 func DeleteUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		n, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		id := int32(n)
 
 		if _, err := queries.SoftDeleteUser(r.Context(), id); err != nil {
 			respondError(w, http.StatusNotFound, "user not found")
@@ -530,7 +520,7 @@ func DeleteUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.delete_user", "user", fmt.Sprintf("%d", id), nil)
+			auditLogger.LogAdminAction(r.Context(), r, "admin.delete_user", "user", id.String(), nil)
 		}
 
 		w.WriteHeader(http.StatusNoContent)
@@ -547,12 +537,11 @@ type updatePasswordDisabledRequest struct {
 func UpdatePasswordDisabledHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		n, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		id := int32(n)
 
 		var req updatePasswordDisabledRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -570,7 +559,7 @@ func UpdatePasswordDisabledHandler(queries storage.Querier, auditLogger *auth.Au
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.update_password_disabled", "user", fmt.Sprintf("%d", id), map[string]interface{}{
+			auditLogger.LogAdminAction(r.Context(), r, "admin.update_password_disabled", "user", id.String(), map[string]interface{}{
 				"password_disabled": req.PasswordDisabled,
 			})
 		}
@@ -584,12 +573,11 @@ func UpdatePasswordDisabledHandler(queries storage.Querier, auditLogger *auth.Au
 func RestoreUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		n, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		id := int32(n)
 
 		user, err := queries.RestoreUser(r.Context(), id)
 		if err != nil {
@@ -598,7 +586,7 @@ func RestoreUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.restore_user", "user", fmt.Sprintf("%d", id), nil)
+			auditLogger.LogAdminAction(r.Context(), r, "admin.restore_user", "user", id.String(), nil)
 		}
 
 		respondJSON(w, http.StatusOK, toUserResponse(user))
@@ -629,12 +617,11 @@ func ListDeletedUsersHandler(queries storage.Querier) http.HandlerFunc {
 func ResetAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		n, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		id := int32(n)
 
 		user, err := queries.GetUserByID(r.Context(), id)
 		if err != nil {
@@ -672,7 +659,7 @@ func ResetAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.reset_api_key", "user", fmt.Sprintf("%d", id), nil)
+			auditLogger.LogAdminAction(r.Context(), r, "admin.reset_api_key", "user", id.String(), nil)
 		}
 
 		respondJSON(w, http.StatusOK, toUserResponseWithAPIKey(updated))

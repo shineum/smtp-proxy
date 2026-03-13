@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -14,15 +15,15 @@ import (
 
 // messageResponse is the JSON response for a message.
 type messageResponse struct {
-	ID          int64      `json:"id"`
-	GroupID     *int32     `json:"group_id,omitempty"`
-	UserID      *int32     `json:"user_id,omitempty"`
-	Sender      string     `json:"sender"`
-	Recipients  []string   `json:"recipients"`
-	Subject     string     `json:"subject"`
-	Status      string     `json:"status"`
-	EnqueuedAt  *time.Time `json:"enqueued_at,omitempty"`
-	ProcessedAt *time.Time `json:"processed_at,omitempty"`
+	ID          uuid.UUID   `json:"id"`
+	GroupID     *uuid.UUID  `json:"group_id,omitempty"`
+	UserID      *uuid.UUID  `json:"user_id,omitempty"`
+	Sender      string      `json:"sender"`
+	Recipients  []string    `json:"recipients"`
+	Subject     string      `json:"subject"`
+	Status      string      `json:"status"`
+	EnqueuedAt  *time.Time  `json:"enqueued_at,omitempty"`
+	ProcessedAt *time.Time  `json:"processed_at,omitempty"`
 }
 
 func toMessageResponse(m storage.Message) messageResponse {
@@ -33,11 +34,11 @@ func toMessageResponse(m storage.Message) messageResponse {
 	}
 
 	if m.GroupID.Valid {
-		gid := m.GroupID.Int32
+		gid := uuid.UUID(m.GroupID.Bytes)
 		resp.GroupID = &gid
 	}
 	if m.UserID.Valid {
-		uid := m.UserID.Int32
+		uid := uuid.UUID(m.UserID.Bytes)
 		resp.UserID = &uid
 	}
 	if m.Subject.Valid {
@@ -78,7 +79,7 @@ type paginatedMessagesResponse struct {
 func ListMessagesHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupID := auth.GroupIDFromContext(r.Context())
-		if groupID == 0 {
+		if groupID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -99,7 +100,7 @@ func ListMessagesHandler(queries storage.Querier) http.HandlerFunc {
 
 		offset := int32((page - 1) * pageSize)
 		limit := int32(pageSize)
-		pgGroupID := pgtype.Int4{Int32: groupID, Valid: true}
+		pgGroupID := pgtype.UUID{Bytes: groupID, Valid: true}
 
 		statusFilter := r.URL.Query().Get("status")
 
@@ -162,9 +163,9 @@ func ListMessagesHandler(queries storage.Querier) http.HandlerFunc {
 
 // deliveryLogResponse is the JSON response for a delivery log entry.
 type deliveryLogResponse struct {
-	ID                int64      `json:"id"`
-	MessageID         int64      `json:"message_id"`
-	ProviderID        *int32     `json:"provider_id,omitempty"`
+	ID                uuid.UUID  `json:"id"`
+	MessageID         uuid.UUID  `json:"message_id"`
+	ProviderID        *uuid.UUID `json:"provider_id,omitempty"`
 	Status            string     `json:"status"`
 	Provider          string     `json:"provider,omitempty"`
 	ProviderMessageID string     `json:"provider_message_id,omitempty"`
@@ -186,7 +187,7 @@ func toDeliveryLogResponse(dl storage.DeliveryLog) deliveryLogResponse {
 		AttemptNumber: dl.AttemptNumber,
 	}
 	if dl.ProviderID.Valid {
-		pid := dl.ProviderID.Int32
+		pid := uuid.UUID(dl.ProviderID.Bytes)
 		resp.ProviderID = &pid
 	}
 	if dl.Provider.Valid {
@@ -226,7 +227,7 @@ type messageDetailResponse struct {
 func GetMessageHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		id, err := strconv.ParseInt(idStr, 10, 64)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid message ID format")
 			return
@@ -242,7 +243,8 @@ func GetMessageHandler(queries storage.Querier) http.HandlerFunc {
 		groupID := auth.GroupIDFromContext(r.Context())
 		groupType := auth.GroupTypeFromContext(r.Context())
 		if groupType != "system" && msg.GroupID.Valid {
-			if msg.GroupID.Int32 != groupID {
+			msgGroupID := uuid.UUID(msg.GroupID.Bytes)
+			if msgGroupID != groupID {
 				respondError(w, http.StatusForbidden, "access denied")
 				return
 			}

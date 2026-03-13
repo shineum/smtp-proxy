@@ -2,19 +2,18 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 // membershipResponse represents a group membership with group info.
 type membershipResponse struct {
-	GroupID   int32     `json:"group_id"`
+	GroupID   uuid.UUID `json:"group_id"`
 	GroupName string    `json:"group_name"`
 	GroupType string    `json:"group_type"`
 	Role      string    `json:"role"`
@@ -29,9 +28,9 @@ type meResponse struct {
 }
 
 type currentGroupResponse struct {
-	GroupID   int32  `json:"group_id"`
-	GroupType string `json:"group_type"`
-	Role      string `json:"role"`
+	GroupID   uuid.UUID `json:"group_id"`
+	GroupType string    `json:"group_type"`
+	Role      string    `json:"role"`
 }
 
 // MeHandler handles GET /api/v1/auth/me.
@@ -39,7 +38,7 @@ type currentGroupResponse struct {
 func MeHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := auth.UserFromContext(r.Context())
-		if userID == 0 {
+		if userID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -90,7 +89,7 @@ type changePasswordRequest struct {
 func ChangePasswordHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID := auth.UserFromContext(r.Context())
-		if userID == 0 {
+		if userID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -155,12 +154,11 @@ type resetPasswordRequest struct {
 func ResetPasswordHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		targetUserID64, err := strconv.ParseInt(idStr, 10, 32)
+		targetUserID, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		targetUserID := int32(targetUserID64)
 
 		var req resetPasswordRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -205,7 +203,7 @@ func ResetPasswordHandler(queries storage.Querier, auditLogger *auth.AuditLogger
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.reset_password", "user", fmt.Sprintf("%d", targetUserID), nil)
+			auditLogger.LogAdminAction(r.Context(), r, "admin.reset_password", "user", targetUserID.String(), nil)
 		}
 
 		respondJSON(w, http.StatusOK, map[string]string{"message": "password reset successfully"})
@@ -223,12 +221,11 @@ type updateGroupRequest struct {
 func UpdateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		id64, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
-		id := int32(id64)
 
 		// Verify access: owner/admin in the group or system admin
 		if _, err := requireGroupRole(queries, r, id, "owner", "admin"); err != nil {
@@ -271,7 +268,7 @@ func UpdateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.update_group", "group", fmt.Sprintf("%d", id), map[string]interface{}{
+			auditLogger.LogAdminAction(r.Context(), r, "admin.update_group", "group", id.String(), map[string]interface{}{
 				"name":          name,
 				"monthly_limit": monthlyLimit,
 			})

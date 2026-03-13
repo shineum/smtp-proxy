@@ -7,6 +7,8 @@ package storage
 
 import (
 	"context"
+
+	"github.com/google/uuid"
 )
 
 const createRoutingRule = `-- name: CreateRoutingRule :one
@@ -16,11 +18,11 @@ RETURNING id, priority, conditions, provider_id, enabled, created_at, updated_at
 `
 
 type CreateRoutingRuleParams struct {
-	GroupID    int32  `json:"group_id"`
-	Priority   int32  `json:"priority"`
-	Conditions []byte `json:"conditions"`
-	ProviderID int32  `json:"provider_id"`
-	Enabled    bool   `json:"enabled"`
+	GroupID    uuid.UUID `json:"group_id"`
+	Priority   int32     `json:"priority"`
+	Conditions []byte    `json:"conditions"`
+	ProviderID uuid.UUID `json:"provider_id"`
+	Enabled    bool      `json:"enabled"`
 }
 
 func (q *Queries) CreateRoutingRule(ctx context.Context, arg CreateRoutingRuleParams) (RoutingRule, error) {
@@ -49,7 +51,7 @@ const deleteRoutingRule = `-- name: DeleteRoutingRule :exec
 DELETE FROM routing_rules WHERE id = $1
 `
 
-func (q *Queries) DeleteRoutingRule(ctx context.Context, id int32) error {
+func (q *Queries) DeleteRoutingRule(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteRoutingRule, id)
 	return err
 }
@@ -58,7 +60,7 @@ const getRoutingRuleByID = `-- name: GetRoutingRuleByID :one
 SELECT id, priority, conditions, provider_id, enabled, created_at, updated_at, group_id FROM routing_rules WHERE id = $1
 `
 
-func (q *Queries) GetRoutingRuleByID(ctx context.Context, id int32) (RoutingRule, error) {
+func (q *Queries) GetRoutingRuleByID(ctx context.Context, id uuid.UUID) (RoutingRule, error) {
 	row := q.db.QueryRow(ctx, getRoutingRuleByID, id)
 	var i RoutingRule
 	err := row.Scan(
@@ -78,7 +80,7 @@ const listRoutingRulesByGroupID = `-- name: ListRoutingRulesByGroupID :many
 SELECT id, priority, conditions, provider_id, enabled, created_at, updated_at, group_id FROM routing_rules WHERE group_id = $1 ORDER BY priority ASC
 `
 
-func (q *Queries) ListRoutingRulesByGroupID(ctx context.Context, groupID int32) ([]RoutingRule, error) {
+func (q *Queries) ListRoutingRulesByGroupID(ctx context.Context, groupID uuid.UUID) ([]RoutingRule, error) {
 	rows, err := q.db.Query(ctx, listRoutingRulesByGroupID, groupID)
 	if err != nil {
 		return nil, err
@@ -115,11 +117,11 @@ RETURNING id, priority, conditions, provider_id, enabled, created_at, updated_at
 `
 
 type UpdateRoutingRuleParams struct {
-	ID         int32  `json:"id"`
-	Priority   int32  `json:"priority"`
-	Conditions []byte `json:"conditions"`
-	ProviderID int32  `json:"provider_id"`
-	Enabled    bool   `json:"enabled"`
+	ID         uuid.UUID `json:"id"`
+	Priority   int32     `json:"priority"`
+	Conditions []byte    `json:"conditions"`
+	ProviderID uuid.UUID `json:"provider_id"`
+	Enabled    bool      `json:"enabled"`
 }
 
 func (q *Queries) UpdateRoutingRule(ctx context.Context, arg UpdateRoutingRuleParams) (RoutingRule, error) {

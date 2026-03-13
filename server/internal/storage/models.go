@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/netip"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -196,12 +197,12 @@ func (ns NullProviderVisibility) Value() (driver.Value, error) {
 }
 
 type ActivityLog struct {
-	ID           int64              `json:"id"`
-	GroupID      int32              `json:"group_id"`
-	ActorID      pgtype.Int4        `json:"actor_id"`
+	ID           uuid.UUID          `json:"id"`
+	GroupID      uuid.UUID          `json:"group_id"`
+	ActorID      pgtype.UUID        `json:"actor_id"`
 	Action       string             `json:"action"`
 	ResourceType string             `json:"resource_type"`
-	ResourceID   pgtype.Int4        `json:"resource_id"`
+	ResourceID   pgtype.UUID        `json:"resource_id"`
 	Changes      []byte             `json:"changes"`
 	Comment      pgtype.Text        `json:"comment"`
 	IpAddress    *netip.Addr        `json:"ip_address"`
@@ -209,9 +210,9 @@ type ActivityLog struct {
 }
 
 type DeliveryLog struct {
-	ID                int64              `json:"id"`
-	MessageID         int64              `json:"message_id"`
-	ProviderID        pgtype.Int4        `json:"provider_id"`
+	ID                uuid.UUID          `json:"id"`
+	MessageID         uuid.UUID          `json:"message_id"`
+	ProviderID        pgtype.UUID        `json:"provider_id"`
 	Status            string             `json:"status"`
 	ResponseCode      pgtype.Int4        `json:"response_code"`
 	ResponseBody      pgtype.Text        `json:"response_body"`
@@ -225,12 +226,12 @@ type DeliveryLog struct {
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	DurationMs        pgtype.Int4        `json:"duration_ms"`
 	AttemptNumber     int32              `json:"attempt_number"`
-	UserID            pgtype.Int4        `json:"user_id"`
-	GroupID           pgtype.Int4        `json:"group_id"`
+	UserID            pgtype.UUID        `json:"user_id"`
+	GroupID           pgtype.UUID        `json:"group_id"`
 }
 
 type EspProvider struct {
-	ID           int32              `json:"id"`
+	ID           uuid.UUID          `json:"id"`
 	Name         string             `json:"name"`
 	ProviderType ProviderType       `json:"provider_type"`
 	ApiKey       sql.NullString     `json:"api_key"`
@@ -238,12 +239,12 @@ type EspProvider struct {
 	Enabled      bool               `json:"enabled"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	GroupID      int32              `json:"group_id"`
+	GroupID      uuid.UUID          `json:"group_id"`
 	Visibility   ProviderVisibility `json:"visibility"`
 }
 
 type Group struct {
-	ID           int32              `json:"id"`
+	ID           uuid.UUID          `json:"id"`
 	Name         string             `json:"name"`
 	Status       string             `json:"status"`
 	MonthlyLimit int32              `json:"monthly_limit"`
@@ -252,62 +253,64 @@ type Group struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	GroupType    string             `json:"group_type"`
+	GroupKey     uuid.UUID          `json:"group_key"`
 	DisplayName  sql.NullString     `json:"display_name"`
 	Description  pgtype.Text        `json:"description"`
 }
 
 type GroupMember struct {
-	GroupID   int32              `json:"group_id"`
-	UserID    int32              `json:"user_id"`
+	ID        uuid.UUID          `json:"id"`
+	GroupID   uuid.UUID          `json:"group_id"`
+	UserID    uuid.UUID          `json:"user_id"`
 	Role      string             `json:"role"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 type Message struct {
-	ID          int64              `json:"id"`
+	ID          uuid.UUID          `json:"id"`
 	Sender      string             `json:"sender"`
 	Recipients  []byte             `json:"recipients"`
 	Subject     sql.NullString     `json:"subject"`
 	Headers     []byte             `json:"headers"`
 	Body        pgtype.Text        `json:"body"`
 	Status      MessageStatus      `json:"status"`
-	ProviderID  pgtype.Int4        `json:"provider_id"`
+	ProviderID  pgtype.UUID        `json:"provider_id"`
 	EnqueuedAt  pgtype.Timestamptz `json:"enqueued_at"`
 	ProcessedAt pgtype.Timestamptz `json:"processed_at"`
 	StorageRef  pgtype.Text        `json:"storage_ref"`
-	GroupID     pgtype.Int4        `json:"group_id"`
-	UserID      pgtype.Int4        `json:"user_id"`
+	GroupID     pgtype.UUID        `json:"group_id"`
+	UserID      pgtype.UUID        `json:"user_id"`
 }
 
 type ProviderGroupAccess struct {
-	ProviderID int32              `json:"provider_id"`
-	GroupID    int32              `json:"group_id"`
+	ProviderID uuid.UUID          `json:"provider_id"`
+	GroupID    uuid.UUID          `json:"group_id"`
 	GrantedAt  pgtype.Timestamptz `json:"granted_at"`
-	GrantedBy  pgtype.Int4        `json:"granted_by"`
+	GrantedBy  pgtype.UUID        `json:"granted_by"`
 }
 
 type RoutingRule struct {
-	ID         int32              `json:"id"`
+	ID         uuid.UUID          `json:"id"`
 	Priority   int32              `json:"priority"`
 	Conditions []byte             `json:"conditions"`
-	ProviderID int32              `json:"provider_id"`
+	ProviderID uuid.UUID          `json:"provider_id"`
 	Enabled    bool               `json:"enabled"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
-	GroupID    int32              `json:"group_id"`
+	GroupID    uuid.UUID          `json:"group_id"`
 }
 
 type Session struct {
-	ID               int32              `json:"id"`
-	UserID           int32              `json:"user_id"`
-	GroupID          int32              `json:"group_id"`
+	ID               uuid.UUID          `json:"id"`
+	UserID           uuid.UUID          `json:"user_id"`
+	GroupID          uuid.UUID          `json:"group_id"`
 	RefreshTokenHash string             `json:"refresh_token_hash"`
 	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
 }
 
 type User struct {
-	ID               int32              `json:"id"`
+	ID               uuid.UUID          `json:"id"`
 	Email            string             `json:"email"`
 	PasswordHash     string             `json:"password_hash"`
 	Status           string             `json:"status"`
@@ -320,8 +323,8 @@ type User struct {
 	ApiKey           sql.NullString     `json:"api_key"`
 	AllowedDomains   []byte             `json:"allowed_domains"`
 	PasswordDisabled bool               `json:"password_disabled"`
-	ProviderID       pgtype.Int4        `json:"provider_id"`
-	HomeGroupID      pgtype.Int4        `json:"home_group_id"`
+	ProviderID       pgtype.UUID        `json:"provider_id"`
+	HomeGroupID      pgtype.UUID        `json:"home_group_id"`
 	DisplayName      sql.NullString     `json:"display_name"`
 	Description      pgtype.Text        `json:"description"`
 	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`

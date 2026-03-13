@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -19,7 +20,7 @@ RETURNING id, name, provider_type, api_key, smtp_config, enabled, created_at, up
 `
 
 type CreateProviderParams struct {
-	GroupID      int32              `json:"group_id"`
+	GroupID      uuid.UUID          `json:"group_id"`
 	Name         string             `json:"name"`
 	ProviderType ProviderType       `json:"provider_type"`
 	ApiKey       sql.NullString     `json:"api_key"`
@@ -58,7 +59,7 @@ const deleteProvider = `-- name: DeleteProvider :exec
 DELETE FROM esp_providers WHERE id = $1
 `
 
-func (q *Queries) DeleteProvider(ctx context.Context, id int32) error {
+func (q *Queries) DeleteProvider(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteProvider, id)
 	return err
 }
@@ -89,7 +90,7 @@ const getProviderByID = `-- name: GetProviderByID :one
 SELECT id, name, provider_type, api_key, smtp_config, enabled, created_at, updated_at, group_id, visibility FROM esp_providers WHERE id = $1
 `
 
-func (q *Queries) GetProviderByID(ctx context.Context, id int32) (EspProvider, error) {
+func (q *Queries) GetProviderByID(ctx context.Context, id uuid.UUID) (EspProvider, error) {
 	row := q.db.QueryRow(ctx, getProviderByID, id)
 	var i EspProvider
 	err := row.Scan(
@@ -111,7 +112,7 @@ const getStdoutProviderByGroupID = `-- name: GetStdoutProviderByGroupID :one
 SELECT id, name, provider_type, api_key, smtp_config, enabled, created_at, updated_at, group_id, visibility FROM esp_providers WHERE group_id = $1 AND provider_type = 'stdout' LIMIT 1
 `
 
-func (q *Queries) GetStdoutProviderByGroupID(ctx context.Context, groupID int32) (EspProvider, error) {
+func (q *Queries) GetStdoutProviderByGroupID(ctx context.Context, groupID uuid.UUID) (EspProvider, error) {
 	row := q.db.QueryRow(ctx, getStdoutProviderByGroupID, groupID)
 	var i EspProvider
 	err := row.Scan(
@@ -136,9 +137,9 @@ ON CONFLICT DO NOTHING
 `
 
 type GrantProviderAccessParams struct {
-	ProviderID int32       `json:"provider_id"`
-	GroupID    int32       `json:"group_id"`
-	GrantedBy  pgtype.Int4 `json:"granted_by"`
+	ProviderID uuid.UUID   `json:"provider_id"`
+	GroupID    uuid.UUID   `json:"group_id"`
+	GrantedBy  pgtype.UUID `json:"granted_by"`
 }
 
 func (q *Queries) GrantProviderAccess(ctx context.Context, arg GrantProviderAccessParams) error {
@@ -163,8 +164,8 @@ SELECT EXISTS(
 `
 
 type IsProviderAccessibleParams struct {
-	ID      int32 `json:"id"`
-	GroupID int32 `json:"group_id"`
+	ID      uuid.UUID `json:"id"`
+	GroupID uuid.UUID `json:"group_id"`
 }
 
 func (q *Queries) IsProviderAccessible(ctx context.Context, arg IsProviderAccessibleParams) (bool, error) {
@@ -188,7 +189,7 @@ AND (
 ORDER BY ep.created_at DESC
 `
 
-func (q *Queries) ListAccessibleProviders(ctx context.Context, groupID int32) ([]EspProvider, error) {
+func (q *Queries) ListAccessibleProviders(ctx context.Context, groupID uuid.UUID) ([]EspProvider, error) {
 	rows, err := q.db.Query(ctx, listAccessibleProviders, groupID)
 	if err != nil {
 		return nil, err
@@ -223,7 +224,7 @@ const listProviderAccess = `-- name: ListProviderAccess :many
 SELECT provider_id, group_id, granted_at, granted_by FROM provider_group_access WHERE provider_id = $1 ORDER BY granted_at DESC
 `
 
-func (q *Queries) ListProviderAccess(ctx context.Context, providerID int32) ([]ProviderGroupAccess, error) {
+func (q *Queries) ListProviderAccess(ctx context.Context, providerID uuid.UUID) ([]ProviderGroupAccess, error) {
 	rows, err := q.db.Query(ctx, listProviderAccess, providerID)
 	if err != nil {
 		return nil, err
@@ -252,7 +253,7 @@ const listProvidersByGroupID = `-- name: ListProvidersByGroupID :many
 SELECT id, name, provider_type, api_key, smtp_config, enabled, created_at, updated_at, group_id, visibility FROM esp_providers WHERE group_id = $1 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListProvidersByGroupID(ctx context.Context, groupID int32) ([]EspProvider, error) {
+func (q *Queries) ListProvidersByGroupID(ctx context.Context, groupID uuid.UUID) ([]EspProvider, error) {
 	rows, err := q.db.Query(ctx, listProvidersByGroupID, groupID)
 	if err != nil {
 		return nil, err
@@ -288,8 +289,8 @@ DELETE FROM provider_group_access WHERE provider_id = $1 AND group_id = $2
 `
 
 type RevokeProviderAccessParams struct {
-	ProviderID int32 `json:"provider_id"`
-	GroupID    int32 `json:"group_id"`
+	ProviderID uuid.UUID `json:"provider_id"`
+	GroupID    uuid.UUID `json:"group_id"`
 }
 
 func (q *Queries) RevokeProviderAccess(ctx context.Context, arg RevokeProviderAccessParams) error {
@@ -305,7 +306,7 @@ RETURNING id, name, provider_type, api_key, smtp_config, enabled, created_at, up
 `
 
 type UpdateProviderParams struct {
-	ID           int32              `json:"id"`
+	ID           uuid.UUID          `json:"id"`
 	Name         string             `json:"name"`
 	ProviderType ProviderType       `json:"provider_type"`
 	ApiKey       sql.NullString     `json:"api_key"`

@@ -9,13 +9,14 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createGroup = `-- name: CreateGroup :one
 INSERT INTO groups (name, group_type, display_name, description)
 VALUES ($1, $2, $3, $4)
-RETURNING id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, display_name, description
+RETURNING id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, group_key, display_name, description
 `
 
 type CreateGroupParams struct {
@@ -43,6 +44,7 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (Group
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GroupType,
+		&i.GroupKey,
 		&i.DisplayName,
 		&i.Description,
 	)
@@ -53,16 +55,40 @@ const deleteGroup = `-- name: DeleteGroup :exec
 DELETE FROM groups WHERE id = $1
 `
 
-func (q *Queries) DeleteGroup(ctx context.Context, id int32) error {
+func (q *Queries) DeleteGroup(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteGroup, id)
 	return err
 }
 
-const getGroupByID = `-- name: GetGroupByID :one
-SELECT id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, display_name, description FROM groups WHERE id = $1
+const getGroupByGroupKey = `-- name: GetGroupByGroupKey :one
+SELECT id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, group_key, display_name, description FROM groups WHERE group_key = $1
 `
 
-func (q *Queries) GetGroupByID(ctx context.Context, id int32) (Group, error) {
+func (q *Queries) GetGroupByGroupKey(ctx context.Context, groupKey uuid.UUID) (Group, error) {
+	row := q.db.QueryRow(ctx, getGroupByGroupKey, groupKey)
+	var i Group
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Status,
+		&i.MonthlyLimit,
+		&i.MonthlySent,
+		&i.AllowedIps,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.GroupType,
+		&i.GroupKey,
+		&i.DisplayName,
+		&i.Description,
+	)
+	return i, err
+}
+
+const getGroupByID = `-- name: GetGroupByID :one
+SELECT id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, group_key, display_name, description FROM groups WHERE id = $1
+`
+
+func (q *Queries) GetGroupByID(ctx context.Context, id uuid.UUID) (Group, error) {
 	row := q.db.QueryRow(ctx, getGroupByID, id)
 	var i Group
 	err := row.Scan(
@@ -75,6 +101,7 @@ func (q *Queries) GetGroupByID(ctx context.Context, id int32) (Group, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GroupType,
+		&i.GroupKey,
 		&i.DisplayName,
 		&i.Description,
 	)
@@ -82,7 +109,7 @@ func (q *Queries) GetGroupByID(ctx context.Context, id int32) (Group, error) {
 }
 
 const getGroupByName = `-- name: GetGroupByName :one
-SELECT id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, display_name, description FROM groups WHERE name = $1
+SELECT id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, group_key, display_name, description FROM groups WHERE name = $1
 `
 
 func (q *Queries) GetGroupByName(ctx context.Context, name string) (Group, error) {
@@ -98,6 +125,7 @@ func (q *Queries) GetGroupByName(ctx context.Context, name string) (Group, error
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GroupType,
+		&i.GroupKey,
 		&i.DisplayName,
 		&i.Description,
 	)
@@ -110,13 +138,13 @@ SET monthly_sent = monthly_sent + 1, updated_at = NOW()
 WHERE id = $1
 `
 
-func (q *Queries) IncrementMonthlySent(ctx context.Context, id int32) error {
+func (q *Queries) IncrementMonthlySent(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, incrementMonthlySent, id)
 	return err
 }
 
 const listGroups = `-- name: ListGroups :many
-SELECT id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, display_name, description FROM groups WHERE status != 'deleted' ORDER BY created_at DESC
+SELECT id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, group_key, display_name, description FROM groups WHERE status != 'deleted' ORDER BY created_at DESC
 `
 
 func (q *Queries) ListGroups(ctx context.Context) ([]Group, error) {
@@ -138,6 +166,7 @@ func (q *Queries) ListGroups(ctx context.Context) ([]Group, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.GroupType,
+			&i.GroupKey,
 			&i.DisplayName,
 			&i.Description,
 		); err != nil {
@@ -157,7 +186,7 @@ SET monthly_sent = 0, updated_at = NOW()
 WHERE id = $1
 `
 
-func (q *Queries) ResetMonthlySent(ctx context.Context, id int32) error {
+func (q *Queries) ResetMonthlySent(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, resetMonthlySent, id)
 	return err
 }
@@ -166,11 +195,11 @@ const updateGroup = `-- name: UpdateGroup :one
 UPDATE groups
 SET name = $2, status = $3, monthly_limit = $4, display_name = $5, description = $6, updated_at = NOW()
 WHERE id = $1
-RETURNING id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, display_name, description
+RETURNING id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, group_key, display_name, description
 `
 
 type UpdateGroupParams struct {
-	ID           int32          `json:"id"`
+	ID           uuid.UUID      `json:"id"`
 	Name         string         `json:"name"`
 	Status       string         `json:"status"`
 	MonthlyLimit int32          `json:"monthly_limit"`
@@ -198,6 +227,7 @@ func (q *Queries) UpdateGroup(ctx context.Context, arg UpdateGroupParams) (Group
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GroupType,
+		&i.GroupKey,
 		&i.DisplayName,
 		&i.Description,
 	)
@@ -208,12 +238,12 @@ const updateGroupStatus = `-- name: UpdateGroupStatus :one
 UPDATE groups
 SET status = $2, updated_at = NOW()
 WHERE id = $1
-RETURNING id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, display_name, description
+RETURNING id, name, status, monthly_limit, monthly_sent, allowed_ips, created_at, updated_at, group_type, group_key, display_name, description
 `
 
 type UpdateGroupStatusParams struct {
-	ID     int32  `json:"id"`
-	Status string `json:"status"`
+	ID     uuid.UUID `json:"id"`
+	Status string    `json:"status"`
 }
 
 func (q *Queries) UpdateGroupStatus(ctx context.Context, arg UpdateGroupStatusParams) (Group, error) {
@@ -229,6 +259,7 @@ func (q *Queries) UpdateGroupStatus(ctx context.Context, arg UpdateGroupStatusPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.GroupType,
+		&i.GroupKey,
 		&i.DisplayName,
 		&i.Description,
 	)

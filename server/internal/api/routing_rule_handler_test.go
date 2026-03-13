@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
@@ -19,7 +20,7 @@ func TestCreateRoutingRuleHandler_Valid(t *testing.T) {
 	mock := &mockQuerier{
 		createRoutingRuleFn: func(ctx context.Context, arg storage.CreateRoutingRuleParams) (storage.RoutingRule, error) {
 			if arg.GroupID != groupID {
-				t.Errorf("expected group ID %d, got %d", groupID, arg.GroupID)
+				t.Errorf("expected group ID %s, got %s", groupID, arg.GroupID)
 			}
 			if arg.Priority != 10 {
 				t.Errorf("expected priority 10, got %d", arg.Priority)
@@ -28,8 +29,8 @@ func TestCreateRoutingRuleHandler_Valid(t *testing.T) {
 		},
 	}
 
-	var providerID int32 = 2
-	body := `{"priority":10,"conditions":{"from":"*@test.com"},"provider_id":"` + int32ToStr(providerID) + `","enabled":true}`
+	providerID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	body := `{"priority":10,"conditions":{"from":"*@test.com"},"provider_id":"` + providerID.String() + `","enabled":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/routing-rules", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -52,7 +53,7 @@ func TestCreateRoutingRuleHandler_Valid(t *testing.T) {
 		t.Errorf("expected priority 10, got %d", resp.Priority)
 	}
 	if resp.GroupID != groupID {
-		t.Errorf("expected group_id %d, got %d", groupID, resp.GroupID)
+		t.Errorf("expected group_id %s, got %s", groupID, resp.GroupID)
 	}
 }
 
@@ -60,7 +61,7 @@ func TestCreateRoutingRuleHandler_InvalidProviderID(t *testing.T) {
 	mock := &mockQuerier{}
 	groupID := testGroup().ID
 
-	body := `{"priority":10,"conditions":{},"provider_id":"not-a-number","enabled":true}`
+	body := `{"priority":10,"conditions":{},"provider_id":"not-a-uuid","enabled":true}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/routing-rules", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -83,17 +84,17 @@ func TestListRoutingRulesHandler_OrderedByPriority(t *testing.T) {
 	rule1.Priority = 1
 
 	rule2 := testRoutingRule()
-	rule2.ID = 4
+	rule2.ID = uuid.MustParse("00000000-0000-0000-0000-000000000004")
 	rule2.Priority = 5
 
 	rule3 := testRoutingRule()
-	rule3.ID = 5
+	rule3.ID = uuid.MustParse("00000000-0000-0000-0000-000000000005")
 	rule3.Priority = 10
 
 	mock := &mockQuerier{
-		listRoutingRulesByGroupFn: func(ctx context.Context, gID int32) ([]storage.RoutingRule, error) {
+		listRoutingRulesByGroupFn: func(ctx context.Context, gID uuid.UUID) ([]storage.RoutingRule, error) {
 			if gID != groupID {
-				t.Errorf("expected group ID %d, got %d", groupID, gID)
+				t.Errorf("expected group ID %s, got %s", groupID, gID)
 			}
 			// Return in priority order (as the SQL query does)
 			return []storage.RoutingRule{rule1, rule2, rule3}, nil
@@ -133,16 +134,16 @@ func TestListRoutingRulesHandler_OrderedByPriority(t *testing.T) {
 func TestGetRoutingRuleHandler_Found(t *testing.T) {
 	rule := testRoutingRule()
 	mock := &mockQuerier{
-		getRoutingRuleByIDFn: func(ctx context.Context, id int32) (storage.RoutingRule, error) {
+		getRoutingRuleByIDFn: func(ctx context.Context, id uuid.UUID) (storage.RoutingRule, error) {
 			return rule, nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/routing-rules/"+int32ToStr(rule.ID), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/routing-rules/"+rule.ID.String(), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(rule.ID))
+	rctx.URLParams.Add("id", rule.ID.String())
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	handler := GetRoutingRuleHandler(mock)
@@ -157,23 +158,23 @@ func TestGetRoutingRuleHandler_Found(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	if resp.ID != rule.ID {
-		t.Errorf("expected ID %d, got %d", rule.ID, resp.ID)
+		t.Errorf("expected ID %s, got %s", rule.ID, resp.ID)
 	}
 }
 
 func TestGetRoutingRuleHandler_NotFound(t *testing.T) {
 	mock := &mockQuerier{
-		getRoutingRuleByIDFn: func(ctx context.Context, id int32) (storage.RoutingRule, error) {
+		getRoutingRuleByIDFn: func(ctx context.Context, id uuid.UUID) (storage.RoutingRule, error) {
 			return storage.RoutingRule{}, errNotFound
 		},
 	}
 
-	var id int32 = 999
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/routing-rules/"+int32ToStr(id), nil)
+	id := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/routing-rules/"+id.String(), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(id))
+	rctx.URLParams.Add("id", id.String())
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	handler := GetRoutingRuleHandler(mock)
@@ -194,14 +195,14 @@ func TestUpdateRoutingRuleHandler(t *testing.T) {
 		},
 	}
 
-	var providerID int32 = 2
-	body := `{"priority":20,"conditions":{},"provider_id":"` + int32ToStr(providerID) + `","enabled":true}`
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/routing-rules/"+int32ToStr(rule.ID), strings.NewReader(body))
+	providerID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	body := `{"priority":20,"conditions":{},"provider_id":"` + providerID.String() + `","enabled":true}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/routing-rules/"+rule.ID.String(), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(rule.ID))
+	rctx.URLParams.Add("id", rule.ID.String())
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	handler := UpdateRoutingRuleHandler(mock)
@@ -213,20 +214,20 @@ func TestUpdateRoutingRuleHandler(t *testing.T) {
 }
 
 func TestDeleteRoutingRuleHandler(t *testing.T) {
-	var id int32 = 999
+	id := uuid.New()
 	deleteCalled := false
 	mock := &mockQuerier{
-		deleteRoutingRuleFn: func(ctx context.Context, delID int32) error {
+		deleteRoutingRuleFn: func(ctx context.Context, delID uuid.UUID) error {
 			deleteCalled = true
 			return nil
 		},
 	}
 
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/routing-rules/"+int32ToStr(id), nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/routing-rules/"+id.String(), nil)
 	rec := httptest.NewRecorder()
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("id", int32ToStr(id))
+	rctx.URLParams.Add("id", id.String())
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 
 	handler := DeleteRoutingRuleHandler(mock)
@@ -240,7 +241,7 @@ func TestDeleteRoutingRuleHandler(t *testing.T) {
 	}
 }
 
-func TestGetRoutingRuleHandler_InvalidID(t *testing.T) {
+func TestGetRoutingRuleHandler_InvalidUUID(t *testing.T) {
 	mock := &mockQuerier{}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/routing-rules/bad-id", nil)

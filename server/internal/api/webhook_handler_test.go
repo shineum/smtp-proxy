@@ -10,13 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
 // --- SendGrid Webhook Tests ---
 
 func TestSendGridWebhookHandler_Delivered(t *testing.T) {
-	var msgID int64 = 100
+	msgID := uuid.New()
 	var capturedStatus string
 
 	mock := &mockQuerier{
@@ -29,7 +30,7 @@ func TestSendGridWebhookHandler_Delivered(t *testing.T) {
 		updateDeliveryLogStatusFn: func(ctx context.Context, arg storage.UpdateDeliveryLogStatusParams) error {
 			capturedStatus = arg.Status
 			if arg.MessageID != msgID {
-				t.Errorf("expected message ID %d, got %d", msgID, arg.MessageID)
+				t.Errorf("expected message ID %s, got %s", msgID, arg.MessageID)
 			}
 			if arg.Provider.String != "sendgrid" {
 				t.Errorf("expected provider sendgrid, got %s", arg.Provider.String)
@@ -55,7 +56,7 @@ func TestSendGridWebhookHandler_Delivered(t *testing.T) {
 }
 
 func TestSendGridWebhookHandler_Bounce(t *testing.T) {
-	var msgID int64 = 101
+	msgID := uuid.New()
 	var capturedStatus string
 
 	mock := &mockQuerier{
@@ -156,7 +157,7 @@ func TestSendGridWebhookHandler_ProviderMessageIDNotFound(t *testing.T) {
 // --- SES Webhook Tests ---
 
 func TestSESWebhookHandler_Delivered(t *testing.T) {
-	var msgID int64 = 200
+	msgID := uuid.New()
 	var capturedStatus string
 
 	mock := &mockQuerier{
@@ -169,7 +170,7 @@ func TestSESWebhookHandler_Delivered(t *testing.T) {
 		updateDeliveryLogStatusFn: func(ctx context.Context, arg storage.UpdateDeliveryLogStatusParams) error {
 			capturedStatus = arg.Status
 			if arg.MessageID != msgID {
-				t.Errorf("expected message ID %d, got %d", msgID, arg.MessageID)
+				t.Errorf("expected message ID %s, got %s", msgID, arg.MessageID)
 			}
 			if arg.Provider.String != "ses" {
 				t.Errorf("expected provider ses, got %s", arg.Provider.String)
@@ -195,7 +196,7 @@ func TestSESWebhookHandler_Delivered(t *testing.T) {
 }
 
 func TestSESWebhookHandler_Bounce(t *testing.T) {
-	var msgID int64 = 201
+	msgID := uuid.New()
 	var capturedStatus string
 	var capturedLastError string
 
@@ -298,7 +299,7 @@ func TestSESWebhookHandler_ProviderMessageIDNotFound(t *testing.T) {
 // --- Mailgun Webhook Tests ---
 
 func TestMailgunWebhookHandler_Delivered(t *testing.T) {
-	var msgID int64 = 300
+	msgID := uuid.New()
 	var capturedStatus string
 
 	mock := &mockQuerier{
@@ -311,7 +312,7 @@ func TestMailgunWebhookHandler_Delivered(t *testing.T) {
 		updateDeliveryLogStatusFn: func(ctx context.Context, arg storage.UpdateDeliveryLogStatusParams) error {
 			capturedStatus = arg.Status
 			if arg.MessageID != msgID {
-				t.Errorf("expected message ID %d, got %d", msgID, arg.MessageID)
+				t.Errorf("expected message ID %s, got %s", msgID, arg.MessageID)
 			}
 			if arg.Provider.String != "mailgun" {
 				t.Errorf("expected provider mailgun, got %s", arg.Provider.String)
@@ -337,7 +338,7 @@ func TestMailgunWebhookHandler_Delivered(t *testing.T) {
 }
 
 func TestMailgunWebhookHandler_Failed(t *testing.T) {
-	var msgID int64 = 301
+	msgID := uuid.New()
 	var capturedStatus string
 
 	mock := &mockQuerier{

@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -16,7 +17,7 @@ const countMessagesByGroup = `-- name: CountMessagesByGroup :one
 SELECT COUNT(*)::integer as count FROM messages WHERE group_id = $1
 `
 
-func (q *Queries) CountMessagesByGroup(ctx context.Context, groupID pgtype.Int4) (int32, error) {
+func (q *Queries) CountMessagesByGroup(ctx context.Context, groupID pgtype.UUID) (int32, error) {
 	row := q.db.QueryRow(ctx, countMessagesByGroup, groupID)
 	var count int32
 	err := row.Scan(&count)
@@ -28,7 +29,7 @@ SELECT COUNT(*)::integer as count FROM messages WHERE group_id = $1 AND status =
 `
 
 type CountMessagesByGroupAndStatusParams struct {
-	GroupID pgtype.Int4   `json:"group_id"`
+	GroupID pgtype.UUID   `json:"group_id"`
 	Status  MessageStatus `json:"status"`
 }
 
@@ -46,8 +47,8 @@ RETURNING id, sender, recipients, subject, headers, body, status, provider_id, e
 `
 
 type EnqueueMessageParams struct {
-	UserID     pgtype.Int4    `json:"user_id"`
-	GroupID    pgtype.Int4    `json:"group_id"`
+	UserID     pgtype.UUID    `json:"user_id"`
+	GroupID    pgtype.UUID    `json:"group_id"`
 	Sender     string         `json:"sender"`
 	Recipients []byte         `json:"recipients"`
 	Subject    sql.NullString `json:"subject"`
@@ -91,8 +92,8 @@ RETURNING id, sender, recipients, subject, headers, body, status, provider_id, e
 `
 
 type EnqueueMessageMetadataParams struct {
-	UserID     pgtype.Int4    `json:"user_id"`
-	GroupID    pgtype.Int4    `json:"group_id"`
+	UserID     pgtype.UUID    `json:"user_id"`
+	GroupID    pgtype.UUID    `json:"group_id"`
 	Sender     string         `json:"sender"`
 	Recipients []byte         `json:"recipients"`
 	Subject    sql.NullString `json:"subject"`
@@ -133,7 +134,7 @@ const getMessageByID = `-- name: GetMessageByID :one
 SELECT id, sender, recipients, subject, headers, body, status, provider_id, enqueued_at, processed_at, storage_ref, group_id, user_id FROM messages WHERE id = $1
 `
 
-func (q *Queries) GetMessageByID(ctx context.Context, id int64) (Message, error) {
+func (q *Queries) GetMessageByID(ctx context.Context, id uuid.UUID) (Message, error) {
 	row := q.db.QueryRow(ctx, getMessageByID, id)
 	var i Message
 	err := row.Scan(
@@ -200,7 +201,7 @@ LIMIT $3 OFFSET $4
 `
 
 type ListMessagesByGroupAndStatusPaginatedParams struct {
-	GroupID pgtype.Int4   `json:"group_id"`
+	GroupID pgtype.UUID   `json:"group_id"`
 	Status  MessageStatus `json:"status"`
 	Limit   int32         `json:"limit"`
 	Offset  int32         `json:"offset"`
@@ -250,7 +251,7 @@ SELECT id, sender, recipients, subject, headers, body, status, provider_id, enqu
 `
 
 type ListMessagesByGroupIDParams struct {
-	GroupID pgtype.Int4 `json:"group_id"`
+	GroupID pgtype.UUID `json:"group_id"`
 	Limit   int32       `json:"limit"`
 }
 
@@ -296,7 +297,7 @@ LIMIT $2 OFFSET $3
 `
 
 type ListMessagesByGroupPaginatedParams struct {
-	GroupID pgtype.Int4 `json:"group_id"`
+	GroupID pgtype.UUID `json:"group_id"`
 	Limit   int32       `json:"limit"`
 	Offset  int32       `json:"offset"`
 }
@@ -340,7 +341,7 @@ UPDATE messages SET status = $2, processed_at = NOW() WHERE id = $1
 `
 
 type UpdateMessageStatusParams struct {
-	ID     int64         `json:"id"`
+	ID     uuid.UUID     `json:"id"`
 	Status MessageStatus `json:"status"`
 }
 

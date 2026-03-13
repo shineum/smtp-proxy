@@ -11,6 +11,7 @@ import (
 
 	"github.com/emersion/go-sasl"
 	gosmtp "github.com/emersion/go-smtp"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
@@ -36,8 +37,9 @@ var errNotFound = errors.New("no rows")
 // mockQuerier implements storage.Querier with controllable responses.
 type mockQuerier struct {
 	// Auth-related behavior
-	getUserByUsernameFn func(ctx context.Context, username sql.NullString) (storage.User, error)
-	getGroupByIDFn      func(ctx context.Context, id int32) (storage.Group, error)
+	getUserByUsernameFn  func(ctx context.Context, username sql.NullString) (storage.User, error)
+	listGroupsByUserIDFn func(ctx context.Context, userID uuid.UUID) ([]storage.Group, error)
+	getGroupByIDFn       func(ctx context.Context, id uuid.UUID) (storage.Group, error)
 
 	// EnqueueMessage behavior
 	enqueueMessageFn func(ctx context.Context, arg storage.EnqueueMessageParams) (storage.Message, error)
@@ -55,19 +57,11 @@ func (m *mockQuerier) AverageDeliveryDuration(_ context.Context, _ storage.Avera
 	return nil, nil
 }
 
-func (m *mockQuerier) CountAllDeliveryLogsByDateRange(_ context.Context, _ storage.DateRangeParams) ([]storage.CountDeliveryLogsByGroupDateRangeRow, error) {
-	return nil, nil
-}
-
 func (m *mockQuerier) CountDeliveryLogsByGroup(_ context.Context, _ storage.CountDeliveryLogsByGroupParams) ([]storage.CountDeliveryLogsByGroupRow, error) {
 	return nil, nil
 }
 
 func (m *mockQuerier) CountDeliveryLogsByGroupDateRange(_ context.Context, _ storage.CountDeliveryLogsByGroupDateRangeParams) ([]storage.CountDeliveryLogsByGroupDateRangeRow, error) {
-	return nil, nil
-}
-
-func (m *mockQuerier) CountDeliveryLogsByGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.CountDeliveryLogsByGroupDateRangeRow, error) {
 	return nil, nil
 }
 
@@ -79,23 +73,7 @@ func (m *mockQuerier) CountDeliveryLogsByStatus(_ context.Context, _ storage.Cou
 	return nil, nil
 }
 
-func (m *mockQuerier) CountGroupOwners(_ context.Context, _ int32) (int64, error) {
-	return 0, nil
-}
-
 func (m *mockQuerier) DailyDeliveryCountsByGroup(_ context.Context, _ storage.DailyDeliveryCountsByGroupParams) ([]storage.DailyDeliveryCountsByGroupRow, error) {
-	return nil, nil
-}
-
-func (m *mockQuerier) DailyDeliveryCountsByGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DailyDeliveryCountsByGroupRow, error) {
-	return nil, nil
-}
-
-func (m *mockQuerier) DailyDeliveryCountsAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DailyDeliveryCountsByGroupRow, error) {
-	return nil, nil
-}
-
-func (m *mockQuerier) DeliveryCountsByGroupAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DeliveryCountsByGroupAllRow, error) {
 	return nil, nil
 }
 
@@ -107,20 +85,8 @@ func (m *mockQuerier) DeliveryCountsByGroupAndProvider(_ context.Context, _ stor
 	return nil, nil
 }
 
-func (m *mockQuerier) DeliveryCountsByProviderAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DeliveryCountsByGroupAndProviderRow, error) {
-	return nil, nil
-}
-
-func (m *mockQuerier) DeliveryCountsByProviderAndGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DeliveryCountsByGroupAndProviderRow, error) {
-	return nil, nil
-}
-
-func (m *mockQuerier) DeliveryCountsByUserAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DeliveryCountsByGroupAndUserRow, error) {
-	return nil, nil
-}
-
-func (m *mockQuerier) DeliveryCountsByUserAndGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DeliveryCountsByGroupAndUserRow, error) {
-	return nil, nil
+func (m *mockQuerier) CountGroupOwners(_ context.Context, _ uuid.UUID) (int64, error) {
+	return 0, nil
 }
 
 func (m *mockQuerier) CreateActivityLog(_ context.Context, _ storage.CreateActivityLogParams) (storage.ActivityLog, error) {
@@ -159,35 +125,35 @@ func (m *mockQuerier) DeleteExpiredSessions(_ context.Context) error {
 	return nil
 }
 
-func (m *mockQuerier) DeleteGroup(_ context.Context, _ int32) error {
+func (m *mockQuerier) DeleteGroup(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockQuerier) DeleteGroupMember(_ context.Context, _ storage.DeleteGroupMemberParams) error {
+func (m *mockQuerier) DeleteGroupMember(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockQuerier) DeleteGroupMembersByUserID(_ context.Context, _ int32) error {
+func (m *mockQuerier) DeleteGroupMembersByUserID(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockQuerier) DeleteProvider(_ context.Context, _ int32) error {
+func (m *mockQuerier) DeleteProvider(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockQuerier) DeleteRoutingRule(_ context.Context, _ int32) error {
+func (m *mockQuerier) DeleteRoutingRule(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockQuerier) DeleteSession(_ context.Context, _ int32) error {
+func (m *mockQuerier) DeleteSession(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockQuerier) DeleteSessionsByUserID(_ context.Context, _ int32) error {
+func (m *mockQuerier) DeleteSessionsByUserID(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockQuerier) DeleteUser(_ context.Context, _ int32) error {
+func (m *mockQuerier) DeleteUser(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
@@ -196,7 +162,7 @@ func (m *mockQuerier) EnqueueMessage(ctx context.Context, arg storage.EnqueueMes
 		return m.enqueueMessageFn(ctx, arg)
 	}
 	return storage.Message{
-		ID:     1,
+		ID:     uuid.New(),
 		UserID: arg.UserID,
 		Status: storage.MessageStatusQueued,
 	}, nil
@@ -207,17 +173,17 @@ func (m *mockQuerier) EnqueueMessageMetadata(ctx context.Context, arg storage.En
 		return m.enqueueMessageMetadataFn(ctx, arg)
 	}
 	return storage.Message{
-		ID:     1,
+		ID:     uuid.New(),
 		UserID: arg.UserID,
 		Status: storage.MessageStatusQueued,
 	}, nil
 }
 
-func (m *mockQuerier) GetActivityLogByID(_ context.Context, _ int64) (storage.ActivityLog, error) {
+func (m *mockQuerier) GetActivityLogByID(_ context.Context, _ uuid.UUID) (storage.ActivityLog, error) {
 	return storage.ActivityLog{}, nil
 }
 
-func (m *mockQuerier) GetDeliveryLogByMessageID(_ context.Context, _ int64) (storage.DeliveryLog, error) {
+func (m *mockQuerier) GetDeliveryLogByMessageID(_ context.Context, _ uuid.UUID) (storage.DeliveryLog, error) {
 	return storage.DeliveryLog{}, nil
 }
 
@@ -225,7 +191,7 @@ func (m *mockQuerier) GetDeliveryLogByProviderMessageID(_ context.Context, _ sql
 	return storage.DeliveryLog{}, nil
 }
 
-func (m *mockQuerier) GetGroupByID(ctx context.Context, id int32) (storage.Group, error) {
+func (m *mockQuerier) GetGroupByID(ctx context.Context, id uuid.UUID) (storage.Group, error) {
 	if m.getGroupByIDFn != nil {
 		return m.getGroupByIDFn(ctx, id)
 	}
@@ -236,24 +202,28 @@ func (m *mockQuerier) GetGroupByName(_ context.Context, _ string) (storage.Group
 	return storage.Group{}, nil
 }
 
+func (m *mockQuerier) GetGroupMemberByID(_ context.Context, _ uuid.UUID) (storage.GroupMember, error) {
+	return storage.GroupMember{}, nil
+}
+
 func (m *mockQuerier) GetGroupMemberByUserAndGroup(_ context.Context, _ storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
 	return storage.GroupMember{}, nil
 }
 
-func (m *mockQuerier) GetMessageByID(_ context.Context, _ int64) (storage.Message, error) {
+func (m *mockQuerier) GetMessageByID(_ context.Context, _ uuid.UUID) (storage.Message, error) {
 	return storage.Message{}, nil
 }
 
-func (m *mockQuerier) GetProviderByID(_ context.Context, _ int32) (storage.EspProvider, error) {
+func (m *mockQuerier) GetProviderByID(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
 	return storage.EspProvider{}, nil
 }
 func (m *mockQuerier) GetGlobalStdoutProvider(_ context.Context) (storage.EspProvider, error) {
 	return storage.EspProvider{}, nil
 }
-func (m *mockQuerier) GetStdoutProviderByGroupID(_ context.Context, _ int32) (storage.EspProvider, error) {
+func (m *mockQuerier) GetStdoutProviderByGroupID(_ context.Context, _ uuid.UUID) (storage.EspProvider, error) {
 	return storage.EspProvider{}, nil
 }
-func (m *mockQuerier) ListAccessibleProviders(_ context.Context, _ int32) ([]storage.EspProvider, error) {
+func (m *mockQuerier) ListAccessibleProviders(_ context.Context, _ uuid.UUID) ([]storage.EspProvider, error) {
 	return nil, nil
 }
 func (m *mockQuerier) IsProviderAccessible(_ context.Context, _ storage.IsProviderAccessibleParams) (bool, error) {
@@ -265,7 +235,7 @@ func (m *mockQuerier) GrantProviderAccess(_ context.Context, _ storage.GrantProv
 func (m *mockQuerier) RevokeProviderAccess(_ context.Context, _ storage.RevokeProviderAccessParams) error {
 	return nil
 }
-func (m *mockQuerier) ListProviderAccess(_ context.Context, _ int32) ([]storage.ProviderGroupAccess, error) {
+func (m *mockQuerier) ListProviderAccess(_ context.Context, _ uuid.UUID) ([]storage.ProviderGroupAccess, error) {
 	return nil, nil
 }
 
@@ -273,11 +243,11 @@ func (m *mockQuerier) GetQueuedMessages(_ context.Context, _ int32) ([]storage.M
 	return nil, nil
 }
 
-func (m *mockQuerier) GetRoutingRuleByID(_ context.Context, _ int32) (storage.RoutingRule, error) {
+func (m *mockQuerier) GetRoutingRuleByID(_ context.Context, _ uuid.UUID) (storage.RoutingRule, error) {
 	return storage.RoutingRule{}, nil
 }
 
-func (m *mockQuerier) GetSessionByID(_ context.Context, _ int32) (storage.Session, error) {
+func (m *mockQuerier) GetSessionByID(_ context.Context, _ uuid.UUID) (storage.Session, error) {
 	return storage.Session{}, nil
 }
 
@@ -289,7 +259,7 @@ func (m *mockQuerier) GetUserByEmail(_ context.Context, _ string) (storage.User,
 	return storage.User{}, nil
 }
 
-func (m *mockQuerier) GetUserByID(_ context.Context, _ int32) (storage.User, error) {
+func (m *mockQuerier) GetUserByID(_ context.Context, _ uuid.UUID) (storage.User, error) {
 	return storage.User{}, nil
 }
 
@@ -300,18 +270,11 @@ func (m *mockQuerier) GetUserByUsername(ctx context.Context, username sql.NullSt
 	return storage.User{}, errNotFound
 }
 
-func (m *mockQuerier) GetUserByUsernameAndGroupID(_ context.Context, arg storage.GetUserByUsernameAndGroupIDParams) (storage.User, error) {
-	if m.getUserByUsernameFn != nil {
-		return m.getUserByUsernameFn(context.Background(), arg.Username)
-	}
-	return storage.User{}, nil
-}
-
-func (m *mockQuerier) IncrementFailedAttempts(_ context.Context, _ int32) error {
+func (m *mockQuerier) IncrementFailedAttempts(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockQuerier) IncrementMonthlySent(_ context.Context, _ int32) error {
+func (m *mockQuerier) IncrementMonthlySent(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
@@ -335,15 +298,15 @@ func (m *mockQuerier) ListDeliveryLogsByGroupAndStatus(_ context.Context, _ stor
 	return nil, nil
 }
 
-func (m *mockQuerier) ListDeliveryLogsByMessageID(_ context.Context, _ int64) ([]storage.DeliveryLog, error) {
+func (m *mockQuerier) ListDeliveryLogsByMessageID(_ context.Context, _ uuid.UUID) ([]storage.DeliveryLog, error) {
 	return nil, nil
 }
 
-func (m *mockQuerier) ListGroupMembersByGroupID(_ context.Context, _ int32) ([]storage.GroupMember, error) {
+func (m *mockQuerier) ListGroupMembersByGroupID(_ context.Context, _ uuid.UUID) ([]storage.GroupMember, error) {
 	return nil, nil
 }
 
-func (m *mockQuerier) ListMembershipsByUserID(_ context.Context, _ int32) ([]storage.ListMembershipsByUserIDRow, error) {
+func (m *mockQuerier) ListMembershipsByUserID(_ context.Context, _ uuid.UUID) ([]storage.ListMembershipsByUserIDRow, error) {
 	return nil, nil
 }
 
@@ -351,11 +314,14 @@ func (m *mockQuerier) ListGroups(_ context.Context) ([]storage.Group, error) {
 	return nil, nil
 }
 
-func (m *mockQuerier) ListGroupsByUserID(_ context.Context, _ int32) ([]storage.Group, error) {
+func (m *mockQuerier) ListGroupsByUserID(ctx context.Context, userID uuid.UUID) ([]storage.Group, error) {
+	if m.listGroupsByUserIDFn != nil {
+		return m.listGroupsByUserIDFn(ctx, userID)
+	}
 	return nil, nil
 }
 
-func (m *mockQuerier) CountMessagesByGroup(_ context.Context, _ pgtype.Int4) (int32, error) {
+func (m *mockQuerier) CountMessagesByGroup(_ context.Context, _ pgtype.UUID) (int32, error) {
 	return 0, nil
 }
 
@@ -375,15 +341,15 @@ func (m *mockQuerier) ListMessagesByGroupAndStatusPaginated(_ context.Context, _
 	return nil, nil
 }
 
-func (m *mockQuerier) ListProvidersByGroupID(_ context.Context, _ int32) ([]storage.EspProvider, error) {
+func (m *mockQuerier) ListProvidersByGroupID(_ context.Context, _ uuid.UUID) ([]storage.EspProvider, error) {
 	return nil, nil
 }
 
-func (m *mockQuerier) ListRoutingRulesByGroupID(_ context.Context, _ int32) ([]storage.RoutingRule, error) {
+func (m *mockQuerier) ListRoutingRulesByGroupID(_ context.Context, _ uuid.UUID) ([]storage.RoutingRule, error) {
 	return nil, nil
 }
 
-func (m *mockQuerier) ListSessionsByUserID(_ context.Context, _ int32) ([]storage.Session, error) {
+func (m *mockQuerier) ListSessionsByUserID(_ context.Context, _ uuid.UUID) ([]storage.Session, error) {
 	return nil, nil
 }
 
@@ -391,40 +357,20 @@ func (m *mockQuerier) ListUsers(_ context.Context) ([]storage.User, error) {
 	return nil, nil
 }
 
-func (m *mockQuerier) ListUsersByGroupID(_ context.Context, _ int32) ([]storage.User, error) {
+func (m *mockQuerier) ListUsersByGroupID(_ context.Context, _ uuid.UUID) ([]storage.User, error) {
 	return nil, nil
 }
 
-func (m *mockQuerier) ListUsersByProviderID(_ context.Context, _ pgtype.Int4) ([]storage.ListUsersByProviderIDRow, error) {
+func (m *mockQuerier) ListUsersByProviderID(_ context.Context, _ pgtype.UUID) ([]storage.ListUsersByProviderIDRow, error) {
 	return nil, nil
 }
 
-func (m *mockQuerier) ListDeletedUsers(_ context.Context) ([]storage.User, error) {
-	return nil, nil
-}
-
-func (m *mockQuerier) PurgeDeletedUsers(_ context.Context) error {
+func (m *mockQuerier) ResetFailedAttempts(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
-func (m *mockQuerier) ResetFailedAttempts(_ context.Context, _ int32) error {
+func (m *mockQuerier) ResetMonthlySent(_ context.Context, _ uuid.UUID) error {
 	return nil
-}
-
-func (m *mockQuerier) ResetMonthlySent(_ context.Context, _ int32) error {
-	return nil
-}
-
-func (m *mockQuerier) ResetUserAPIKey(_ context.Context, _ storage.ResetUserAPIKeyParams) (storage.User, error) {
-	return storage.User{}, nil
-}
-
-func (m *mockQuerier) RestoreUser(_ context.Context, _ int32) (storage.User, error) {
-	return storage.User{}, nil
-}
-
-func (m *mockQuerier) SoftDeleteUser(_ context.Context, _ int32) (storage.User, error) {
-	return storage.User{}, nil
 }
 
 func (m *mockQuerier) UpdateDeliveryLogStatus(_ context.Context, _ storage.UpdateDeliveryLogStatusParams) error {
@@ -462,7 +408,7 @@ func (m *mockQuerier) UpdateUser(_ context.Context, _ storage.UpdateUserParams) 
 	return storage.User{}, nil
 }
 
-func (m *mockQuerier) UpdateUserLastLogin(_ context.Context, _ int32) error {
+func (m *mockQuerier) UpdateUserLastLogin(_ context.Context, _ uuid.UUID) error {
 	return nil
 }
 
@@ -482,12 +428,36 @@ func (m *mockQuerier) UpdateUserProvider(_ context.Context, _ storage.UpdateUser
 	return storage.User{}, nil
 }
 
-func (m *mockQuerier) UpdateSessionRefreshToken(_ context.Context, _ storage.UpdateSessionRefreshTokenParams) error {
+func (m *mockQuerier) GetGroupByGroupKey(_ context.Context, _ uuid.UUID) (storage.Group, error) {
+	return storage.Group{}, nil
+}
+
+func (m *mockQuerier) GetUserByUsernameAndGroupKey(_ context.Context, arg storage.GetUserByUsernameAndGroupKeyParams) (storage.User, error) {
+	if m.getUserByUsernameFn != nil {
+		return m.getUserByUsernameFn(context.Background(), arg.Username)
+	}
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) SoftDeleteUser(_ context.Context, _ uuid.UUID) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) RestoreUser(_ context.Context, _ uuid.UUID) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) ListDeletedUsers(_ context.Context) ([]storage.User, error) {
+	return nil, nil
+}
+
+func (m *mockQuerier) PurgeDeletedUsers(_ context.Context) error {
 	return nil
 }
 
-// Ensure mockQuerier satisfies the Querier interface at compile time.
-var _ storage.Querier = (*mockQuerier)(nil)
+func (m *mockQuerier) ResetUserAPIKey(_ context.Context, _ storage.ResetUserAPIKeyParams) (storage.User, error) {
+	return storage.User{}, nil
+}
 
 // newTestSession creates a Session with a mock backend for testing.
 func newTestSession(mock *mockQuerier) *Session {
@@ -503,7 +473,7 @@ func newTestSession(mock *mockQuerier) *Session {
 }
 
 // newAuthenticatedSession creates a session that has already been authenticated.
-func newAuthenticatedSession(mock *mockQuerier, userID int32, groupID int32, allowedDomains []string) *Session {
+func newAuthenticatedSession(mock *mockQuerier, userID, groupID uuid.UUID, allowedDomains []string) *Session {
 	s := newTestSession(mock)
 	s.userID = userID
 	s.groupID = groupID
@@ -514,12 +484,11 @@ func newAuthenticatedSession(mock *mockQuerier, userID int32, groupID int32, all
 
 const testAPIKey = "test-api-key-0123456789abcdef"
 
-// testGroupID is a fixed integer used as the group_id in auth tests.
-// This must match the groupID used in newMockWithAuth for successful auth.
-const testGroupID int32 = 2
+// testGroupKey is a fixed UUID used as the group_key in auth tests.
+var testGroupKey = uuid.MustParse("00000000-0000-0000-0000-000000000099")
 
 // newMockWithAuth creates a mockQuerier pre-configured for a successful auth flow.
-func newMockWithAuth(userID int32, groupID int32, apiKey string, domainsJSON []byte) *mockQuerier {
+func newMockWithAuth(userID, groupID uuid.UUID, apiKey string, domainsJSON []byte) *mockQuerier {
 	return &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, username sql.NullString) (storage.User, error) {
 			if username.String == "testuser" {
@@ -530,12 +499,12 @@ func newMockWithAuth(userID int32, groupID int32, apiKey string, domainsJSON []b
 					AccountType:    "smtp",
 					Status:         "active",
 					AllowedDomains: domainsJSON,
-					HomeGroupID:    pgtype.Int4{Int32: groupID, Valid: true},
+					HomeGroupID:    pgtype.UUID{Bytes: groupID, Valid: true},
 				}, nil
 			}
 			return storage.User{}, errNotFound
 		},
-		getGroupByIDFn: func(_ context.Context, id int32) (storage.Group, error) {
+		getGroupByIDFn: func(_ context.Context, id uuid.UUID) (storage.Group, error) {
 			if id == groupID {
 				return storage.Group{ID: groupID, Name: "test-group", Status: "active"}, nil
 			}
@@ -573,14 +542,14 @@ func authenticateSession(t *testing.T, s *Session, username, password string) er
 }
 
 func TestSession_Auth_Success(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	domainsJSON, _ := json.Marshal([]string{"example.com"})
 
 	mock := newMockWithAuth(userID, groupID, testAPIKey, domainsJSON)
 	s := newTestSession(mock)
 
-	err := authenticateSession(t, s, "testuser@2", testAPIKey)
+	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), testAPIKey)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -588,10 +557,10 @@ func TestSession_Auth_Success(t *testing.T) {
 		t.Error("expected session to be authenticated")
 	}
 	if s.userID != userID {
-		t.Errorf("expected userID=%d, got %d", userID, s.userID)
+		t.Errorf("expected userID=%s, got %s", userID, s.userID)
 	}
 	if s.groupID != groupID {
-		t.Errorf("expected groupID=%d, got %d", groupID, s.groupID)
+		t.Errorf("expected groupID=%s, got %s", groupID, s.groupID)
 	}
 	if len(s.allowedDomains) != 1 || s.allowedDomains[0] != "example.com" {
 		t.Errorf("expected allowedDomains=[example.com], got %v", s.allowedDomains)
@@ -599,13 +568,13 @@ func TestSession_Auth_Success(t *testing.T) {
 }
 
 func TestSession_Auth_InvalidAPIKey(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 
 	mock := newMockWithAuth(userID, groupID, testAPIKey, nil)
 	s := newTestSession(mock)
 
-	err := authenticateSession(t, s, "testuser@2", "wrong-api-key")
+	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), "wrong-api-key")
 	if err == nil {
 		t.Fatal("expected error for invalid API key")
 	}
@@ -630,7 +599,7 @@ func TestSession_Auth_UnknownUser(t *testing.T) {
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "unknown@2", "any-password")
+	err := authenticateSession(t, s, "unknown@"+testGroupKey.String(), "any-password")
 	if err == nil {
 		t.Fatal("expected error for unknown user")
 	}
@@ -654,7 +623,7 @@ func TestSession_Auth_UnsupportedMechanism(t *testing.T) {
 }
 
 func TestSession_Auth_InactiveUser(t *testing.T) {
-	var userID int32 = 1
+	userID := uuid.New()
 
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
@@ -664,13 +633,12 @@ func TestSession_Auth_InactiveUser(t *testing.T) {
 				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
 				AccountType: "smtp",
 				Status:      "suspended",
-				HomeGroupID: pgtype.Int4{Int32: testGroupID, Valid: true},
 			}, nil
 		},
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser@2", testAPIKey)
+	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for inactive user")
 	}
@@ -685,7 +653,7 @@ func TestSession_Auth_InactiveUser(t *testing.T) {
 }
 
 func TestSession_Auth_NonSmtpAccountType(t *testing.T) {
-	var userID int32 = 1
+	userID := uuid.New()
 
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
@@ -695,13 +663,12 @@ func TestSession_Auth_NonSmtpAccountType(t *testing.T) {
 				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
 				AccountType: "human",
 				Status:      "active",
-				HomeGroupID: pgtype.Int4{Int32: testGroupID, Valid: true},
 			}, nil
 		},
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser@2", testAPIKey)
+	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for non-smtp account type")
 	}
@@ -716,7 +683,7 @@ func TestSession_Auth_NonSmtpAccountType(t *testing.T) {
 }
 
 func TestSession_Auth_NoGroupMembership(t *testing.T) {
-	var userID int32 = 1
+	userID := uuid.New()
 
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
@@ -727,16 +694,16 @@ func TestSession_Auth_NoGroupMembership(t *testing.T) {
 				AccountType: "smtp",
 				Status:      "active",
 				// HomeGroupID is zero/invalid: GetGroupByID will return errNotFound
-				HomeGroupID: pgtype.Int4{Valid: false},
+				HomeGroupID: pgtype.UUID{Valid: false},
 			}, nil
 		},
-		getGroupByIDFn: func(_ context.Context, _ int32) (storage.Group, error) {
+		getGroupByIDFn: func(_ context.Context, _ uuid.UUID) (storage.Group, error) {
 			return storage.Group{}, errNotFound
 		},
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser@2", testAPIKey)
+	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for no group membership")
 	}
@@ -751,8 +718,8 @@ func TestSession_Auth_NoGroupMembership(t *testing.T) {
 }
 
 func TestSession_Auth_SuspendedGroup(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 
 	mock := &mockQuerier{
 		getUserByUsernameFn: func(_ context.Context, _ sql.NullString) (storage.User, error) {
@@ -762,16 +729,16 @@ func TestSession_Auth_SuspendedGroup(t *testing.T) {
 				ApiKey:      sql.NullString{String: testAPIKey, Valid: true},
 				AccountType: "smtp",
 				Status:      "active",
-				HomeGroupID: pgtype.Int4{Int32: groupID, Valid: true},
+				HomeGroupID: pgtype.UUID{Bytes: groupID, Valid: true},
 			}, nil
 		},
-		getGroupByIDFn: func(_ context.Context, _ int32) (storage.Group, error) {
+		getGroupByIDFn: func(_ context.Context, _ uuid.UUID) (storage.Group, error) {
 			return storage.Group{ID: groupID, Name: "test-group", Status: "suspended"}, nil
 		},
 	}
 
 	s := newTestSession(mock)
-	err := authenticateSession(t, s, "testuser@2", testAPIKey)
+	err := authenticateSession(t, s, "testuser@"+testGroupKey.String(), testAPIKey)
 	if err == nil {
 		t.Fatal("expected error for suspended group")
 	}
@@ -788,8 +755,8 @@ func TestSession_Auth_SuspendedGroup(t *testing.T) {
 // --- Mail Tests ---
 
 func TestSession_Mail_ValidSender(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	s := newAuthenticatedSession(&mockQuerier{}, userID, groupID, []string{"example.com"})
 
 	err := s.Mail("sender@example.com", nil)
@@ -802,8 +769,8 @@ func TestSession_Mail_ValidSender(t *testing.T) {
 }
 
 func TestSession_Mail_ValidSender_NoDomainRestrictions(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	s := newAuthenticatedSession(&mockQuerier{}, userID, groupID, nil)
 
 	err := s.Mail("sender@anydomain.com", nil)
@@ -813,8 +780,8 @@ func TestSession_Mail_ValidSender_NoDomainRestrictions(t *testing.T) {
 }
 
 func TestSession_Mail_UnauthorizedDomain(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	s := newAuthenticatedSession(&mockQuerier{}, userID, groupID, []string{"allowed.com"})
 
 	err := s.Mail("sender@forbidden.com", nil)
@@ -849,8 +816,8 @@ func TestSession_Mail_Unauthenticated(t *testing.T) {
 }
 
 func TestSession_Mail_InvalidAddress(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	s := newAuthenticatedSession(&mockQuerier{}, userID, groupID, nil)
 
 	err := s.Mail("not-an-email", nil)
@@ -870,8 +837,8 @@ func TestSession_Mail_InvalidAddress(t *testing.T) {
 // --- Rcpt Tests ---
 
 func TestSession_Rcpt_ValidRecipient(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	s := newAuthenticatedSession(&mockQuerier{}, userID, groupID, nil)
 
 	err := s.Rcpt("recipient@example.com", nil)
@@ -887,8 +854,8 @@ func TestSession_Rcpt_ValidRecipient(t *testing.T) {
 }
 
 func TestSession_Rcpt_MultipleRecipients(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	s := newAuthenticatedSession(&mockQuerier{}, userID, groupID, nil)
 
 	if err := s.Rcpt("first@example.com", nil); err != nil {
@@ -904,8 +871,8 @@ func TestSession_Rcpt_MultipleRecipients(t *testing.T) {
 }
 
 func TestSession_Rcpt_InvalidFormat(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	s := newAuthenticatedSession(&mockQuerier{}, userID, groupID, nil)
 
 	err := s.Rcpt("not-a-valid-address", nil)
@@ -942,15 +909,15 @@ func TestSession_Rcpt_Unauthenticated(t *testing.T) {
 // --- Data Tests ---
 
 func TestSession_Data_EnqueuesMessage(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	var capturedParams storage.EnqueueMessageParams
 
 	mock := &mockQuerier{
 		enqueueMessageFn: func(_ context.Context, arg storage.EnqueueMessageParams) (storage.Message, error) {
 			capturedParams = arg
 			return storage.Message{
-				ID:     100,
+				ID:     uuid.New(),
 				UserID: arg.UserID,
 				Status: storage.MessageStatusQueued,
 			}, nil
@@ -967,8 +934,8 @@ func TestSession_Data_EnqueuesMessage(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	expectedUserPgID := pgtype.Int4{Int32: userID, Valid: true}
-	expectedGroupPgID := pgtype.Int4{Int32: groupID, Valid: true}
+	expectedUserPgID := pgtype.UUID{Bytes: userID, Valid: true}
+	expectedGroupPgID := pgtype.UUID{Bytes: groupID, Valid: true}
 	if capturedParams.UserID != expectedUserPgID {
 		t.Errorf("expected UserID=%v, got %v", expectedUserPgID, capturedParams.UserID)
 	}
@@ -997,8 +964,8 @@ func TestSession_Data_EnqueuesMessage(t *testing.T) {
 }
 
 func TestSession_Data_NoRecipients(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	s := newAuthenticatedSession(&mockQuerier{}, userID, groupID, nil)
 	s.sender = "sender@example.com"
 	// No recipients set.
@@ -1035,8 +1002,8 @@ func TestSession_Data_Unauthenticated(t *testing.T) {
 }
 
 func TestSession_Data_EnqueueError(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	mock := &mockQuerier{
 		enqueueMessageFn: func(_ context.Context, _ storage.EnqueueMessageParams) (storage.Message, error) {
 			return storage.Message{}, errors.New("database error")
@@ -1062,14 +1029,14 @@ func TestSession_Data_EnqueueError(t *testing.T) {
 }
 
 func TestSession_Data_NoSubjectHeader(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	var capturedParams storage.EnqueueMessageParams
 
 	mock := &mockQuerier{
 		enqueueMessageFn: func(_ context.Context, arg storage.EnqueueMessageParams) (storage.Message, error) {
 			capturedParams = arg
-			return storage.Message{ID: 100, Status: storage.MessageStatusQueued}, nil
+			return storage.Message{ID: uuid.New(), Status: storage.MessageStatusQueued}, nil
 		},
 	}
 
@@ -1091,8 +1058,8 @@ func TestSession_Data_NoSubjectHeader(t *testing.T) {
 // --- Reset Test ---
 
 func TestSession_Reset(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	s := newAuthenticatedSession(&mockQuerier{}, userID, groupID, []string{"example.com"})
 	s.sender = "sender@example.com"
 	s.recipients = []string{"a@example.com", "b@example.com"}
@@ -1179,8 +1146,8 @@ func (m *mockMessageStore) Delete(ctx context.Context, messageID string) error {
 }
 
 func TestSession_Data_WithMessageStore(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	var putCalled bool
 	var capturedPutData []byte
 	var capturedMetadataParams storage.EnqueueMessageMetadataParams
@@ -1197,7 +1164,7 @@ func TestSession_Data_WithMessageStore(t *testing.T) {
 		enqueueMessageMetadataFn: func(_ context.Context, arg storage.EnqueueMessageMetadataParams) (storage.Message, error) {
 			capturedMetadataParams = arg
 			return storage.Message{
-				ID:     100,
+				ID:     uuid.New(),
 				UserID: arg.UserID,
 				Status: storage.MessageStatusQueued,
 			}, nil
@@ -1233,8 +1200,8 @@ func TestSession_Data_WithMessageStore(t *testing.T) {
 	}
 
 	// Verify EnqueueMessageMetadata was called (not EnqueueMessage).
-	expectedUserPgID := pgtype.Int4{Int32: userID, Valid: true}
-	expectedGroupPgID := pgtype.Int4{Int32: groupID, Valid: true}
+	expectedUserPgID := pgtype.UUID{Bytes: userID, Valid: true}
+	expectedGroupPgID := pgtype.UUID{Bytes: groupID, Valid: true}
 	if capturedMetadataParams.UserID != expectedUserPgID {
 		t.Errorf("expected UserID=%v, got %v", expectedUserPgID, capturedMetadataParams.UserID)
 	}
@@ -1253,8 +1220,8 @@ func TestSession_Data_WithMessageStore(t *testing.T) {
 }
 
 func TestSession_Data_MessageStoreWriteFails_FallsBack(t *testing.T) {
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	var enqueueMessageCalled bool
 	var capturedParams storage.EnqueueMessageParams
 
@@ -1269,7 +1236,7 @@ func TestSession_Data_MessageStoreWriteFails_FallsBack(t *testing.T) {
 			enqueueMessageCalled = true
 			capturedParams = arg
 			return storage.Message{
-				ID:     100,
+				ID:     uuid.New(),
 				UserID: arg.UserID,
 				Status: storage.MessageStatusQueued,
 			}, nil
@@ -1312,11 +1279,11 @@ func TestSession_Data_EnqueueRetrySucceeds(t *testing.T) {
 	enqueueRetryBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
 	defer func() { enqueueRetryBackoff = origBackoff }()
 
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	mock := &mockQuerier{
 		enqueueMessageFn: func(_ context.Context, arg storage.EnqueueMessageParams) (storage.Message, error) {
-			return storage.Message{ID: 100, UserID: arg.UserID, Status: storage.MessageStatusQueued}, nil
+			return storage.Message{ID: uuid.New(), UserID: arg.UserID, Status: storage.MessageStatusQueued}, nil
 		},
 	}
 
@@ -1360,12 +1327,12 @@ func TestSession_Data_EnqueueRetryExhausted(t *testing.T) {
 	enqueueRetryBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
 	defer func() { enqueueRetryBackoff = origBackoff }()
 
-	var userID int32 = 1
-	var groupID int32 = 2
+	userID := uuid.New()
+	groupID := uuid.New()
 	var capturedStatus storage.MessageStatus
 	mock := &mockQuerier{
 		enqueueMessageFn: func(_ context.Context, arg storage.EnqueueMessageParams) (storage.Message, error) {
-			return storage.Message{ID: 100, UserID: arg.UserID, Status: storage.MessageStatusQueued}, nil
+			return storage.Message{ID: uuid.New(), UserID: arg.UserID, Status: storage.MessageStatusQueued}, nil
 		},
 		updateMessageStatusFn: func(_ context.Context, arg storage.UpdateMessageStatusParams) error {
 			capturedStatus = arg.Status

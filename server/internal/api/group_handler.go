@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -36,25 +36,27 @@ type updateMemberRoleRequest struct {
 
 // groupResponse is the JSON response for a group.
 type groupResponse struct {
-	ID           int32   `json:"id"`
-	Name         string  `json:"name"`
-	GroupType    string  `json:"group_type"`
-	Status       string  `json:"status"`
-	MonthlyLimit int32   `json:"monthly_limit"`
-	MonthlySent  int32   `json:"monthly_sent"`
-	DisplayName  *string `json:"display_name,omitempty"`
-	Description  *string `json:"description,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           uuid.UUID  `json:"id"`
+	Name         string     `json:"name"`
+	GroupType    string     `json:"group_type"`
+	Status       string     `json:"status"`
+	MonthlyLimit int32      `json:"monthly_limit"`
+	MonthlySent  int32      `json:"monthly_sent"`
+	GroupKey     uuid.UUID  `json:"group_key"`
+	DisplayName  *string    `json:"display_name,omitempty"`
+	Description  *string    `json:"description,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // groupMemberResponse is the JSON response for a group member.
 type groupMemberResponse struct {
-	GroupID   int32   `json:"group_id"`
-	UserID    int32   `json:"user_id"`
-	Email     string  `json:"email,omitempty"`
-	Username  *string `json:"username,omitempty"`
-	Role      string  `json:"role"`
+	ID        uuid.UUID `json:"id"`
+	GroupID   uuid.UUID `json:"group_id"`
+	UserID    uuid.UUID `json:"user_id"`
+	Email     string    `json:"email,omitempty"`
+	Username  *string   `json:"username,omitempty"`
+	Role      string    `json:"role"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -67,6 +69,7 @@ func toGroupResponse(g storage.Group) groupResponse {
 		Status:       g.Status,
 		MonthlyLimit: g.MonthlyLimit,
 		MonthlySent:  g.MonthlySent,
+		GroupKey:     g.GroupKey,
 		CreatedAt:    timestampToTime(g.CreatedAt),
 		UpdatedAt:    timestampToTime(g.UpdatedAt),
 	}
@@ -84,6 +87,7 @@ func toGroupResponse(g storage.Group) groupResponse {
 // toGroupMemberResponse converts a storage.GroupMember to a groupMemberResponse.
 func toGroupMemberResponse(gm storage.GroupMember) groupMemberResponse {
 	return groupMemberResponse{
+		ID:        gm.ID,
 		GroupID:   gm.GroupID,
 		UserID:    gm.UserID,
 		Role:      gm.Role,
@@ -107,7 +111,7 @@ type resetAPIKeyRequest struct {
 
 // requireGroupRole checks that the caller has one of the allowed roles in the specified group.
 // System admins bypass this check. Returns the caller's membership or an error.
-func requireGroupRole(queries storage.Querier, r *http.Request, groupID int32, allowedRoles ...string) (storage.GroupMember, error) {
+func requireGroupRole(queries storage.Querier, r *http.Request, groupID uuid.UUID, allowedRoles ...string) (storage.GroupMember, error) {
 	callerGroupType := auth.GroupTypeFromContext(r.Context())
 	if callerGroupType == "system" {
 		return storage.GroupMember{Role: "owner"}, nil
@@ -176,7 +180,7 @@ func CreateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 
 		// Auto-create owner membership for the caller
 		callerUserID := auth.UserFromContext(r.Context())
-		if callerUserID != 0 {
+		if callerUserID != uuid.Nil {
 			_, _ = queries.CreateGroupMember(r.Context(), storage.CreateGroupMemberParams{
 				GroupID: group.ID,
 				UserID:  callerUserID,
@@ -185,7 +189,7 @@ func CreateGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, auth.AuditActionCreateGroup, "group", fmt.Sprintf("%d", group.ID), map[string]interface{}{
+			auditLogger.LogAdminAction(r.Context(), r, auth.AuditActionCreateGroup, "group", group.ID.String(), map[string]interface{}{
 				"name": req.Name,
 			})
 		}
@@ -228,12 +232,11 @@ func ListGroupsHandler(queries storage.Querier) http.HandlerFunc {
 func GetGroupHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		n, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
-		id := int32(n)
 
 		// Verify the requesting user has access to this group
 		if _, err := requireGroupRole(queries, r, id, "owner", "admin", "member"); err != nil {
@@ -259,12 +262,11 @@ func GetGroupHandler(queries storage.Querier) http.HandlerFunc {
 func DeleteGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		n, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
-		id := int32(n)
 
 		// Get group to check type
 		group, err := queries.GetGroupByID(r.Context(), id)
@@ -310,7 +312,7 @@ func DeleteGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, auth.AuditActionDeleteGroup, "group", fmt.Sprintf("%d", id), nil)
+			auditLogger.LogAdminAction(r.Context(), r, auth.AuditActionDeleteGroup, "group", id.String(), nil)
 		}
 
 		w.WriteHeader(http.StatusNoContent)
@@ -322,12 +324,11 @@ func DeleteGroupHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 func ListGroupMembersHandler(queries storage.Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		n, err := strconv.ParseInt(idStr, 10, 32)
+		id, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
-		id := int32(n)
 
 		if _, err := requireGroupRole(queries, r, id, "owner", "admin", "member"); err != nil {
 			respondError(w, http.StatusForbidden, "access denied")
@@ -361,12 +362,11 @@ func ListGroupMembersHandler(queries storage.Querier) http.HandlerFunc {
 func AddGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		gn, err := strconv.ParseInt(idStr, 10, 32)
+		groupID, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
-		groupID := int32(gn)
 
 		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
 			respondError(w, http.StatusForbidden, "owner or admin role required")
@@ -379,12 +379,11 @@ func AddGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLogge
 			return
 		}
 
-		un, err := strconv.ParseInt(req.UserID, 10, 32)
+		userID, err := uuid.Parse(req.UserID)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user_id format")
 			return
 		}
-		userID := int32(un)
 
 		if req.Role == "" {
 			req.Role = "member"
@@ -420,9 +419,9 @@ func AddGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLogge
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.add_member", "group_member", fmt.Sprintf("%d/%d", groupID, userID), map[string]interface{}{
-				"group_id": fmt.Sprintf("%d", groupID),
-				"user_id":  fmt.Sprintf("%d", userID),
+			auditLogger.LogAdminAction(r.Context(), r, "admin.add_member", "group_member", member.ID.String(), map[string]interface{}{
+				"group_id": groupID.String(),
+				"user_id":  userID.String(),
 				"role":     req.Role,
 			})
 		}
@@ -437,20 +436,18 @@ func AddGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLogge
 func UpdateGroupMemberRoleHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupIDStr := chi.URLParam(r, "id")
-		gn, err := strconv.ParseInt(groupIDStr, 10, 32)
+		groupID, err := uuid.Parse(groupIDStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
-		groupID := int32(gn)
 
 		uidStr := chi.URLParam(r, "uid")
-		un, err := strconv.ParseInt(uidStr, 10, 32)
+		userID, err := uuid.Parse(uidStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		userID := int32(un)
 
 		var req updateMemberRoleRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -501,9 +498,8 @@ func UpdateGroupMemberRoleHandler(queries storage.Querier, auditLogger *auth.Aud
 
 		oldRole := member.Role
 		updated, err := queries.UpdateGroupMemberRole(r.Context(), storage.UpdateGroupMemberRoleParams{
-			GroupID: groupID,
-			UserID:  userID,
-			Role:    req.Role,
+			ID:   member.ID,
+			Role: req.Role,
 		})
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
@@ -511,7 +507,7 @@ func UpdateGroupMemberRoleHandler(queries storage.Querier, auditLogger *auth.Aud
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.update_member_role", "group_member", fmt.Sprintf("%d/%d", groupID, userID), map[string]interface{}{
+			auditLogger.LogAdminAction(r.Context(), r, "admin.update_member_role", "group_member", member.ID.String(), map[string]interface{}{
 				"old_role": oldRole,
 				"new_role": req.Role,
 			})
@@ -526,20 +522,18 @@ func UpdateGroupMemberRoleHandler(queries storage.Querier, auditLogger *auth.Aud
 func RemoveGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		groupIDStr := chi.URLParam(r, "id")
-		gn, err := strconv.ParseInt(groupIDStr, 10, 32)
+		groupID, err := uuid.Parse(groupIDStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
-		groupID := int32(gn)
 
 		uidStr := chi.URLParam(r, "uid")
-		un, err := strconv.ParseInt(uidStr, 10, 32)
+		userID, err := uuid.Parse(uidStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		userID := int32(un)
 
 		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
 			respondError(w, http.StatusForbidden, "owner or admin role required")
@@ -569,18 +563,15 @@ func RemoveGroupMemberHandler(queries storage.Querier, auditLogger *auth.AuditLo
 			}
 		}
 
-		if err := queries.DeleteGroupMember(r.Context(), storage.DeleteGroupMemberParams{
-			GroupID: groupID,
-			UserID:  userID,
-		}); err != nil {
+		if err := queries.DeleteGroupMember(r.Context(), member.ID); err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.remove_member", "group_member", fmt.Sprintf("%d/%d", groupID, userID), map[string]interface{}{
-				"group_id": fmt.Sprintf("%d", groupID),
-				"user_id":  fmt.Sprintf("%d", userID),
+			auditLogger.LogAdminAction(r.Context(), r, "admin.remove_member", "group_member", member.ID.String(), map[string]interface{}{
+				"group_id": groupID.String(),
+				"user_id":  userID.String(),
 			})
 		}
 
@@ -600,20 +591,18 @@ type updateServiceAccountRequest struct {
 func UpdateServiceAccountHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		gn, err := strconv.ParseInt(idStr, 10, 32)
+		groupID, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
-		groupID := int32(gn)
 
 		uidStr := chi.URLParam(r, "uid")
-		un, err := strconv.ParseInt(uidStr, 10, 32)
+		userID, err := uuid.Parse(uidStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		userID := int32(un)
 
 		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
 			respondError(w, http.StatusForbidden, "owner or admin role required")
@@ -673,15 +662,14 @@ func UpdateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 
 		// Update provider_id if provided
 		if req.ProviderID != "" {
-			pn, err := strconv.ParseInt(req.ProviderID, 10, 32)
+			providerUUID, err := uuid.Parse(req.ProviderID)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid provider_id format")
 				return
 			}
-			providerID := int32(pn)
 
 			accessible, err := queries.IsProviderAccessible(r.Context(), storage.IsProviderAccessibleParams{
-				ID:      providerID,
+				ID:      providerUUID,
 				GroupID: groupID,
 			})
 			if err != nil || !accessible {
@@ -691,7 +679,7 @@ func UpdateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 
 			user, err = queries.UpdateUserProvider(r.Context(), storage.UpdateUserProviderParams{
 				ID:         user.ID,
-				ProviderID: pgtype.Int4{Int32: providerID, Valid: true},
+				ProviderID: pgtype.UUID{Bytes: providerUUID, Valid: true},
 			})
 			if err != nil {
 				respondError(w, http.StatusInternalServerError, "failed to update provider")
@@ -700,8 +688,8 @@ func UpdateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.update_service_account", "user", fmt.Sprintf("%d", user.ID), map[string]interface{}{
-				"group_id": fmt.Sprintf("%d", groupID),
+			auditLogger.LogAdminAction(r.Context(), r, "admin.update_service_account", "user", user.ID.String(), map[string]interface{}{
+				"group_id": groupID.String(),
 			})
 		}
 
@@ -715,12 +703,11 @@ func UpdateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		gn, err := strconv.ParseInt(idStr, 10, 32)
+		groupID, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
-		groupID := int32(gn)
 
 		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
 			respondError(w, http.StatusForbidden, "owner or admin role required")
@@ -739,18 +726,17 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 		}
 		req.Username = strings.ToLower(req.Username)
 
-		var providerID int32
+		var providerUUID uuid.UUID
 		if req.ProviderID != "" {
-			pn, err := strconv.ParseInt(req.ProviderID, 10, 32)
+			providerUUID, err = uuid.Parse(req.ProviderID)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid provider_id format")
 				return
 			}
-			providerID = int32(pn)
 
 			// Verify provider is accessible to this group (owner, shared, or global)
 			accessible, err := queries.IsProviderAccessible(r.Context(), storage.IsProviderAccessibleParams{
-				ID:      providerID,
+				ID:      providerUUID,
 				GroupID: groupID,
 			})
 			if err != nil || !accessible {
@@ -764,7 +750,7 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 				respondError(w, http.StatusBadRequest, "no default stdout provider available")
 				return
 			}
-			providerID = stdoutProvider.ID
+			providerUUID = stdoutProvider.ID
 		}
 
 		email := req.Email
@@ -773,12 +759,7 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 		}
 
 		// Generate random password hash (SMTP accounts don't log in)
-		randomPwd, err := auth.GenerateAPIKey()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-		passwordHash, err := auth.HashPassword(randomPwd)
+		passwordHash, err := auth.HashPassword(uuid.New().String())
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
@@ -815,8 +796,8 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			Username:        sql.NullString{String: req.Username, Valid: true},
 			ApiKey:          sql.NullString{String: apiKey, Valid: true},
 			AllowedDomains:  domainsJSON,
-			ProviderID:      pgtype.Int4{Int32: providerID, Valid: true},
-			HomeGroupID:     pgtype.Int4{Int32: groupID, Valid: true},
+			ProviderID:      pgtype.UUID{Bytes: providerUUID, Valid: true},
+			HomeGroupID:     pgtype.UUID{Bytes: groupID, Valid: true},
 			ApiKeyExpiresAt: apiKeyExpiresAt,
 		})
 		if err != nil {
@@ -840,9 +821,9 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.create_service_account", "user", fmt.Sprintf("%d", user.ID), map[string]interface{}{
+			auditLogger.LogAdminAction(r.Context(), r, "admin.create_service_account", "user", user.ID.String(), map[string]interface{}{
 				"username": req.Username,
-				"group_id": fmt.Sprintf("%d", groupID),
+				"group_id": groupID.String(),
 			})
 		}
 
@@ -856,20 +837,18 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 func ResetServiceAccountAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
-		gn, err := strconv.ParseInt(idStr, 10, 32)
+		groupID, err := uuid.Parse(idStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group ID format")
 			return
 		}
-		groupID := int32(gn)
 
 		uidStr := chi.URLParam(r, "uid")
-		un, err := strconv.ParseInt(uidStr, 10, 32)
+		userID, err := uuid.Parse(uidStr)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid user ID format")
 			return
 		}
-		userID := int32(un)
 
 		if _, err := requireGroupRole(queries, r, groupID, "owner", "admin"); err != nil {
 			respondError(w, http.StatusForbidden, "owner or admin role required")
@@ -924,8 +903,8 @@ func ResetServiceAccountAPIKeyHandler(queries storage.Querier, auditLogger *auth
 		}
 
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "admin.reset_api_key", "user", fmt.Sprintf("%d", userID), map[string]interface{}{
-				"group_id": fmt.Sprintf("%d", groupID),
+			auditLogger.LogAdminAction(r.Context(), r, "admin.reset_api_key", "user", userID.String(), map[string]interface{}{
+				"group_id": groupID.String(),
 			})
 		}
 

@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -31,7 +33,7 @@ type ProviderResolver struct {
 	client  HTTPClient
 
 	mu       sync.RWMutex
-	cache    map[int32]*cachedProvider
+	cache    map[uuid.UUID]*cachedProvider
 	cacheTTL time.Duration
 
 	stdout              Provider
@@ -49,7 +51,7 @@ func NewResolver(queries storage.Querier, client HTTPClient, log zerolog.Logger,
 		queries:             queries,
 		log:                 log,
 		client:              client,
-		cache:               make(map[int32]*cachedProvider),
+		cache:               make(map[uuid.UUID]*cachedProvider),
 		cacheTTL:            defaultCacheTTL,
 		stdout:              NewStdout(ProviderConfig{Type: "stdout"}),
 		allowStdoutFallback: stdoutFallback,
@@ -59,7 +61,7 @@ func NewResolver(queries storage.Querier, client HTTPClient, log zerolog.Logger,
 // ResolveByUserID returns the ESP provider for the given user ID by looking up
 // the user's provider_id column. This is the primary resolution path for SMTP
 // service accounts that have a direct provider mapping.
-func (r *ProviderResolver) ResolveByUserID(ctx context.Context, userID int32) (Provider, error) {
+func (r *ProviderResolver) ResolveByUserID(ctx context.Context, userID uuid.UUID) (Provider, error) {
 	// Check cache under read lock.
 	r.mu.RLock()
 	if cached, ok := r.cache[userID]; ok && time.Now().Before(cached.expiresAt) {
@@ -72,20 +74,20 @@ func (r *ProviderResolver) ResolveByUserID(ctx context.Context, userID int32) (P
 	// Cache miss or expired: look up user's provider_id.
 	user, err := r.queries.GetUserByID(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get user %d: %w", userID, err)
+		return nil, fmt.Errorf("get user %s: %w", userID, err)
 	}
 
 	if !user.ProviderID.Valid {
 		return r.handleNoProvider(userID, "user")
 	}
 
-	providerID := user.ProviderID.Int32
+	providerID := uuid.UUID(user.ProviderID.Bytes)
 	return r.resolveProviderByID(ctx, userID, providerID)
 }
 
 // Resolve returns the ESP provider for the given group ID (legacy path).
 // It picks the first enabled provider in the group.
-func (r *ProviderResolver) Resolve(ctx context.Context, groupID int32) (Provider, error) {
+func (r *ProviderResolver) Resolve(ctx context.Context, groupID uuid.UUID) (Provider, error) {
 	r.mu.RLock()
 	if cached, ok := r.cache[groupID]; ok && time.Now().Before(cached.expiresAt) {
 		p := cached.provider
@@ -96,7 +98,7 @@ func (r *ProviderResolver) Resolve(ctx context.Context, groupID int32) (Provider
 
 	providers, err := r.queries.ListProvidersByGroupID(ctx, groupID)
 	if err != nil {
-		return nil, fmt.Errorf("list providers for group %d: %w", groupID, err)
+		return nil, fmt.Errorf("list providers for group %s: %w", groupID, err)
 	}
 
 	var espProvider *storage.EspProvider
@@ -115,25 +117,25 @@ func (r *ProviderResolver) Resolve(ctx context.Context, groupID int32) (Provider
 }
 
 // handleNoProvider handles the case when no provider is found.
-func (r *ProviderResolver) handleNoProvider(id int32, entity string) (Provider, error) {
+func (r *ProviderResolver) handleNoProvider(id uuid.UUID, entity string) (Provider, error) {
 	if r.allowStdoutFallback {
 		r.log.Warn().
-			Int32(entity+"_id", id).
+			Stringer(entity+"_id", id).
 			Msg("no ESP provider found, falling back to stdout (dev mode)")
 		r.cacheProvider(id, r.stdout)
 		return r.stdout, nil
 	}
 	r.log.Error().
-		Int32(entity+"_id", id).
+		Stringer(entity+"_id", id).
 		Msg("no ESP provider configured")
-	return nil, fmt.Errorf("%w for %s %d", ErrNoProvider, entity, id)
+	return nil, fmt.Errorf("%w for %s %s", ErrNoProvider, entity, id)
 }
 
 // resolveProviderByID loads an ESP provider by its ID and builds the provider instance.
-func (r *ProviderResolver) resolveProviderByID(ctx context.Context, cacheKey int32, providerID int32) (Provider, error) {
+func (r *ProviderResolver) resolveProviderByID(ctx context.Context, cacheKey uuid.UUID, providerID uuid.UUID) (Provider, error) {
 	espProvider, err := r.queries.GetProviderByID(ctx, providerID)
 	if err != nil {
-		return nil, fmt.Errorf("get provider %d: %w", providerID, err)
+		return nil, fmt.Errorf("get provider %s: %w", providerID, err)
 	}
 
 	if !espProvider.Enabled {
@@ -144,7 +146,7 @@ func (r *ProviderResolver) resolveProviderByID(ctx context.Context, cacheKey int
 }
 
 // buildAndCache converts an ESP provider to a Provider instance and caches it.
-func (r *ProviderResolver) buildAndCache(cacheKey int32, espProvider *storage.EspProvider) (Provider, error) {
+func (r *ProviderResolver) buildAndCache(cacheKey uuid.UUID, espProvider *storage.EspProvider) (Provider, error) {
 	cfg, err := espToConfig(espProvider)
 	if err != nil {
 		return nil, fmt.Errorf("convert provider config for %q: %w", espProvider.Name, err)
@@ -156,7 +158,7 @@ func (r *ProviderResolver) buildAndCache(cacheKey int32, espProvider *storage.Es
 	}
 
 	r.log.Debug().
-		Int32("provider_id", espProvider.ID).
+		Stringer("provider_id", espProvider.ID).
 		Str("provider", p.GetName()).
 		Msg("resolved provider from database")
 
@@ -165,7 +167,7 @@ func (r *ProviderResolver) buildAndCache(cacheKey int32, espProvider *storage.Es
 }
 
 // cacheProvider stores a provider in the cache with the configured TTL.
-func (r *ProviderResolver) cacheProvider(id int32, p Provider) {
+func (r *ProviderResolver) cacheProvider(id uuid.UUID, p Provider) {
 	r.mu.Lock()
 	r.cache[id] = &cachedProvider{
 		provider:  p,
@@ -213,4 +215,13 @@ func espToConfig(esp *storage.EspProvider) (ProviderConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+// pgUUIDToUUID converts a pgtype.UUID to a google/uuid.UUID.
+// Returns uuid.Nil if the pgtype.UUID is not valid.
+func pgUUIDToUUID(p pgtype.UUID) uuid.UUID {
+	if !p.Valid {
+		return uuid.Nil
+	}
+	return uuid.UUID(p.Bytes)
 }

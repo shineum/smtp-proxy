@@ -8,6 +8,7 @@ package storage
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -18,8 +19,8 @@ RETURNING id, user_id, group_id, refresh_token_hash, expires_at, created_at
 `
 
 type CreateSessionParams struct {
-	UserID           int32              `json:"user_id"`
-	GroupID          int32              `json:"group_id"`
+	UserID           uuid.UUID          `json:"user_id"`
+	GroupID          uuid.UUID          `json:"group_id"`
 	RefreshTokenHash string             `json:"refresh_token_hash"`
 	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
 }
@@ -56,7 +57,7 @@ const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions WHERE id = $1
 `
 
-func (q *Queries) DeleteSession(ctx context.Context, id int32) error {
+func (q *Queries) DeleteSession(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteSession, id)
 	return err
 }
@@ -65,7 +66,7 @@ const deleteSessionsByUserID = `-- name: DeleteSessionsByUserID :exec
 DELETE FROM sessions WHERE user_id = $1
 `
 
-func (q *Queries) DeleteSessionsByUserID(ctx context.Context, userID int32) error {
+func (q *Queries) DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteSessionsByUserID, userID)
 	return err
 }
@@ -74,7 +75,7 @@ const getSessionByID = `-- name: GetSessionByID :one
 SELECT id, user_id, group_id, refresh_token_hash, expires_at, created_at FROM sessions WHERE id = $1
 `
 
-func (q *Queries) GetSessionByID(ctx context.Context, id int32) (Session, error) {
+func (q *Queries) GetSessionByID(ctx context.Context, id uuid.UUID) (Session, error) {
 	row := q.db.QueryRow(ctx, getSessionByID, id)
 	var i Session
 	err := row.Scan(
@@ -92,7 +93,7 @@ const listSessionsByUserID = `-- name: ListSessionsByUserID :many
 SELECT id, user_id, group_id, refresh_token_hash, expires_at, created_at FROM sessions WHERE user_id = $1 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListSessionsByUserID(ctx context.Context, userID int32) ([]Session, error) {
+func (q *Queries) ListSessionsByUserID(ctx context.Context, userID uuid.UUID) ([]Session, error) {
 	rows, err := q.db.Query(ctx, listSessionsByUserID, userID)
 	if err != nil {
 		return nil, err

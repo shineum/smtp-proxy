@@ -11,6 +11,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -64,7 +65,7 @@ type CountDeliveryLogsByGroupParams struct {
 }
 
 type CountDeliveryLogsByGroupRow struct {
-	GroupID pgtype.Int4 `json:"group_id"`
+	GroupID pgtype.UUID `json:"group_id"`
 	Status  string      `json:"status"`
 	Count   int64       `json:"count"`
 }
@@ -97,7 +98,7 @@ GROUP BY status
 `
 
 type CountDeliveryLogsByGroupDateRangeParams struct {
-	GroupID     pgtype.Int4        `json:"group_id"`
+	GroupID     pgtype.UUID        `json:"group_id"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
 }
@@ -212,10 +213,10 @@ RETURNING id, message_id, provider_id, status, response_code, response_body, del
 `
 
 type CreateDeliveryLogParams struct {
-	MessageID         int64          `json:"message_id"`
-	ProviderID        pgtype.Int4    `json:"provider_id"`
-	GroupID           pgtype.Int4    `json:"group_id"`
-	UserID            pgtype.Int4    `json:"user_id"`
+	MessageID         uuid.UUID      `json:"message_id"`
+	ProviderID        pgtype.UUID    `json:"provider_id"`
+	GroupID           pgtype.UUID    `json:"group_id"`
+	UserID            pgtype.UUID    `json:"user_id"`
 	Status            string         `json:"status"`
 	Provider          sql.NullString `json:"provider"`
 	ProviderMessageID sql.NullString `json:"provider_message_id"`
@@ -278,7 +279,7 @@ ORDER BY created_at::date
 `
 
 type DailyDeliveryCountsByGroupParams struct {
-	GroupID     pgtype.Int4        `json:"group_id"`
+	GroupID     pgtype.UUID        `json:"group_id"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
 }
@@ -317,7 +318,7 @@ GROUP BY provider, status
 `
 
 type DeliveryCountsByGroupAndProviderParams struct {
-	GroupID     pgtype.Int4        `json:"group_id"`
+	GroupID     pgtype.UUID        `json:"group_id"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
 }
@@ -356,13 +357,13 @@ GROUP BY user_id, status
 `
 
 type DeliveryCountsByGroupAndUserParams struct {
-	GroupID     pgtype.Int4        `json:"group_id"`
+	GroupID     pgtype.UUID        `json:"group_id"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
 }
 
 type DeliveryCountsByGroupAndUserRow struct {
-	UserID pgtype.Int4 `json:"user_id"`
+	UserID pgtype.UUID `json:"user_id"`
 	Status string      `json:"status"`
 	Count  int32       `json:"count"`
 }
@@ -391,7 +392,7 @@ const getDeliveryLogByMessageID = `-- name: GetDeliveryLogByMessageID :one
 SELECT id, message_id, provider_id, status, response_code, response_body, delivered_at, provider, provider_message_id, retry_count, last_error, metadata, created_at, updated_at, duration_ms, attempt_number, user_id, group_id FROM delivery_logs WHERE message_id = $1
 `
 
-func (q *Queries) GetDeliveryLogByMessageID(ctx context.Context, messageID int64) (DeliveryLog, error) {
+func (q *Queries) GetDeliveryLogByMessageID(ctx context.Context, messageID uuid.UUID) (DeliveryLog, error) {
 	row := q.db.QueryRow(ctx, getDeliveryLogByMessageID, messageID)
 	var i DeliveryLog
 	err := row.Scan(
@@ -456,7 +457,7 @@ WHERE message_id = $1
 `
 
 type IncrementRetryCountParams struct {
-	MessageID int64       `json:"message_id"`
+	MessageID uuid.UUID   `json:"message_id"`
 	LastError pgtype.Text `json:"last_error"`
 }
 
@@ -473,7 +474,7 @@ LIMIT $3 OFFSET $4
 `
 
 type ListDeliveryLogsByGroupAndStatusParams struct {
-	GroupID pgtype.Int4 `json:"group_id"`
+	GroupID pgtype.UUID `json:"group_id"`
 	Status  string      `json:"status"`
 	Limit   int32       `json:"limit"`
 	Offset  int32       `json:"offset"`
@@ -527,7 +528,7 @@ const listDeliveryLogsByMessageID = `-- name: ListDeliveryLogsByMessageID :many
 SELECT id, message_id, provider_id, status, response_code, response_body, delivered_at, provider, provider_message_id, retry_count, last_error, metadata, created_at, updated_at, duration_ms, attempt_number, user_id, group_id FROM delivery_logs WHERE message_id = $1 ORDER BY delivered_at DESC
 `
 
-func (q *Queries) ListDeliveryLogsByMessageID(ctx context.Context, messageID int64) ([]DeliveryLog, error) {
+func (q *Queries) ListDeliveryLogsByMessageID(ctx context.Context, messageID uuid.UUID) ([]DeliveryLog, error) {
 	rows, err := q.db.Query(ctx, listDeliveryLogsByMessageID, messageID)
 	if err != nil {
 		return nil, err
@@ -579,7 +580,7 @@ WHERE message_id = $1
 `
 
 type UpdateDeliveryLogStatusParams struct {
-	MessageID         int64          `json:"message_id"`
+	MessageID         uuid.UUID      `json:"message_id"`
 	Status            string         `json:"status"`
 	Provider          sql.NullString `json:"provider"`
 	ProviderMessageID sql.NullString `json:"provider_message_id"`
@@ -698,10 +699,10 @@ GROUP BY g.id, g.name, dl.status
 `
 
 type DeliveryCountsByGroupAllRow struct {
-	GroupID   int32  `json:"group_id"`
-	GroupName string `json:"group_name"`
-	Status    string `json:"status"`
-	Count     int32  `json:"count"`
+	GroupID   pgtype.UUID `json:"group_id"`
+	GroupName string      `json:"group_name"`
+	Status    string      `json:"status"`
+	Count     int32       `json:"count"`
 }
 
 func (q *Queries) DeliveryCountsByGroupAll(ctx context.Context, arg DateRangeParams) ([]DeliveryCountsByGroupAllRow, error) {
@@ -726,7 +727,7 @@ func (q *Queries) DeliveryCountsByGroupAll(ctx context.Context, arg DateRangePar
 
 // MultiGroupDateRangeParams is a shared params type for multi-group date range queries.
 type MultiGroupDateRangeParams struct {
-	GroupIDs    []int32            `json:"group_ids"`
+	GroupIDs    []pgtype.UUID      `json:"group_ids"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	CreatedAt_2 pgtype.Timestamptz `json:"created_at_2"`
 }
@@ -734,7 +735,7 @@ type MultiGroupDateRangeParams struct {
 const countDeliveryLogsByGroupIDs = `-- name: CountDeliveryLogsByGroupIDs :many
 SELECT status, COUNT(*)::integer as count
 FROM delivery_logs
-WHERE group_id = ANY($1::integer[]) AND created_at >= $2 AND created_at <= $3
+WHERE group_id = ANY($1::uuid[]) AND created_at >= $2 AND created_at <= $3
 GROUP BY status
 `
 
@@ -761,7 +762,7 @@ func (q *Queries) CountDeliveryLogsByGroupIDs(ctx context.Context, arg MultiGrou
 const dailyDeliveryCountsByGroupIDs = `-- name: DailyDeliveryCountsByGroupIDs :many
 SELECT created_at::date as day, status, COUNT(*)::integer as count
 FROM delivery_logs
-WHERE group_id = ANY($1::integer[]) AND created_at >= $2 AND created_at <= $3
+WHERE group_id = ANY($1::uuid[]) AND created_at >= $2 AND created_at <= $3
 GROUP BY created_at::date, status
 ORDER BY created_at::date
 `
@@ -789,7 +790,7 @@ func (q *Queries) DailyDeliveryCountsByGroupIDs(ctx context.Context, arg MultiGr
 const deliveryCountsByUserAndGroupIDs = `-- name: DeliveryCountsByUserAndGroupIDs :many
 SELECT user_id, status, COUNT(*)::integer as count
 FROM delivery_logs
-WHERE group_id = ANY($1::integer[]) AND user_id IS NOT NULL AND created_at >= $2 AND created_at <= $3
+WHERE group_id = ANY($1::uuid[]) AND user_id IS NOT NULL AND created_at >= $2 AND created_at <= $3
 GROUP BY user_id, status
 `
 
@@ -816,7 +817,7 @@ func (q *Queries) DeliveryCountsByUserAndGroupIDs(ctx context.Context, arg Multi
 const deliveryCountsByProviderAndGroupIDs = `-- name: DeliveryCountsByProviderAndGroupIDs :many
 SELECT provider, status, COUNT(*)::integer as count
 FROM delivery_logs
-WHERE group_id = ANY($1::integer[]) AND created_at >= $2 AND created_at <= $3
+WHERE group_id = ANY($1::uuid[]) AND created_at >= $2 AND created_at <= $3
 GROUP BY provider, status
 `
 

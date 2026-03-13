@@ -4,11 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
@@ -113,18 +112,17 @@ func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLog
 		}
 
 		// Resolve group membership
-		var groupID int32
+		var groupID uuid.UUID
 		var role string
 		var groupType string
 
 		if req.GroupID != "" {
 			// User specified a group to log into
-			parsed, err := strconv.ParseInt(req.GroupID, 10, 32)
+			gid, err := uuid.Parse(req.GroupID)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid group_id format")
 				return
 			}
-			gid := int32(parsed)
 
 			// Verify user is a member of this group
 			member, err := queries.GetGroupMemberByUserAndGroup(r.Context(), storage.GetGroupMemberByUserAndGroupParams{
@@ -170,39 +168,31 @@ func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLog
 			role = member.Role
 		}
 
-		// Create session (DB assigns the session ID via SERIAL)
+		// Create session
+		sessionID := uuid.New()
 		accessToken, err := jwtService.GenerateAccessToken(user.ID, groupID, user.Email, role, groupType)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
-		// Generate a temporary refresh token placeholder to get the hash;
-		// then create session to get the DB-assigned session ID, then generate final refresh token.
+		refreshToken, err := jwtService.GenerateRefreshToken(user.ID, groupID, sessionID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		// Hash refresh token for storage
+		refreshHash := hashToken(refreshToken)
+
 		expiresAt := time.Now().Add(7 * 24 * time.Hour)
-		session, err := queries.CreateSession(r.Context(), storage.CreateSessionParams{
+		_, err = queries.CreateSession(r.Context(), storage.CreateSessionParams{
 			UserID:           user.ID,
 			GroupID:          groupID,
-			RefreshTokenHash: "", // will be updated after generating refresh token
+			RefreshTokenHash: refreshHash,
 			ExpiresAt:        pgtype.Timestamptz{Time: expiresAt, Valid: true},
 		})
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-
-		refreshToken, err := jwtService.GenerateRefreshToken(user.ID, groupID, session.ID)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-
-		// Update session with actual refresh token hash
-		refreshHash := hashToken(refreshToken)
-		if err := queries.UpdateSessionRefreshToken(r.Context(), storage.UpdateSessionRefreshTokenParams{
-			ID:               session.ID,
-			RefreshTokenHash: refreshHash,
-		}); err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
@@ -251,12 +241,11 @@ func RefreshHandler(queries storage.Querier, jwtService *auth.JWTService, auditL
 			return
 		}
 
-		parsedSID, err := strconv.ParseInt(claims.SessionID, 10, 32)
+		sessionID, err := uuid.Parse(claims.SessionID)
 		if err != nil {
 			respondError(w, http.StatusUnauthorized, "invalid refresh token")
 			return
 		}
-		sessionID := int32(parsedSID)
 
 		// Look up session
 		session, err := queries.GetSessionByID(r.Context(), sessionID)
@@ -350,12 +339,11 @@ func LogoutHandler(queries storage.Querier, jwtService *auth.JWTService, auditLo
 			return
 		}
 
-		parsedSID, err := strconv.ParseInt(claims.SessionID, 10, 32)
+		sessionID, err := uuid.Parse(claims.SessionID)
 		if err != nil {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		sessionID := int32(parsedSID)
 
 		// Delete the session
 		_ = queries.DeleteSession(r.Context(), sessionID)
@@ -363,7 +351,7 @@ func LogoutHandler(queries storage.Querier, jwtService *auth.JWTService, auditLo
 		if auditLogger != nil {
 			userID := auth.UserFromContext(r.Context())
 			groupID := auth.GroupIDFromContext(r.Context())
-			if userID != 0 {
+			if userID != uuid.Nil {
 				auditLogger.LogAuthAttempt(r.Context(), r, groupID, userID, auth.AuditActionLogout)
 			}
 		}
@@ -389,16 +377,15 @@ func SwitchGroupHandler(queries storage.Querier, jwtService *auth.JWTService, au
 			return
 		}
 
-		parsedGID, err := strconv.ParseInt(req.GroupID, 10, 32)
+		targetGroupID, err := uuid.Parse(req.GroupID)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid group_id format")
 			return
 		}
-		targetGroupID := int32(parsedGID)
 
 		// Get the authenticated user
 		userID := auth.UserFromContext(r.Context())
-		if userID == 0 {
+		if userID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -432,18 +419,26 @@ func SwitchGroupHandler(queries storage.Querier, jwtService *auth.JWTService, au
 			return
 		}
 
-		// Create new session for the target group (DB assigns session ID via SERIAL)
+		// Create new session for the target group
+		sessionID := uuid.New()
 		accessToken, err := jwtService.GenerateAccessToken(user.ID, targetGroupID, user.Email, member.Role, group.GroupType)
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
 
+		refreshToken, err := jwtService.GenerateRefreshToken(user.ID, targetGroupID, sessionID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		refreshHash := hashToken(refreshToken)
 		expiresAt := time.Now().Add(7 * 24 * time.Hour)
-		session, err := queries.CreateSession(r.Context(), storage.CreateSessionParams{
+		_, err = queries.CreateSession(r.Context(), storage.CreateSessionParams{
 			UserID:           user.ID,
 			GroupID:          targetGroupID,
-			RefreshTokenHash: "", // will be updated after generating refresh token
+			RefreshTokenHash: refreshHash,
 			ExpiresAt:        pgtype.Timestamptz{Time: expiresAt, Valid: true},
 		})
 		if err != nil {
@@ -451,24 +446,9 @@ func SwitchGroupHandler(queries storage.Querier, jwtService *auth.JWTService, au
 			return
 		}
 
-		refreshToken, err := jwtService.GenerateRefreshToken(user.ID, targetGroupID, session.ID)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-
-		refreshHash := hashToken(refreshToken)
-		if err := queries.UpdateSessionRefreshToken(r.Context(), storage.UpdateSessionRefreshTokenParams{
-			ID:               session.ID,
-			RefreshTokenHash: refreshHash,
-		}); err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-
 		if auditLogger != nil {
-			auditLogger.LogAdminAction(r.Context(), r, "auth.switch_group", "session", fmt.Sprintf("%d", session.ID), map[string]interface{}{
-				"target_group_id": targetGroupID,
+			auditLogger.LogAdminAction(r.Context(), r, "auth.switch_group", "session", sessionID.String(), map[string]interface{}{
+				"target_group_id": targetGroupID.String(),
 			})
 		}
 

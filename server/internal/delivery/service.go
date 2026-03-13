@@ -2,6 +2,8 @@ package delivery
 
 import (
 	"context"
+
+	"github.com/google/uuid"
 )
 
 // Service delivers email messages after they have been persisted to the database.
@@ -15,7 +17,7 @@ type Service interface {
 // The worker process fetches the full message body from the message store using
 // the MessageID.
 type Request struct {
-	MessageID int64
-	UserID    int32
-	GroupID   int32
+	MessageID uuid.UUID
+	UserID    uuid.UUID
+	GroupID   uuid.UUID
 }

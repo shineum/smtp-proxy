@@ -10,6 +10,7 @@ import (
 	"context"
 	"database/sql"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -21,8 +22,8 @@ type Querier interface {
 	CountDeliveryLogsByGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]CountDeliveryLogsByGroupDateRangeRow, error)
 	CountDeliveryLogsByProvider(ctx context.Context, arg CountDeliveryLogsByProviderParams) ([]CountDeliveryLogsByProviderRow, error)
 	CountDeliveryLogsByStatus(ctx context.Context, arg CountDeliveryLogsByStatusParams) ([]CountDeliveryLogsByStatusRow, error)
-	CountGroupOwners(ctx context.Context, groupID int32) (int64, error)
-	CountMessagesByGroup(ctx context.Context, groupID pgtype.Int4) (int32, error)
+	CountGroupOwners(ctx context.Context, groupID uuid.UUID) (int64, error)
+	CountMessagesByGroup(ctx context.Context, groupID pgtype.UUID) (int32, error)
 	CountMessagesByGroupAndStatus(ctx context.Context, arg CountMessagesByGroupAndStatusParams) (int32, error)
 	CreateActivityLog(ctx context.Context, arg CreateActivityLogParams) (ActivityLog, error)
 	CreateDeliveryLog(ctx context.Context, arg CreateDeliveryLogParams) (DeliveryLog, error)
@@ -36,14 +37,14 @@ type Querier interface {
 	DailyDeliveryCountsByGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]DailyDeliveryCountsByGroupRow, error)
 	DailyDeliveryCountsAll(ctx context.Context, arg DateRangeParams) ([]DailyDeliveryCountsByGroupRow, error)
 	DeleteExpiredSessions(ctx context.Context) error
-	DeleteGroup(ctx context.Context, id int32) error
-	DeleteGroupMember(ctx context.Context, arg DeleteGroupMemberParams) error
-	DeleteGroupMembersByUserID(ctx context.Context, userID int32) error
-	DeleteProvider(ctx context.Context, id int32) error
-	DeleteRoutingRule(ctx context.Context, id int32) error
-	DeleteSession(ctx context.Context, id int32) error
-	DeleteSessionsByUserID(ctx context.Context, userID int32) error
-	DeleteUser(ctx context.Context, id int32) error
+	DeleteGroup(ctx context.Context, id uuid.UUID) error
+	DeleteGroupMember(ctx context.Context, id uuid.UUID) error
+	DeleteGroupMembersByUserID(ctx context.Context, userID uuid.UUID) error
+	DeleteProvider(ctx context.Context, id uuid.UUID) error
+	DeleteRoutingRule(ctx context.Context, id uuid.UUID) error
+	DeleteSession(ctx context.Context, id uuid.UUID) error
+	DeleteSessionsByUserID(ctx context.Context, userID uuid.UUID) error
+	DeleteUser(ctx context.Context, id uuid.UUID) error
 	DeliveryCountsByGroupAll(ctx context.Context, arg DateRangeParams) ([]DeliveryCountsByGroupAllRow, error)
 	DeliveryCountsByGroupAndProvider(ctx context.Context, arg DeliveryCountsByGroupAndProviderParams) ([]DeliveryCountsByGroupAndProviderRow, error)
 	DeliveryCountsByGroupAndUser(ctx context.Context, arg DeliveryCountsByGroupAndUserParams) ([]DeliveryCountsByGroupAndUserRow, error)
@@ -53,57 +54,59 @@ type Querier interface {
 	DeliveryCountsByUserAndGroupIDs(ctx context.Context, arg MultiGroupDateRangeParams) ([]DeliveryCountsByGroupAndUserRow, error)
 	EnqueueMessage(ctx context.Context, arg EnqueueMessageParams) (Message, error)
 	EnqueueMessageMetadata(ctx context.Context, arg EnqueueMessageMetadataParams) (Message, error)
-	GetActivityLogByID(ctx context.Context, id int64) (ActivityLog, error)
-	GetDeliveryLogByMessageID(ctx context.Context, messageID int64) (DeliveryLog, error)
+	GetActivityLogByID(ctx context.Context, id uuid.UUID) (ActivityLog, error)
+	GetDeliveryLogByMessageID(ctx context.Context, messageID uuid.UUID) (DeliveryLog, error)
 	GetDeliveryLogByProviderMessageID(ctx context.Context, providerMessageID sql.NullString) (DeliveryLog, error)
 	GetGlobalStdoutProvider(ctx context.Context) (EspProvider, error)
-	GetGroupByID(ctx context.Context, id int32) (Group, error)
+	GetGroupByGroupKey(ctx context.Context, groupKey uuid.UUID) (Group, error)
+	GetGroupByID(ctx context.Context, id uuid.UUID) (Group, error)
 	GetGroupByName(ctx context.Context, name string) (Group, error)
+	GetGroupMemberByID(ctx context.Context, id uuid.UUID) (GroupMember, error)
 	GetGroupMemberByUserAndGroup(ctx context.Context, arg GetGroupMemberByUserAndGroupParams) (GroupMember, error)
-	GetMessageByID(ctx context.Context, id int64) (Message, error)
-	GetProviderByID(ctx context.Context, id int32) (EspProvider, error)
+	GetMessageByID(ctx context.Context, id uuid.UUID) (Message, error)
+	GetProviderByID(ctx context.Context, id uuid.UUID) (EspProvider, error)
 	GetQueuedMessages(ctx context.Context, limit int32) ([]Message, error)
-	GetRoutingRuleByID(ctx context.Context, id int32) (RoutingRule, error)
-	GetSessionByID(ctx context.Context, id int32) (Session, error)
-	GetStdoutProviderByGroupID(ctx context.Context, groupID int32) (EspProvider, error)
+	GetRoutingRuleByID(ctx context.Context, id uuid.UUID) (RoutingRule, error)
+	GetSessionByID(ctx context.Context, id uuid.UUID) (Session, error)
+	GetStdoutProviderByGroupID(ctx context.Context, groupID uuid.UUID) (EspProvider, error)
 	GetUserByAPIKey(ctx context.Context, apiKey sql.NullString) (User, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
-	GetUserByID(ctx context.Context, id int32) (User, error)
+	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username sql.NullString) (User, error)
-	GetUserByUsernameAndGroupID(ctx context.Context, arg GetUserByUsernameAndGroupIDParams) (User, error)
+	GetUserByUsernameAndGroupKey(ctx context.Context, arg GetUserByUsernameAndGroupKeyParams) (User, error)
 	GrantProviderAccess(ctx context.Context, arg GrantProviderAccessParams) error
-	IncrementFailedAttempts(ctx context.Context, id int32) error
-	IncrementMonthlySent(ctx context.Context, id int32) error
+	IncrementFailedAttempts(ctx context.Context, id uuid.UUID) error
+	IncrementMonthlySent(ctx context.Context, id uuid.UUID) error
 	IncrementRetryCount(ctx context.Context, arg IncrementRetryCountParams) error
 	IsProviderAccessible(ctx context.Context, arg IsProviderAccessibleParams) (bool, error)
-	ListAccessibleProviders(ctx context.Context, groupID int32) ([]EspProvider, error)
+	ListAccessibleProviders(ctx context.Context, groupID uuid.UUID) ([]EspProvider, error)
 	ListActivityLogsByActorID(ctx context.Context, arg ListActivityLogsByActorIDParams) ([]ActivityLog, error)
 	ListActivityLogsByGroupID(ctx context.Context, arg ListActivityLogsByGroupIDParams) ([]ActivityLog, error)
 	ListActivityLogsByResource(ctx context.Context, arg ListActivityLogsByResourceParams) ([]ActivityLog, error)
 	ListDeletedUsers(ctx context.Context) ([]User, error)
 	ListDeliveryLogsByGroupAndStatus(ctx context.Context, arg ListDeliveryLogsByGroupAndStatusParams) ([]DeliveryLog, error)
-	ListDeliveryLogsByMessageID(ctx context.Context, messageID int64) ([]DeliveryLog, error)
-	ListGroupMembersByGroupID(ctx context.Context, groupID int32) ([]GroupMember, error)
+	ListDeliveryLogsByMessageID(ctx context.Context, messageID uuid.UUID) ([]DeliveryLog, error)
+	ListGroupMembersByGroupID(ctx context.Context, groupID uuid.UUID) ([]GroupMember, error)
 	ListGroups(ctx context.Context) ([]Group, error)
-	ListGroupsByUserID(ctx context.Context, userID int32) ([]Group, error)
-	ListMembershipsByUserID(ctx context.Context, userID int32) ([]ListMembershipsByUserIDRow, error)
+	ListGroupsByUserID(ctx context.Context, userID uuid.UUID) ([]Group, error)
+	ListMembershipsByUserID(ctx context.Context, userID uuid.UUID) ([]ListMembershipsByUserIDRow, error)
 	ListMessagesByGroupAndStatusPaginated(ctx context.Context, arg ListMessagesByGroupAndStatusPaginatedParams) ([]Message, error)
 	ListMessagesByGroupID(ctx context.Context, arg ListMessagesByGroupIDParams) ([]Message, error)
 	ListMessagesByGroupPaginated(ctx context.Context, arg ListMessagesByGroupPaginatedParams) ([]Message, error)
-	ListProviderAccess(ctx context.Context, providerID int32) ([]ProviderGroupAccess, error)
-	ListProvidersByGroupID(ctx context.Context, groupID int32) ([]EspProvider, error)
-	ListRoutingRulesByGroupID(ctx context.Context, groupID int32) ([]RoutingRule, error)
-	ListSessionsByUserID(ctx context.Context, userID int32) ([]Session, error)
+	ListProviderAccess(ctx context.Context, providerID uuid.UUID) ([]ProviderGroupAccess, error)
+	ListProvidersByGroupID(ctx context.Context, groupID uuid.UUID) ([]EspProvider, error)
+	ListRoutingRulesByGroupID(ctx context.Context, groupID uuid.UUID) ([]RoutingRule, error)
+	ListSessionsByUserID(ctx context.Context, userID uuid.UUID) ([]Session, error)
 	ListUsers(ctx context.Context) ([]User, error)
-	ListUsersByGroupID(ctx context.Context, groupID int32) ([]User, error)
-	ListUsersByProviderID(ctx context.Context, providerID pgtype.Int4) ([]ListUsersByProviderIDRow, error)
+	ListUsersByGroupID(ctx context.Context, groupID uuid.UUID) ([]User, error)
+	ListUsersByProviderID(ctx context.Context, providerID pgtype.UUID) ([]ListUsersByProviderIDRow, error)
 	PurgeDeletedUsers(ctx context.Context) error
-	ResetFailedAttempts(ctx context.Context, id int32) error
-	ResetMonthlySent(ctx context.Context, id int32) error
+	ResetFailedAttempts(ctx context.Context, id uuid.UUID) error
+	ResetMonthlySent(ctx context.Context, id uuid.UUID) error
 	ResetUserAPIKey(ctx context.Context, arg ResetUserAPIKeyParams) (User, error)
-	RestoreUser(ctx context.Context, id int32) (User, error)
+	RestoreUser(ctx context.Context, id uuid.UUID) (User, error)
 	RevokeProviderAccess(ctx context.Context, arg RevokeProviderAccessParams) error
-	SoftDeleteUser(ctx context.Context, id int32) (User, error)
+	SoftDeleteUser(ctx context.Context, id uuid.UUID) (User, error)
 	UpdateDeliveryLogStatus(ctx context.Context, arg UpdateDeliveryLogStatusParams) error
 	UpdateGroup(ctx context.Context, arg UpdateGroupParams) (Group, error)
 	UpdateGroupMemberRole(ctx context.Context, arg UpdateGroupMemberRoleParams) (GroupMember, error)
@@ -113,10 +116,9 @@ type Querier interface {
 	UpdateProvider(ctx context.Context, arg UpdateProviderParams) (EspProvider, error)
 	UpdateRoutingRule(ctx context.Context, arg UpdateRoutingRuleParams) (RoutingRule, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
-	UpdateUserLastLogin(ctx context.Context, id int32) error
+	UpdateUserLastLogin(ctx context.Context, id uuid.UUID) error
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) (User, error)
-	UpdateSessionRefreshToken(ctx context.Context, arg UpdateSessionRefreshTokenParams) error
 	UpdateUserStatus(ctx context.Context, arg UpdateUserStatusParams) (User, error)
 }
 

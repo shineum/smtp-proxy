@@ -9,6 +9,7 @@ import (
 	"context"
 	"net/netip"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -19,11 +20,11 @@ RETURNING id, group_id, actor_id, action, resource_type, resource_id, changes, c
 `
 
 type CreateActivityLogParams struct {
-	GroupID      int32       `json:"group_id"`
-	ActorID      pgtype.Int4 `json:"actor_id"`
+	GroupID      uuid.UUID   `json:"group_id"`
+	ActorID      pgtype.UUID `json:"actor_id"`
 	Action       string      `json:"action"`
 	ResourceType string      `json:"resource_type"`
-	ResourceID   pgtype.Int4 `json:"resource_id"`
+	ResourceID   pgtype.UUID `json:"resource_id"`
 	Changes      []byte      `json:"changes"`
 	Comment      pgtype.Text `json:"comment"`
 	IpAddress    *netip.Addr `json:"ip_address"`
@@ -60,7 +61,7 @@ const getActivityLogByID = `-- name: GetActivityLogByID :one
 SELECT id, group_id, actor_id, action, resource_type, resource_id, changes, comment, ip_address, created_at FROM activity_logs WHERE id = $1
 `
 
-func (q *Queries) GetActivityLogByID(ctx context.Context, id int64) (ActivityLog, error) {
+func (q *Queries) GetActivityLogByID(ctx context.Context, id uuid.UUID) (ActivityLog, error) {
 	row := q.db.QueryRow(ctx, getActivityLogByID, id)
 	var i ActivityLog
 	err := row.Scan(
@@ -86,7 +87,7 @@ LIMIT $2 OFFSET $3
 `
 
 type ListActivityLogsByActorIDParams struct {
-	ActorID pgtype.Int4 `json:"actor_id"`
+	ActorID pgtype.UUID `json:"actor_id"`
 	Limit   int32       `json:"limit"`
 	Offset  int32       `json:"offset"`
 }
@@ -130,9 +131,9 @@ LIMIT $2 OFFSET $3
 `
 
 type ListActivityLogsByGroupIDParams struct {
-	GroupID int32 `json:"group_id"`
-	Limit   int32 `json:"limit"`
-	Offset  int32 `json:"offset"`
+	GroupID uuid.UUID `json:"group_id"`
+	Limit   int32     `json:"limit"`
+	Offset  int32     `json:"offset"`
 }
 
 func (q *Queries) ListActivityLogsByGroupID(ctx context.Context, arg ListActivityLogsByGroupIDParams) ([]ActivityLog, error) {
@@ -175,7 +176,7 @@ LIMIT $3 OFFSET $4
 
 type ListActivityLogsByResourceParams struct {
 	ResourceType string      `json:"resource_type"`
-	ResourceID   pgtype.Int4 `json:"resource_id"`
+	ResourceID   pgtype.UUID `json:"resource_id"`
 	Limit        int32       `json:"limit"`
 	Offset       int32       `json:"offset"`
 }

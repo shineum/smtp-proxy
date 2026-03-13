@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestGroupContext_NoGroupID(t *testing.T) {
@@ -24,7 +26,7 @@ func TestGroupContext_NoGroupID(t *testing.T) {
 }
 
 func TestGroupIDFromContext_Valid(t *testing.T) {
-	var groupID int32 = 42
+	groupID := uuid.New()
 	ctx := context.WithValue(context.Background(), groupIDKey, groupID)
 
 	got := GroupIDFromContext(ctx)
@@ -37,8 +39,8 @@ func TestGroupIDFromContext_Missing(t *testing.T) {
 	ctx := context.Background()
 
 	got := GroupIDFromContext(ctx)
-	if got != 0 {
-		t.Errorf("GroupIDFromContext() = %v, want 0", got)
+	if got != uuid.Nil {
+		t.Errorf("GroupIDFromContext() = %v, want uuid.Nil", got)
 	}
 }
 
@@ -61,7 +63,7 @@ func TestGroupTypeFromContext_Missing(t *testing.T) {
 }
 
 func TestUserFromContext_Valid(t *testing.T) {
-	var userID int32 = 7
+	userID := uuid.New()
 	ctx := context.WithValue(context.Background(), userIDKey, userID)
 
 	got := UserFromContext(ctx)
@@ -74,8 +76,8 @@ func TestUserFromContext_Missing(t *testing.T) {
 	ctx := context.Background()
 
 	got := UserFromContext(ctx)
-	if got != 0 {
-		t.Errorf("UserFromContext() = %v, want 0", got)
+	if got != uuid.Nil {
+		t.Errorf("UserFromContext() = %v, want uuid.Nil", got)
 	}
 }
 

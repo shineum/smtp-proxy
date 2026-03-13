@@ -45,7 +45,7 @@ export default function RoutingRuleFormPage() {
       try { conditions = JSON.parse(conditionsJson); } catch { /* keep empty */ }
       const payload = {
         priority: parseInt(priority) || 100,
-        provider_id: String(providerId),
+        provider_id: providerId,
         enabled,
         conditions,
       };

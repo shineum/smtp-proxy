@@ -486,30 +486,22 @@ body {
   transition: opacity var(--transition-medium), width var(--transition-medium);
 }
 
-/* Collapsed state: icon-only, centered */
-.app-sidebar--collapsed .app-sidebar__item {
-  justify-content: center;
-  padding: 12px 0;
-  gap: 0;
-}
-
-.app-sidebar--collapsed .app-sidebar__item-label {
-  opacity: 0;
-  width: 0;
-  overflow: hidden;
-}
-
-/* Icon rail (tablet collapsed) is same as collapsed */
+/* Collapsed state & Icon rail: icon-only, centered */
+.app-sidebar--collapsed .app-sidebar__item,
 .app-sidebar--icon-rail .app-sidebar__item {
   justify-content: center;
   padding: 12px 0;
   gap: 0;
 }
 
+.app-sidebar--collapsed .app-sidebar__item-icon,
+.app-sidebar--icon-rail .app-sidebar__item-icon {
+  margin: 0 auto;
+}
+
+.app-sidebar--collapsed .app-sidebar__item-label,
 .app-sidebar--icon-rail .app-sidebar__item-label {
-  opacity: 0;
-  width: 0;
-  overflow: hidden;
+  display: none;
 }
 
 /* Overlay sidebar (tablet/mobile expanded) */
@@ -649,12 +641,36 @@ body {
    - Expanded: overlay full sidebar
    ============================================================ */
 @media (max-width: 1199px) and (min-width: 768px) {
+  /* Tablet: grid always has 0-width sidebar column (sidebar is fixed/absolute) */
   .app-layout.screen-tablet {
     grid-template-columns: var(--sidebar-collapsed-width) 1fr;
   }
 
+  /* Default: icon rail at 52px in grid flow */
   .app-layout.screen-tablet .app-sidebar {
     width: var(--sidebar-collapsed-width);
+  }
+
+  /* Expanded overlay: full sidebar on top of content, out of grid flow */
+  .app-layout.screen-tablet .app-sidebar--overlay {
+    width: var(--sidebar-width);
+  }
+
+  /* Overlay must show full labels (override icon-rail hiding) */
+  .app-sidebar--overlay .app-sidebar__item {
+    justify-content: flex-start;
+    padding: 10px 16px;
+    gap: 10px;
+  }
+
+  .app-sidebar--overlay .app-sidebar__item-icon {
+    margin: 0;
+  }
+
+  .app-sidebar--overlay .app-sidebar__item-label {
+    display: inline;
+    opacity: 1;
+    width: auto;
   }
 
   /* Compact toolbar dropdowns */

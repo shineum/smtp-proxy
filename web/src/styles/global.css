@@ -92,6 +92,103 @@ body {
   padding-bottom: 12px !important;
 }
 
+/* ============================================================
+   Button Overrides
+   ============================================================ */
+
+/* All buttons: refined shape and transitions */
+.pf-v5-c-button {
+  border-radius: 6px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: background-color var(--transition-fast),
+              box-shadow var(--transition-fast),
+              border-color var(--transition-fast),
+              transform var(--transition-fast);
+}
+
+.pf-v5-c-button:active {
+  transform: scale(0.97);
+}
+
+/* Primary: brand color with subtle shadow */
+.pf-v5-c-button.pf-m-primary {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 1px 3px rgba(27, 58, 107, 0.25);
+}
+
+.pf-v5-c-button.pf-m-primary:hover {
+  background-color: var(--color-primary-dark);
+  border-color: var(--color-primary-dark);
+  box-shadow: 0 2px 8px rgba(27, 58, 107, 0.35);
+}
+
+/* Secondary: subtle outlined style */
+.pf-v5-c-button.pf-m-secondary {
+  border-color: var(--color-border);
+  color: var(--color-primary);
+}
+
+.pf-v5-c-button.pf-m-secondary:hover {
+  background-color: rgba(27, 58, 107, 0.06);
+  border-color: var(--color-primary-light);
+  color: var(--color-primary-dark);
+}
+
+/* Danger: refined red with shadow */
+.pf-v5-c-button.pf-m-danger {
+  box-shadow: 0 1px 3px rgba(201, 25, 11, 0.2);
+}
+
+.pf-v5-c-button.pf-m-danger:hover {
+  box-shadow: 0 2px 8px rgba(201, 25, 11, 0.3);
+}
+
+/* Link: subtle hover underline */
+.pf-v5-c-button.pf-m-link {
+  color: var(--color-primary);
+}
+
+.pf-v5-c-button.pf-m-link:hover {
+  color: var(--color-primary-dark);
+  text-decoration: underline;
+}
+
+/* Small buttons: tighter padding */
+.pf-v5-c-button.pf-m-small {
+  font-size: 0.8rem;
+  padding: 4px 12px;
+  border-radius: 5px;
+}
+
+/* Warning variant */
+.pf-v5-c-button.pf-m-warning {
+  box-shadow: 0 1px 3px rgba(240, 171, 0, 0.25);
+}
+
+.pf-v5-c-button.pf-m-warning:hover {
+  box-shadow: 0 2px 8px rgba(240, 171, 0, 0.3);
+}
+
+/* Disabled state: no pointer and muted */
+.pf-v5-c-button:disabled,
+.pf-v5-c-button.pf-m-disabled {
+  box-shadow: none;
+  transform: none;
+  opacity: 0.55;
+}
+
+/* Switch toggle refinement */
+.pf-v5-c-switch__toggle {
+  transition: background-color var(--transition-fast);
+}
+
+/* Modal action buttons spacing */
+.pf-v5-c-modal-box__footer .pf-v5-c-button + .pf-v5-c-button {
+  margin-left: 8px;
+}
+
 /* EmptyState, modals, etc: match theme */
 .pf-v5-c-empty-state {
   background-color: transparent;
@@ -99,6 +196,45 @@ body {
 
 .pf-v5-c-description-list__term {
   font-weight: 600;
+}
+
+/* Label/Badge refinement */
+.pf-v5-c-label {
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+/* Form controls: refined borders and focus */
+.pf-v5-c-form-control > input,
+.pf-v5-c-form-control > textarea,
+.pf-v5-c-form-control > select {
+  border-radius: 6px !important;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.pf-v5-c-form-control > input:focus,
+.pf-v5-c-form-control > textarea:focus,
+.pf-v5-c-form-control > select:focus {
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 2px rgba(77, 142, 240, 0.15) !important;
+}
+
+/* Menu toggle (dropdowns/selects) */
+.pf-v5-c-menu-toggle {
+  border-radius: 6px;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.pf-v5-c-menu-toggle:hover {
+  border-color: var(--color-primary-light);
+}
+
+/* Tabs refinement */
+.pf-v5-c-tabs__link {
+  font-weight: 600;
+  transition: color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 /* ============================================================

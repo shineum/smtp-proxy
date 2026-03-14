@@ -81,10 +81,10 @@ export default function UserDetailPage() {
 
   return (
     <PageSection>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      <div className="page-header">
         <Title headingLevel="h1" size="lg">User: {user.email}</Title>
         {user.account_type === 'user' && (
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div className="action-buttons">
             <Button
               variant={user.password_disabled ? 'primary' : 'warning'}
               onClick={() => togglePasswordDisabledMutation.mutate(!user.password_disabled)}
@@ -99,7 +99,7 @@ export default function UserDetailPage() {
         )}
       </div>
 
-      <Card style={{ marginBottom: '1rem' }}>
+      <Card className="card-spaced">
         <CardBody>
           <DescriptionList>
             <DescriptionListGroup>
@@ -164,7 +164,7 @@ export default function UserDetailPage() {
 
       <Card>
         <CardTitle>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="card-section-header">
             <span>Group Memberships</span>
             {isSystemAdmin && (
               <Button variant="secondary" size="sm" onClick={() => setIsAddGroupOpen(true)}>Add to Group</Button>
@@ -193,7 +193,7 @@ export default function UserDetailPage() {
                     <Td><Label color={m.group_type === 'system' ? 'purple' : 'blue'}>{m.group_type}</Label></Td>
                     <Td>
                       {editingMembership?.groupId === m.group_id ? (
-                        <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <span className="action-buttons">
                           <FormSelect
                             value={editingMembership!.role}
                             onChange={(_e, v) => setEditingMembership(prev => prev ? { ...prev, role: v } : prev)}
@@ -222,11 +222,11 @@ export default function UserDetailPage() {
                       <Td>
                         {editingMembership?.groupId !== m.group_id && (
                           <>
+                            <div className="action-buttons">
                             <Button
                               variant="secondary"
                               size="sm"
                               onClick={() => setEditingMembership({ groupId: m.group_id, role: m.role })}
-                              style={{ marginRight: '0.5rem' }}
                             >
                               Change Role
                             </Button>
@@ -237,6 +237,7 @@ export default function UserDetailPage() {
                             >
                               Remove
                             </Button>
+                          </div>
                           </>
                         )}
                       </Td>

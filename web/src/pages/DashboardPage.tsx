@@ -156,12 +156,12 @@ export default function DashboardPage() {
 
   return (
     <PageSection>
-      <Title headingLevel="h1" size="lg" style={{ marginBottom: '1.5rem' }}>
+      <Title headingLevel="h1" size="lg" className="page-title">
         Dashboard
       </Title>
 
       {isSystemAdmin && (
-        <div style={{ marginBottom: '1.5rem' }}>
+        <div className="filter-bar">
           <Select
             role="menu"
             id="group-filter"

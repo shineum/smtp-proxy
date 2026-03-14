@@ -36,7 +36,7 @@ export default function ProviderListPage() {
 
   return (
     <PageSection>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      <div className="page-header">
         <Title headingLevel="h1" size="lg">ESP Providers</Title>
         <Button onClick={() => navigate('/providers/new')}>Add Provider</Button>
       </div>
@@ -65,9 +65,9 @@ export default function ProviderListPage() {
                 <Td>
                   {health ? (
                     <span>
-                      <span style={{ color: '#3E8635' }}>{health.sent_24h} sent</span>
+                      <span className="text-success">{health.sent_24h} sent</span>
                       {' / '}
-                      <span style={{ color: '#C9190B' }}>{health.failed_24h} failed</span>
+                      <span className="text-danger">{health.failed_24h} failed</span>
                     </span>
                   ) : '-'}
                 </Td>

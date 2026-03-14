@@ -6,6 +6,7 @@ import {
   Form, FormGroup, TextInput, FormSelect, FormSelectOption,
   Switch, Button, ActionGroup, Spinner, Label,
 } from '@patternfly/react-core';
+import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import {
   fetchProvider, createProvider, updateProvider,
   fetchProviderAccess, grantProviderAccess, revokeProviderAccess,
@@ -185,7 +186,7 @@ export default function ProviderFormPage() {
 
   return (
     <PageSection>
-      <Title headingLevel="h1" size="lg" style={{ marginBottom: '1rem' }}>
+      <Title headingLevel="h1" size="lg" className="page-title">
         {isEdit ? `Edit Provider: ${existing?.name}` : 'Add Provider'}
       </Title>
 
@@ -208,7 +209,7 @@ export default function ProviderFormPage() {
 
             {visibility === 'shared' && (
               <>
-                <Title headingLevel="h3" size="md" style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>
+                <Title headingLevel="h3" size="md" className="section-title">
                   Group Access
                 </Title>
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
@@ -274,10 +275,10 @@ export default function ProviderFormPage() {
                   </div>
                 )}
                 {isEdit && (!accessList || accessList.length === 0) && (
-                  <p style={{ color: '#6a6e73' }}>No groups have been granted access yet.</p>
+                  <p className="text-muted">No groups have been granted access yet.</p>
                 )}
                 {!isEdit && pendingGroupIds.length === 0 && (
-                  <p style={{ color: '#6a6e73' }}>Select groups to grant access on creation.</p>
+                  <p className="text-muted">Select groups to grant access on creation.</p>
                 )}
               </>
             )}
@@ -295,7 +296,7 @@ export default function ProviderFormPage() {
 
             {providerType === 'smtp' && (
               <>
-                <Title headingLevel="h3" size="md" style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>
+                <Title headingLevel="h3" size="md" className="section-title">
                   SMTP Configuration
                 </Title>
                 <FormGroup label="Host" isRequired fieldId="smtp-host">
@@ -322,7 +323,7 @@ export default function ProviderFormPage() {
 
             {providerType === 'msgraph' && (
               <>
-                <Title headingLevel="h3" size="md" style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>
+                <Title headingLevel="h3" size="md" className="section-title">
                   Microsoft Graph Configuration
                 </Title>
                 <FormGroup label="Azure AD Tenant ID" isRequired fieldId="ms-tenant-id">
@@ -342,7 +343,7 @@ export default function ProviderFormPage() {
 
             {(providerType === 'sendgrid' || providerType === 'ses' || providerType === 'mailgun') && (
               <>
-                <Title headingLevel="h3" size="md" style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>
+                <Title headingLevel="h3" size="md" className="section-title">
                   {providerType === 'ses' ? 'Amazon SES' : providerType === 'sendgrid' ? 'SendGrid' : 'Mailgun'} Configuration
                 </Title>
                 <FormGroup label="API Key" isRequired fieldId="api-key">
@@ -363,32 +364,32 @@ export default function ProviderFormPage() {
 
             {isEdit && (
               <>
-                <Title headingLevel="h3" size="md" style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>
+                <Title headingLevel="h3" size="md" className="section-title">
                   Usage
                 </Title>
                 {usageList && usageList.length > 0 ? (
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '2px solid #d2d2d2', textAlign: 'left' }}>
-                        <th style={{ padding: '0.5rem' }}>Group</th>
-                        <th style={{ padding: '0.5rem' }}>Email</th>
-                        <th style={{ padding: '0.5rem' }}>Account Type</th>
-                        <th style={{ padding: '0.5rem' }}>Role</th>
-                      </tr>
-                    </thead>
-                    <tbody>
+                  <Table aria-label="Provider usage" variant="compact">
+                    <Thead>
+                      <Tr>
+                        <Th>Group</Th>
+                        <Th>Email</Th>
+                        <Th>Account Type</Th>
+                        <Th>Role</Th>
+                      </Tr>
+                    </Thead>
+                    <Tbody>
                       {usageList.map((u) => (
-                        <tr key={`${u.group_id}-${u.user_id}`} style={{ borderBottom: '1px solid #d2d2d2' }}>
-                          <td style={{ padding: '0.5rem' }}>{u.group_name}</td>
-                          <td style={{ padding: '0.5rem' }}>{u.email}</td>
-                          <td style={{ padding: '0.5rem' }}>{u.account_type}</td>
-                          <td style={{ padding: '0.5rem' }}>{u.role}</td>
-                        </tr>
+                        <Tr key={`${u.group_id}-${u.user_id}`}>
+                          <Td>{u.group_name}</Td>
+                          <Td>{u.email}</Td>
+                          <Td>{u.account_type}</Td>
+                          <Td>{u.role}</Td>
+                        </Tr>
                       ))}
-                    </tbody>
-                  </table>
+                    </Tbody>
+                  </Table>
                 ) : (
-                  <p style={{ color: '#6a6e73' }}>No users assigned to this provider.</p>
+                  <p className="text-muted">No users assigned to this provider.</p>
                 )}
               </>
             )}

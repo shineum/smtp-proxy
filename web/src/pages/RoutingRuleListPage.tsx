@@ -24,7 +24,7 @@ export default function RoutingRuleListPage() {
 
   return (
     <PageSection>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      <div className="page-header">
         <Title headingLevel="h1" size="lg">Routing Rules</Title>
         <Button onClick={() => navigate('/routing-rules/new')}>Add Rule</Button>
       </div>

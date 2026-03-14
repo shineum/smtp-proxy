@@ -4,6 +4,7 @@ import {
   PageSection, Title, Card, CardTitle, CardBody,
   Form, FormGroup, TextInput, Button, ActionGroup,
   Alert,
+  DescriptionList, DescriptionListGroup, DescriptionListTerm, DescriptionListDescription,
 } from '@patternfly/react-core';
 import { changePassword } from '../api/auth';
 import { useAuth } from '../context/AuthContext';
@@ -29,18 +30,35 @@ export default function SettingsPage() {
 
   return (
     <PageSection>
-      <Title headingLevel="h1" size="lg" style={{ marginBottom: '1rem' }}>
+      <Title headingLevel="h1" size="lg" className="page-title">
         Settings
       </Title>
 
-      <Card style={{ marginBottom: '1rem' }}>
+      <Card className="card-spaced">
         <CardTitle>Profile</CardTitle>
         <CardBody>
-          <p><strong>Email:</strong> {me?.user.email}</p>
-          <p><strong>Username:</strong> {me?.user.username || '-'}</p>
-          <p><strong>Account Type:</strong> {me?.user.account_type}</p>
-          <p><strong>Current Group:</strong> {me?.memberships.find(m => m.group_id === me.current_group.group_id)?.group_name || '-'}</p>
-          <p><strong>Role:</strong> {me?.current_group.role}</p>
+          <DescriptionList>
+            <DescriptionListGroup>
+              <DescriptionListTerm>Email</DescriptionListTerm>
+              <DescriptionListDescription>{me?.user.email}</DescriptionListDescription>
+            </DescriptionListGroup>
+            <DescriptionListGroup>
+              <DescriptionListTerm>Username</DescriptionListTerm>
+              <DescriptionListDescription>{me?.user.username || '-'}</DescriptionListDescription>
+            </DescriptionListGroup>
+            <DescriptionListGroup>
+              <DescriptionListTerm>Account Type</DescriptionListTerm>
+              <DescriptionListDescription>{me?.user.account_type}</DescriptionListDescription>
+            </DescriptionListGroup>
+            <DescriptionListGroup>
+              <DescriptionListTerm>Current Group</DescriptionListTerm>
+              <DescriptionListDescription>{me?.memberships?.find(m => m.group_id === me.current_group.group_id)?.group_name || '-'}</DescriptionListDescription>
+            </DescriptionListGroup>
+            <DescriptionListGroup>
+              <DescriptionListTerm>Role</DescriptionListTerm>
+              <DescriptionListDescription>{me?.current_group.role}</DescriptionListDescription>
+            </DescriptionListGroup>
+          </DescriptionList>
         </CardBody>
       </Card>
 
@@ -48,9 +66,9 @@ export default function SettingsPage() {
         <Card>
           <CardTitle>Change Password</CardTitle>
           <CardBody>
-            {success && <Alert variant="success" title={success} style={{ marginBottom: '1rem' }} />}
+            {success && <Alert variant="success" title={success} />}
             {passwordMutation.isError && (
-              <Alert variant="danger" title="Failed to change password" style={{ marginBottom: '1rem' }} />
+              <Alert variant="danger" title="Failed to change password" />
             )}
             <Form>
               <FormGroup label="Current Password" isRequired fieldId="current-password">
@@ -83,7 +101,7 @@ export default function SettingsPage() {
                   onChange={(_e, v) => { setConfirmPassword(v); setSuccess(''); }}
                   isRequired
                 />
-                {passwordMismatch && <p style={{ color: '#C9190B', fontSize: '0.875rem', marginTop: '0.25rem' }}>Passwords do not match</p>}
+                {passwordMismatch && <p className="field-error">Passwords do not match</p>}
               </FormGroup>
               <ActionGroup>
                 <Button

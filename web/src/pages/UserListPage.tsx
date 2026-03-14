@@ -116,7 +116,6 @@ export default function UserListPage() {
           variant="warning"
           isInline
           title="Soft-deleted users are permanently removed after 30 days"
-          style={{ marginBottom: '1rem' }}
         />
       )}
 

@@ -58,7 +58,7 @@ export default function RoutingRuleFormPage() {
 
   return (
     <PageSection>
-      <Title headingLevel="h1" size="lg" style={{ marginBottom: '1rem' }}>
+      <Title headingLevel="h1" size="lg" className="page-title">
         {isEdit ? 'Edit Routing Rule' : 'Add Routing Rule'}
       </Title>
 

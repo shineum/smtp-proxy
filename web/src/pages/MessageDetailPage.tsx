@@ -39,7 +39,7 @@ export default function MessageDetailPage() {
 
   return (
     <PageSection>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
+      <div className="page-header">
         <Title headingLevel="h1" size="lg">
           Message: {message.subject || '(no subject)'}
         </Title>
@@ -55,15 +55,15 @@ export default function MessageDetailPage() {
         )}
       </div>
       {reprocessMutation.isSuccess && (
-        <p style={{ color: '#3E8635', marginBottom: '1rem' }}>Message queued for reprocessing.</p>
+        <p className="feedback-message feedback-message--success">Message queued for reprocessing.</p>
       )}
       {reprocessMutation.isError && (
-        <p style={{ color: '#C9190B', marginBottom: '1rem' }}>
+        <p className="feedback-message feedback-message--error">
           Failed to reprocess. DLQ may not be enabled.
         </p>
       )}
 
-      <Card style={{ marginBottom: '1rem' }}>
+      <Card className="card-spaced">
         <CardTitle>Details</CardTitle>
         <CardBody>
           <DescriptionList>
@@ -128,7 +128,7 @@ export default function MessageDetailPage() {
                     <Td>{dl.response_code || '-'}</Td>
                     <Td>{dl.duration_ms != null ? `${dl.duration_ms}ms` : '-'}</Td>
                     <Td>{dl.created_at ? new Date(dl.created_at).toLocaleString() : '-'}</Td>
-                    <Td style={{ color: '#C9190B', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <Td className="text-danger" style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {dl.last_error || '-'}
                     </Td>
                   </Tr>

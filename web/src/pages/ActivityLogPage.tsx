@@ -21,7 +21,7 @@ export default function ActivityLogPage() {
 
   return (
     <PageSection>
-      <Title headingLevel="h1" size="lg" style={{ marginBottom: '1rem' }}>
+      <Title headingLevel="h1" size="lg" className="page-title">
         Activity Log
       </Title>
 

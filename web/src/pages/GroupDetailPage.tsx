@@ -223,7 +223,7 @@ export default function GroupDetailPage() {
 
       <Tabs activeKey={activeTab} onSelect={(_e, k) => setActiveTab(k as number)}>
         <Tab eventKey={0} title={<TabTitleText>Details</TabTitleText>}>
-          <Card style={{ marginTop: '1rem' }}>
+          <Card className="card-spaced" style={{ marginTop: '1rem' }}>
             <CardBody>
               <DescriptionList>
                 <DescriptionListGroup>
@@ -268,10 +268,10 @@ export default function GroupDetailPage() {
         </Tab>
 
         <Tab eventKey={1} title={<TabTitleText>Members</TabTitleText>}>
-          <Card style={{ marginTop: '1rem' }}>
+          <Card className="card-spaced" style={{ marginTop: '1rem' }}>
             <CardBody>
               {isOwnerOrAdmin && (
-                <div style={{ marginBottom: '1rem' }}>
+                <div className="card-section-header">
                   <Button onClick={() => setIsAddMemberOpen(true)}>Add Member</Button>
                 </div>
               )}
@@ -310,9 +310,9 @@ export default function GroupDetailPage() {
             </CardBody>
           </Card>
 
-          <Card style={{ marginTop: '1rem' }}>
+          <Card className="card-spaced" style={{ marginTop: '1rem' }}>
             <CardBody>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div className="card-section-header">
                 <Title headingLevel="h3" size="md">Service Accounts</Title>
                 {isOwnerOrAdmin && (
                   <Button onClick={() => setIsCreateSAOpen(true)}>Create Service Account</Button>
@@ -354,9 +354,9 @@ export default function GroupDetailPage() {
               </Table>
 
               {expandedSA && (
-                <Card style={{ marginTop: '1rem' }}>
+                <Card className="card-spaced" style={{ marginTop: '1rem' }}>
                   <CardBody>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <div className="card-section-header">
                       <Title headingLevel="h4" size="md">
                         API Keys: {serviceAccounts.find(m => m.user_id === expandedSA)?.username || expandedSA}
                       </Title>
@@ -416,7 +416,7 @@ export default function GroupDetailPage() {
         </Tab>
 
         <Tab eventKey={2} title={<TabTitleText>Activity</TabTitleText>}>
-          <Card style={{ marginTop: '1rem' }}>
+          <Card className="card-spaced" style={{ marginTop: '1rem' }}>
             <CardBody>
               <Table aria-label="Activity logs">
                 <Thead><Tr><Th>Action</Th><Th>Resource</Th><Th>Time</Th></Tr></Thead>
@@ -464,7 +464,7 @@ export default function GroupDetailPage() {
             <TextInput id="sa-domains" value={saDomains} onChange={(_e, v) => setSaDomains(v)} placeholder="example.com, other.com" />
           </FormGroup>
           {createSAMutation.isError && (
-            <p style={{ color: 'red' }}>Failed to create service account. Username may already be in use.</p>
+            <p className="feedback-message feedback-message--error">Failed to create service account. Username may already be in use.</p>
           )}
         </Form>
       </Modal>
@@ -490,7 +490,7 @@ export default function GroupDetailPage() {
             <TextInput id="member-role" value={addMemberRole} onChange={(_e, v) => setAddMemberRole(v)} placeholder="member" />
           </FormGroup>
           {addMemberMutation.isError && (
-            <p style={{ color: 'red' }}>Failed to add member. User may not exist or is already a member.</p>
+            <p className="feedback-message feedback-message--error">Failed to add member. User may not exist or is already a member.</p>
           )}
         </Form>
       </Modal>
@@ -522,7 +522,7 @@ export default function GroupDetailPage() {
             <TextInput id="edit-monthly-limit" type="number" value={String(editMonthlyLimit)} onChange={(_e, v) => setEditMonthlyLimit(Number(v) || 0)} />
           </FormGroup>
           {editGroupMutation.isError && (
-            <p style={{ color: 'red' }}>Failed to update group.</p>
+            <p className="feedback-message feedback-message--error">Failed to update group.</p>
           )}
         </Form>
       </Modal>
@@ -553,7 +553,7 @@ export default function GroupDetailPage() {
             </FormSelect>
           </FormGroup>
           {editSAMutation.isError && (
-            <p style={{ color: 'red' }}>Failed to update service account.</p>
+            <p className="feedback-message feedback-message--error">Failed to update service account.</p>
           )}
         </Form>
       </Modal>
@@ -575,12 +575,12 @@ export default function GroupDetailPage() {
       >
         {createdKeyResult ? (
           <div>
-            <p style={{ marginBottom: '1rem' }}>API key created. Copy it now - it will not be shown again.</p>
+            <p>API key created. Copy it now - it will not be shown again.</p>
             <FormGroup label="API Key" fieldId="new-api-key">
               <ClipboardCopy isReadOnly className="mono">{createdKeyResult.api_key || ''}</ClipboardCopy>
             </FormGroup>
             {createdKeyResult.expires_at && (
-              <p style={{ marginTop: '0.5rem', color: 'var(--pf-v5-global--Color--200)' }}>
+              <p className="text-muted" style={{ marginTop: '0.5rem' }}>
                 Expires: {new Date(createdKeyResult.expires_at).toLocaleString()}
               </p>
             )}
@@ -601,7 +601,7 @@ export default function GroupDetailPage() {
               </FormSelect>
             </FormGroup>
             {createKeyMutation.isError && (
-              <p style={{ color: 'red' }}>Failed to create API key.</p>
+              <p className="feedback-message feedback-message--error">Failed to create API key.</p>
             )}
           </Form>
         )}

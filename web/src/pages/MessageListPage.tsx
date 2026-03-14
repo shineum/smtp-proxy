@@ -31,7 +31,7 @@ export default function MessageListPage() {
 
   return (
     <PageSection>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      <div className="page-header">
         <Title headingLevel="h1" size="lg">Messages</Title>
         <FormSelect
           value={statusFilter}
@@ -77,7 +77,7 @@ export default function MessageListPage() {
           page={page}
           onSetPage={(_e, p) => setPage(p)}
           onPerPageSelect={(_e, ps) => { setPageSize(ps); setPage(1); }}
-          style={{ marginTop: '1rem' }}
+          className="pagination-footer"
         />
       )}
     </PageSection>

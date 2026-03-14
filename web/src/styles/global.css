@@ -1,49 +1,410 @@
-/* Global UI improvements for better readability */
+/* ============================================================
+   Enterprise Color System & CSS Custom Properties
+   ============================================================ */
+:root {
+  /* Brand / Primary */
+  --color-primary:         #1b3a6b;
+  --color-primary-dark:    #122850;
+  --color-primary-light:   #2d5fa8;
+  --color-accent:          #4d8ef0;
 
-/* Better table readability */
+  /* Semantic */
+  --color-success:         #3E8635;
+  --color-warning:         #F0AB00;
+  --color-danger:          #C9190B;
+  --color-info:            #2B9AF3;
+
+  /* Neutral */
+  --color-surface:         #ffffff;
+  --color-surface-raised:  #f8f9fa;
+  --color-border:          #d2d2d2;
+  --color-border-light:    #ebebeb;
+  --color-text:            #151515;
+  --color-text-muted:      #6a6e73;
+
+  /* Sidebar */
+  --sidebar-bg:            #1b2a45;
+  --sidebar-bg-hover:      #243558;
+  --sidebar-bg-active:     #2d5fa8;
+  --sidebar-text:          #c8d2e0;
+  --sidebar-text-active:   #ffffff;
+  --sidebar-icon:          #8899b4;
+  --sidebar-icon-active:   #ffffff;
+
+  /* Masthead */
+  --masthead-bg:           #1b3a6b;
+
+  /* Card accents */
+  --card-accent-total:     #4d8ef0;
+  --card-accent-success:   #3E8635;
+  --card-accent-delivered: #2B9AF3;
+  --card-accent-failed:    #C9190B;
+
+  /* Transitions */
+  --transition-fast:       150ms ease;
+  --transition-medium:     250ms ease;
+
+  /* Shadows */
+  --shadow-card:           0 1px 4px rgba(0, 0, 0, 0.08), 0 2px 12px rgba(0, 0, 0, 0.05);
+  --shadow-card-hover:     0 4px 16px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-login:          0 8px 40px rgba(0, 0, 0, 0.25), 0 2px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* ============================================================
+   Global Resets & Base
+   ============================================================ */
 .pf-v5-c-table td {
   padding-top: 12px !important;
   padding-bottom: 12px !important;
 }
 
-/* Better card spacing */
 .pf-v5-c-card {
   margin-bottom: 16px;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--transition-medium), transform var(--transition-medium);
 }
 
-/* Better page section padding */
+.pf-v5-c-card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
 .pf-v5-c-page__main-section {
   padding: 24px 32px;
 }
 
-/* Better description list readability */
 .pf-v5-c-description-list__term {
   font-weight: 600;
 }
 
-/* Monospace for UUIDs and API keys */
+/* ============================================================
+   Utility Classes (preserved from original)
+   ============================================================ */
 .mono {
   font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   font-size: 12px;
   letter-spacing: -0.02em;
 }
 
-/* Soft delete visual indicator */
 .deleted-row td {
   opacity: 0.6;
 }
 
-/* Better button spacing in action cells */
 .action-buttons {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 
-/* Page header with description */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+}
+
+/* ============================================================
+   Login Page
+   ============================================================ */
+.login-page-wrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0f1e38 0%, #1b3a6b 40%, #1e4d8c 70%, #163460 100%);
+  background-attachment: fixed;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle grid pattern overlay */
+.login-page-wrapper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+
+/* Glowing orbs for depth */
+.login-page-wrapper::after {
+  content: '';
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(45, 95, 168, 0.25) 0%, transparent 70%);
+  top: -200px;
+  right: -200px;
+  pointer-events: none;
+}
+
+.login-card {
+  background: var(--color-surface);
+  border-radius: 12px;
+  box-shadow: var(--shadow-login);
+  width: 100%;
+  max-width: 440px;
+  padding: 40px 40px 32px;
+  position: relative;
+  z-index: 1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Brand / logo area */
+.login-brand {
+  text-align: center;
+  margin-bottom: 32px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.login-brand-icons {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+  border-radius: 16px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 16px rgba(27, 58, 107, 0.4);
+}
+
+.login-brand-icon {
+  color: #ffffff;
+  width: 24px;
+  height: 24px;
+}
+
+.login-brand-icon.shield {
+  width: 28px;
+  height: 28px;
+  opacity: 0.9;
+}
+
+.login-brand-icon.envelope {
+  width: 22px;
+  height: 22px;
+  margin-left: -4px;
+}
+
+.login-brand-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin: 0 0 4px;
+  letter-spacing: -0.02em;
+}
+
+.login-brand-subtitle {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+}
+
+/* Override PatternFly login form styles inside card */
+.login-form-wrapper .pf-v5-c-login__main-body {
+  padding: 0;
+}
+
+.login-form-wrapper .pf-v5-c-form__actions .pf-v5-c-button--primary,
+.login-form-wrapper .pf-v5-c-button[data-ouia-component-type="PF5/Button"][class*="primary"] {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  width: 100%;
+  height: 44px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.login-form-wrapper .pf-v5-c-button--primary:hover {
+  background-color: var(--color-primary-dark);
+  box-shadow: 0 4px 12px rgba(27, 58, 107, 0.35);
+}
+
+.login-footer-text {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+/* ============================================================
+   Masthead
+   ============================================================ */
+.pf-v5-c-masthead {
+  background-color: var(--masthead-bg) !important;
+}
+
+.masthead-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: #ffffff !important;
+}
+
+.masthead-brand-icon {
+  color: #7eb8f7;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.masthead-brand-text {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+/* ============================================================
+   Sidebar
+   ============================================================ */
+.pf-v5-c-page__sidebar {
+  background-color: var(--sidebar-bg) !important;
+}
+
+.pf-v5-c-nav__link {
+  color: var(--sidebar-text) !important;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.pf-v5-c-nav__link:hover {
+  background-color: var(--sidebar-bg-hover) !important;
+  color: var(--sidebar-text-active) !important;
+}
+
+.pf-v5-c-nav__item.pf-m-current > .pf-v5-c-nav__link,
+.pf-v5-c-nav__link.pf-m-current {
+  background-color: var(--sidebar-bg-active) !important;
+  color: var(--sidebar-text-active) !important;
+  font-weight: 600;
+}
+
+.pf-v5-c-nav__link.pf-m-current::before {
+  background-color: var(--color-accent) !important;
+}
+
+/* Nav item layout with icon */
+.nav-item-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-item-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--sidebar-icon);
+  transition: color var(--transition-fast);
+}
+
+.pf-v5-c-nav__link:hover .nav-item-icon,
+.pf-v5-c-nav__link.pf-m-current .nav-item-icon {
+  color: var(--sidebar-icon-active);
+}
+
+.nav-item-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.nav-item-label {
+  flex: 1;
+}
+
+/* ============================================================
+   Stat Cards (Dashboard)
+   ============================================================ */
+.stat-card {
+  position: relative;
+  overflow: hidden;
+  border-top: 3px solid transparent;
+}
+
+.stat-card--total {
+  border-top-color: var(--card-accent-total);
+}
+
+.stat-card--success {
+  border-top-color: var(--card-accent-success);
+}
+
+.stat-card--delivered {
+  border-top-color: var(--card-accent-delivered);
+}
+
+.stat-card--failed {
+  border-top-color: var(--card-accent-failed);
+}
+
+.stat-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stat-card__icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.stat-card__value {
+  display: block;
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-top: 4px;
+  color: var(--color-text);
+  letter-spacing: -0.03em;
+}
+
+.stat-card__value--delivered {
+  color: var(--color-success);
+}
+
+.stat-card__value--failed {
+  color: var(--color-danger);
+}
+
+/* ============================================================
+   PatternFly Table Enhancements
+   ============================================================ */
+.pf-v5-c-table thead th {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  background-color: var(--color-surface-raised);
+}
+
+.pf-v5-c-table tbody tr {
+  transition: background-color var(--transition-fast);
+}
+
+.pf-v5-c-table tbody tr:hover {
+  background-color: rgba(77, 142, 240, 0.04);
 }

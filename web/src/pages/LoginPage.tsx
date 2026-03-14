@@ -1,10 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  LoginPage as PFLoginPage,
   LoginForm,
-  ListVariant,
 } from '@patternfly/react-core';
+import { EnvelopeIcon, ShieldAltIcon } from '@patternfly/react-icons';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginPage() {
@@ -30,33 +29,39 @@ export default function LoginPage() {
     }
   };
 
-  const loginForm = (
-    <LoginForm
-      showHelperText={!!error}
-      helperText={error}
-      helperTextIcon={undefined}
-      usernameLabel="Email"
-      usernameValue={email}
-      onChangeUsername={(_e, v) => setEmail(v)}
-      passwordLabel="Password"
-      passwordValue={password}
-      onChangePassword={(_e, v) => setPassword(v)}
-      onLoginButtonClick={handleSubmit}
-      loginButtonLabel={isLoading ? 'Signing in...' : 'Sign in'}
-      isLoginButtonDisabled={isLoading}
-    />
-  );
-
   return (
-    <PFLoginPage
-      brandImgSrc=""
-      brandImgAlt=""
-      loginTitle="SMTP Proxy Admin"
-      loginSubtitle="Sign in to manage your email infrastructure"
-      textContent=""
-      footerListVariants={ListVariant.inline}
-    >
-      {loginForm}
-    </PFLoginPage>
+    <div className="login-page-wrapper">
+      <div className="login-card">
+        <div className="login-brand">
+          <div className="login-brand-icons">
+            <ShieldAltIcon className="login-brand-icon shield" />
+            <EnvelopeIcon className="login-brand-icon envelope" />
+          </div>
+          <h1 className="login-brand-title">SMTP Proxy</h1>
+          <p className="login-brand-subtitle">Admin Console</p>
+        </div>
+
+        <div className="login-form-wrapper">
+          <LoginForm
+            showHelperText={!!error}
+            helperText={error}
+            helperTextIcon={undefined}
+            usernameLabel="Email"
+            usernameValue={email}
+            onChangeUsername={(_e, v) => setEmail(v)}
+            passwordLabel="Password"
+            passwordValue={password}
+            onChangePassword={(_e, v) => setPassword(v)}
+            onLoginButtonClick={handleSubmit}
+            loginButtonLabel={isLoading ? 'Signing in...' : 'Sign in'}
+            isLoginButtonDisabled={isLoading}
+          />
+        </div>
+
+        <p className="login-footer-text">
+          Secure email infrastructure management
+        </p>
+      </div>
+    </div>
   );
 }

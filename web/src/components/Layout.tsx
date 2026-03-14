@@ -2,14 +2,31 @@ import { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Page, Masthead, MastheadMain, MastheadBrand, MastheadContent, MastheadToggle,
-  PageSidebar, PageSidebarBody, PageSection,
+  PageSidebar, PageSidebarBody,
   Nav, NavItem, NavList,
   Toolbar, ToolbarContent, ToolbarItem, ToolbarGroup,
   Dropdown, DropdownItem, DropdownList, MenuToggle,
   PageToggleButton,
 } from '@patternfly/react-core';
-import { BarsIcon } from '@patternfly/react-icons';
+import {
+  BarsIcon,
+  EnvelopeIcon,
+  HomeAltIcon,
+  UsersIcon,
+  NetworkIcon,
+  GlobeRouteIcon,
+  ListAltIcon,
+  CogIcon,
+  ServerAltIcon,
+  ClipboardListIcon,
+} from '@patternfly/react-icons';
 import { useAuth } from '../context/AuthContext';
+
+interface NavItemDef {
+  path: string;
+  label: string;
+  icon: React.ReactNode;
+}
 
 export default function Layout() {
   const { me, logout, switchGroup, isSystemAdmin, isAdmin } = useAuth();
@@ -19,15 +36,15 @@ export default function Layout() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGroupMenuOpen, setIsGroupMenuOpen] = useState(false);
 
-  const navItems = [
-    { path: '/', label: 'Dashboard' },
-    { path: '/groups', label: 'Groups' },
-    ...(isAdmin ? [{ path: '/users', label: 'Users' }] : []),
-    { path: '/providers', label: 'Providers' },
-    { path: '/routing-rules', label: 'Routing Rules' },
-    { path: '/messages', label: 'Messages' },
-    { path: '/activity', label: 'Activity Log' },
-    { path: '/settings', label: 'Settings' },
+  const navItems: NavItemDef[] = [
+    { path: '/', label: 'Dashboard', icon: <HomeAltIcon /> },
+    { path: '/groups', label: 'Groups', icon: <UsersIcon /> },
+    ...(isAdmin ? [{ path: '/users', label: 'Users', icon: <UsersIcon /> }] : []),
+    { path: '/providers', label: 'Providers', icon: <ServerAltIcon /> },
+    { path: '/routing-rules', label: 'Routing Rules', icon: <GlobeRouteIcon /> },
+    { path: '/messages', label: 'Messages', icon: <EnvelopeIcon /> },
+    { path: '/activity', label: 'Activity Log', icon: <ClipboardListIcon /> },
+    { path: '/settings', label: 'Settings', icon: <CogIcon /> },
   ];
 
   const currentGroup = me?.memberships?.find(
@@ -53,7 +70,10 @@ export default function Layout() {
         </PageToggleButton>
       </MastheadToggle>
       <MastheadMain>
-        <MastheadBrand data-codemods>SMTP Proxy</MastheadBrand>
+        <MastheadBrand data-codemods className="masthead-brand">
+          <EnvelopeIcon className="masthead-brand-icon" />
+          <span className="masthead-brand-text">SMTP Proxy</span>
+        </MastheadBrand>
       </MastheadMain>
       <MastheadContent>
         <Toolbar isFullHeight>
@@ -134,7 +154,10 @@ export default function Layout() {
                 }
                 onClick={() => navigate(item.path)}
               >
-                {item.label}
+                <span className="nav-item-content">
+                  <span className="nav-item-icon">{item.icon}</span>
+                  <span className="nav-item-label">{item.label}</span>
+                </span>
               </NavItem>
             ))}
           </NavList>

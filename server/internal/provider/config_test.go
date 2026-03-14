@@ -34,25 +34,37 @@ func TestProviderConfig_Validate(t *testing.T) {
 		{
 			name: "ses without region returns error",
 			config: ProviderConfig{
-				Type:   "ses",
-				APIKey: "test-token-ses",
+				Type:      "ses",
+				APIKey:    "test-token-ses",
+				SecretKey: "test-secret-ses",
 			},
 			wantErr: "ses: region is required",
 		},
 		{
 			name: "ses without auth token returns error",
 			config: ProviderConfig{
-				Type:   "ses",
-				Region: "us-east-1",
+				Type:      "ses",
+				Region:    "us-east-1",
+				SecretKey: "test-secret-ses",
 			},
 			wantErr: "ses: api_key (access key ID) is required",
 		},
 		{
-			name: "ses with region and auth token succeeds",
+			name: "ses without secret key returns error",
 			config: ProviderConfig{
 				Type:   "ses",
 				Region: "us-east-1",
 				APIKey: "test-token-ses",
+			},
+			wantErr: "ses: secret_key (secret access key) is required",
+		},
+		{
+			name: "ses with all fields succeeds",
+			config: ProviderConfig{
+				Type:      "ses",
+				Region:    "us-east-1",
+				APIKey:    "test-token-ses",
+				SecretKey: "test-secret-ses",
 			},
 			wantErr: "",
 		},

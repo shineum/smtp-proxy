@@ -180,6 +180,7 @@ func (r *ProviderResolver) cacheProvider(id uuid.UUID, p Provider) {
 type smtpConfigExtra struct {
 	Region       string `json:"region,omitempty"`
 	Domain       string `json:"domain,omitempty"`
+	SecretKey    string `json:"secret_key,omitempty"`
 	TenantID     string `json:"tenant_id,omitempty"`
 	ClientID     string `json:"client_id,omitempty"`
 	ClientSecret string `json:"client_secret,omitempty"`
@@ -205,6 +206,7 @@ func espToConfig(esp *storage.EspProvider) (ProviderConfig, error) {
 		}
 		cfg.Region = extra.Region
 		cfg.Domain = extra.Domain
+		cfg.SecretKey = extra.SecretKey
 		cfg.TenantID = extra.TenantID
 		cfg.ClientID = extra.ClientID
 		cfg.ClientSecret = extra.ClientSecret

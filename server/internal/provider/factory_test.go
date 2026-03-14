@@ -135,9 +135,10 @@ func TestNewProvider_ValidSendgrid(t *testing.T) {
 
 func TestNewProvider_ValidSES(t *testing.T) {
 	cfg := ProviderConfig{
-		Type:   "ses",
-		APIKey: "test-token-ses",
-		Region: "us-east-1",
+		Type:      "ses",
+		APIKey:    "test-token-ses",
+		SecretKey: "test-secret-ses",
+		Region:    "us-east-1",
 	}
 	client := &mockHTTPClient{}
 

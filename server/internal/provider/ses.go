@@ -18,7 +18,7 @@ const (
 )
 
 // SES implements the Provider interface for AWS SES v2 API.
-// It uses a configurable HTTP client for testability rather than the AWS SDK.
+// Requests are signed with AWS Signature V4 via SigV4HTTPClient.
 type SES struct {
 	region   string
 	endpoint string
@@ -26,17 +26,25 @@ type SES struct {
 }
 
 // NewSES creates an AWS SES provider from the given configuration.
-// The APIKey field in config is used as a placeholder; real AWS auth
-// (Signature V4) should be handled by the HTTPClient wrapper in production.
+// When both APIKey (Access Key ID) and SecretKey (Secret Access Key) are
+// provided, requests are automatically signed with AWS Signature V4.
+// When credentials are absent (e.g. in tests), the client is used as-is.
 func NewSES(cfg ProviderConfig, client HTTPClient) *SES {
 	endpoint := cfg.Endpoint
 	if endpoint == "" {
 		endpoint = fmt.Sprintf(sesDefaultEndpointFmt, cfg.Region)
 	}
+
+	// Wrap with Sig V4 signing when credentials are available.
+	httpClient := client
+	if cfg.APIKey != "" && cfg.SecretKey != "" {
+		httpClient = NewSigV4HTTPClient(client, cfg.APIKey, cfg.SecretKey, cfg.Region)
+	}
+
 	return &SES{
 		region:   cfg.Region,
 		endpoint: endpoint,
-		client:   client,
+		client:   httpClient,
 	}
 }
 

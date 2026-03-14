@@ -11,7 +11,11 @@ type ProviderConfig struct {
 	Type string
 
 	// APIKey is the authentication credential for the provider.
+	// For SES, this is the AWS Access Key ID.
 	APIKey string
+
+	// SecretKey is the AWS Secret Access Key (used only by SES).
+	SecretKey string
 
 	// Endpoint overrides the default API URL (useful for testing).
 	Endpoint string
@@ -55,6 +59,9 @@ func (c *ProviderConfig) Validate() error {
 		}
 		if c.APIKey == "" {
 			return errors.New("ses: api_key (access key ID) is required")
+		}
+		if c.SecretKey == "" {
+			return errors.New("ses: secret_key (secret access key) is required")
 		}
 	case "mailgun":
 		if c.APIKey == "" {

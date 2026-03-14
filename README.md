@@ -310,6 +310,21 @@ Supported provider types: `sendgrid`, `ses`, `mailgun`, `smtp`, `msgraph`
 
 Provider visibility: `global` (all groups), `shared` (granted groups only), `private` (owner group only)
 
+#### Provider Configuration
+
+Each provider type requires different fields. The `api_key` and credentials are stored in the `smtp_config` JSONB column:
+
+| Provider | Required `smtp_config` Fields |
+|----------|-------------------------------|
+| SendGrid | `api_key` |
+| SES | `api_key` (Access Key ID), `secret_key` (Secret Access Key), `region` |
+| Mailgun | `api_key`, `domain` |
+| Microsoft Graph | `tenant_id`, `client_id`, `client_secret`, `user_id` |
+| SMTP | `host`, `port`, `username`, `password`, `encryption` |
+| Stdout | *(none)* |
+
+**SES** uses AWS Signature V4 to sign every HTTP request to the SES v2 API. The `api_key` field holds the AWS Access Key ID and `secret_key` holds the AWS Secret Access Key. Requests are signed using the `aws-sdk-go-v2` signer (no full AWS SDK dependency for the HTTP call itself). Both Simple (text/HTML) and Raw (MIME with attachments) send modes are supported.
+
 ### Routing Rules (Unified Auth)
 
 | Method | Path | Description |
@@ -344,14 +359,29 @@ When a message is dequeued for delivery, the worker resolves the ESP provider:
 4. If no provider configured, fall back to `stdout` (prints to server logs)
 
 ```bash
-# Configure a SendGrid provider for a group
+# Configure a SendGrid provider
 curl -X POST http://localhost:8080/api/v1/providers \
   -H "Authorization: Bearer <jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-sendgrid",
     "provider_type": "sendgrid",
-    "api_key": "SG.xxx",
+    "smtp_config": { "api_key": "SG.xxx" },
+    "enabled": true
+  }'
+
+# Configure an Amazon SES provider
+curl -X POST http://localhost:8080/api/v1/providers \
+  -H "Authorization: Bearer <jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "my-ses",
+    "provider_type": "ses",
+    "smtp_config": {
+      "api_key": "<AWS Access Key ID>",
+      "secret_key": "<AWS Secret Access Key>",
+      "region": "us-east-1"
+    },
     "enabled": true
   }'
 ```

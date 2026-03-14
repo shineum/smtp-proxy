@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Page, Masthead, MastheadMain, MastheadBrand, MastheadContent, MastheadToggle,
@@ -32,9 +32,38 @@ export default function Layout() {
   const { me, logout, switchGroup, isSystemAdmin, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const isDesktop = () => window.innerWidth >= 1200;
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => isDesktop());
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGroupMenuOpen, setIsGroupMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1200) {
+        // On desktop, reopen sidebar automatically
+        setIsSidebarOpen(true);
+      } else {
+        // On tablet/mobile, close sidebar by default on resize
+        setIsSidebarOpen(false);
+      }
+    };
+
+    // Set initial state based on current width
+    setIsSidebarOpen(isDesktop());
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMobileOrTablet = () => window.innerWidth < 1200;
+
+  const handleNavItemClick = useCallback((path: string) => {
+    navigate(path);
+    // Auto-close sidebar on mobile/tablet after navigation
+    if (isMobileOrTablet()) {
+      setIsSidebarOpen(false);
+    }
+  }, [navigate]);
 
   const navItems: NavItemDef[] = [
     { path: '/', label: 'Dashboard', icon: <HomeAltIcon /> },
@@ -152,7 +181,7 @@ export default function Layout() {
                     ? location.pathname === '/'
                     : location.pathname.startsWith(item.path)
                 }
-                onClick={() => navigate(item.path)}
+                onClick={() => handleNavItemClick(item.path)}
               >
                 <span className="nav-item-content">
                   <span className="nav-item-icon">{item.icon}</span>
@@ -167,8 +196,17 @@ export default function Layout() {
   );
 
   return (
-    <Page header={masthead} sidebar={sidebar}>
-      <Outlet />
-    </Page>
+    <>
+      {isSidebarOpen && isMobileOrTablet() && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <Page header={masthead} sidebar={sidebar}>
+        <Outlet />
+      </Page>
+    </>
   );
 }

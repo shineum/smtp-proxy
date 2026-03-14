@@ -36,7 +36,7 @@ export default function MessageListPage() {
         <FormSelect
           value={statusFilter}
           onChange={(_e, v) => { setStatusFilter(v); setPage(1); }}
-          style={{ width: '200px' }}
+          style={{ width: '200px', flex: '0 0 200px' }}
           aria-label="Status filter"
         >
           <FormSelectOption value="" label="All Statuses" />

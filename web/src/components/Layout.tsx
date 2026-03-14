@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Toolbar, ToolbarContent, ToolbarItem, ToolbarGroup,
@@ -9,11 +9,13 @@ import {
   BarsIcon,
   EnvelopeIcon,
   HomeAltIcon,
+  BuildingIcon,
   UsersIcon,
   GlobeRouteIcon,
   CogIcon,
   ServerAltIcon,
   ClipboardListIcon,
+  SignOutAltIcon,
 } from '@patternfly/react-icons';
 import { useAuth } from '../context/AuthContext';
 
@@ -30,6 +32,68 @@ function getScreenSize(): ScreenSize {
   if (w >= 1200) return 'desktop';
   if (w >= 768) return 'tablet';
   return 'mobile';
+}
+
+interface UserProfilePopoverProps {
+  me: import('../types/api').MeResponse | null;
+  currentGroup: import('../types/api').Membership | undefined;
+  isOpen: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onSettings: () => void;
+  onLogout: () => void;
+}
+
+function UserProfilePopover({ me, currentGroup, isOpen, onToggle, onClose, onSettings, onLogout }: UserProfilePopoverProps) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [isOpen, onClose]);
+
+  const email = me?.user.email || 'User';
+  const initial = email.charAt(0).toUpperCase();
+  const role = currentGroup?.role || me?.current_group.role || '';
+  const groupName = currentGroup?.group_name || '';
+
+  return (
+    <div className="profile-popover" ref={ref}>
+      <button className="profile-trigger" onClick={onToggle} type="button">
+        <span className="profile-trigger__avatar">{initial}</span>
+        <span className="profile-trigger__email">{email}</span>
+      </button>
+      {isOpen && (
+        <div className="profile-panel">
+          <div className="profile-panel__header">
+            <div className="profile-panel__avatar-lg">{initial}</div>
+            <div className="profile-panel__info">
+              {me?.user.display_name && (
+                <div className="profile-panel__name">{me.user.display_name}</div>
+              )}
+              <div className="profile-panel__email">{email}</div>
+              {groupName && (
+                <div className="profile-panel__group">{groupName} &middot; {role}</div>
+              )}
+            </div>
+          </div>
+          <div className="profile-panel__divider" />
+          <div className="profile-panel__actions">
+            <button className="profile-panel__action" onClick={onSettings} type="button">
+              <CogIcon /> Settings
+            </button>
+            <button className="profile-panel__action profile-panel__action--logout" onClick={onLogout} type="button">
+              <SignOutAltIcon /> Logout
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Layout() {
@@ -76,7 +140,7 @@ export default function Layout() {
 
   const navItems: NavItemDef[] = [
     { path: '/', label: 'Dashboard', icon: <HomeAltIcon /> },
-    { path: '/groups', label: 'Groups', icon: <UsersIcon /> },
+    { path: '/groups', label: 'Groups', icon: <BuildingIcon /> },
     ...(isAdmin ? [{ path: '/users', label: 'Users', icon: <UsersIcon /> }] : []),
     { path: '/providers', label: 'Providers', icon: <ServerAltIcon /> },
     { path: '/routing-rules', label: 'Routing Rules', icon: <GlobeRouteIcon /> },
@@ -163,32 +227,15 @@ export default function Layout() {
                   </ToolbarItem>
                 )}
                 <ToolbarItem>
-                  <Dropdown
+                  <UserProfilePopover
+                    me={me}
+                    currentGroup={currentGroup}
                     isOpen={isUserMenuOpen}
-                    onOpenChange={setIsUserMenuOpen}
-                    toggle={(toggleRef) => (
-                      <MenuToggle
-                        ref={toggleRef}
-                        onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                        isExpanded={isUserMenuOpen}
-                        className="app-header__dropdown-toggle"
-                      >
-                        <span className="app-header__avatar">
-                          {(me?.user.email || 'U').charAt(0)}
-                        </span>
-                        <span className="app-header__email">{me?.user.email || 'User'}</span>
-                      </MenuToggle>
-                    )}
-                  >
-                    <DropdownList>
-                      <DropdownItem onClick={() => { setIsUserMenuOpen(false); navigate('/settings'); }}>
-                        Settings
-                      </DropdownItem>
-                      <DropdownItem onClick={() => { setIsUserMenuOpen(false); logout(); navigate('/login'); }}>
-                        Logout
-                      </DropdownItem>
-                    </DropdownList>
-                  </Dropdown>
+                    onToggle={() => setIsUserMenuOpen(prev => !prev)}
+                    onClose={() => setIsUserMenuOpen(false)}
+                    onSettings={() => { setIsUserMenuOpen(false); navigate('/settings'); }}
+                    onLogout={() => { setIsUserMenuOpen(false); logout(); navigate('/login'); }}
+                  />
                 </ToolbarItem>
               </ToolbarGroup>
             </ToolbarContent>

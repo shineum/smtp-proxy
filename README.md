@@ -305,6 +305,7 @@ API keys can optionally have an expiration set via `api_key_expires_in` (e.g., `
 | GET | `/api/v1/providers/{id}/access` | List group access grants |
 | POST | `/api/v1/providers/{id}/access` | Grant group access |
 | DELETE | `/api/v1/providers/{id}/access/{gid}` | Revoke group access |
+| POST | `/api/v1/providers/{id}/send` | Send a test email directly through the provider |
 
 Supported provider types: `sendgrid`, `ses`, `mailgun`, `smtp`, `msgraph`
 
@@ -324,6 +325,44 @@ Each provider type requires different fields. The `api_key` and credentials are 
 | Stdout | *(none)* |
 
 **SES** uses AWS Signature V4 to sign every HTTP request to the SES v2 API. The `api_key` field holds the AWS Access Key ID and `secret_key` holds the AWS Secret Access Key. Requests are signed using the `aws-sdk-go-v2` signer (no full AWS SDK dependency for the HTTP call itself). Both Simple (text/HTML) and Raw (MIME with attachments) send modes are supported.
+
+#### Send Test Email
+
+Send a test email directly through a provider, bypassing the queue. Useful for verifying provider configuration. Results are not recorded in delivery logs or statistics.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/providers/<provider-uuid>/send \
+  -H "Authorization: Bearer <jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "sender@example.com",
+    "to": "recipient@example.com",
+    "subject": "Test Email",
+    "body": "Hello from SMTP Proxy"
+  }'
+```
+
+Response (success):
+
+```json
+{
+  "success": true,
+  "provider_message_id": "abc123",
+  "duration_ms": 342
+}
+```
+
+Response (failure):
+
+```json
+{
+  "success": false,
+  "error": "sendgrid: 401 Unauthorized",
+  "duration_ms": 150
+}
+```
+
+The admin UI also provides a **Send Test Email** button on the provider detail page, which opens a dialog for composing and sending test emails with inline result display.
 
 ### Routing Rules (Unified Auth)
 

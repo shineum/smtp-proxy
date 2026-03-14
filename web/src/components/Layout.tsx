@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Page, Masthead, MastheadMain, MastheadBrand, MastheadContent, MastheadToggle,
@@ -57,10 +56,27 @@ export default function Layout() {
   }, []);
 
   const isMobileOrTablet = () => window.innerWidth < 1200;
+  const sidebarRef = useRef<HTMLDivElement>(null);
+
+  // Close sidebar when clicking outside on mobile/tablet
+  useEffect(() => {
+    if (!isSidebarOpen || !isMobileOrTablet()) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Ignore clicks inside sidebar
+      if (target.closest('.pf-v5-c-page__sidebar')) return;
+      // Ignore clicks on the toggle button
+      if (target.closest('.pf-v5-c-masthead__toggle')) return;
+      setIsSidebarOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isSidebarOpen]);
 
   const handleNavItemClick = useCallback((path: string) => {
     navigate(path);
-    // Auto-close sidebar on mobile/tablet after navigation
     if (isMobileOrTablet()) {
       setIsSidebarOpen(false);
     }
@@ -196,19 +212,15 @@ export default function Layout() {
     </PageSidebar>
   );
 
+  const showOverlay = isSidebarOpen && isMobileOrTablet();
+
   return (
-    <>
-      {isSidebarOpen && isMobileOrTablet() && createPortal(
-        <div
-          className="sidebar-backdrop"
-          onClick={() => setIsSidebarOpen(false)}
-          aria-hidden="true"
-        />,
-        document.body,
-      )}
-      <Page header={masthead} sidebar={sidebar}>
-        <Outlet />
-      </Page>
-    </>
+    <Page
+      header={masthead}
+      sidebar={sidebar}
+      className={showOverlay ? 'sidebar-overlay-active' : ''}
+    >
+      <Outlet />
+    </Page>
   );
 }

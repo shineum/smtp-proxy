@@ -413,13 +413,18 @@
    Responsive Layout
    ============================================================ */
 
-/* Sidebar overlay backdrop (mobile/tablet) */
-.sidebar-backdrop {
+/* Sidebar overlay: dim main content when sidebar is open on mobile/tablet */
+.sidebar-overlay-active > .pf-v5-c-page__main {
+  position: relative;
+}
+
+.sidebar-overlay-active > .pf-v5-c-page__main::after {
+  content: '';
   position: fixed;
   inset: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  z-index: 300;
-  pointer-events: auto;
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 1;
+  pointer-events: none;
 }
 
 /* Tablet / iPad: 768px - 1199px */

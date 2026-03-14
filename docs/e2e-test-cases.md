@@ -87,16 +87,8 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 | Field | Value |
 |-------|-------|
 | **Precondition** | TC-007, TC-008 passed. |
-| **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts` with `{"username":"e2e-smtp","provider_id":"<provider_3_id>"}` |
-| **Expected** | 201 Created. `username: "e2e-smtp"` (lowercase), `account_type: "smtp"`. No API key generated (keys are created separately via TC-025). |
-
-### TC-010b: Create Initial API Key for Service Account
-
-| Field | Value |
-|-------|-------|
-| **Precondition** | TC-010 passed. |
-| **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts/<sa_id>/api-keys` with `{"label":"default","api_key_expires_in":"30d"}` |
-| **Expected** | 201 Created. `api_key` returned (plaintext, shown once), `key_prefix` (12 chars), `label: "default"`, `expires_at` set 30 days from now. |
+| **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts` with `{"username":"e2e-smtp","provider_id":"<provider_3_id>","api_key_expires_in":"30d"}` |
+| **Expected** | 201 Created. `username: "e2e-smtp"` (lowercase), `account_type: "smtp"`, `api_key` returned (plaintext, shown once). API key auto-generated with 30-day expiration. |
 
 ---
 
@@ -238,7 +230,7 @@ Automation script: [`e2e-test.sh`](../e2e-test.sh)
 
 | Field | Value |
 |-------|-------|
-| **Precondition** | TC-010b passed (service account exists with one key). |
+| **Precondition** | TC-010 passed (service account exists with auto-generated key). |
 | **Steps** | POST `/api/v1/groups/<group_a_id>/service-accounts/<sa_id>/api-keys` with `{"label":"ci-pipeline","api_key_expires_in":"90d"}` |
 | **Expected** | 201 Created. Response includes plaintext `api_key`, `key_prefix` (first 12 chars), `label: "ci-pipeline"`, `expires_at` set 90 days from now. |
 

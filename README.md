@@ -496,7 +496,7 @@ docker compose run --rm test-client \
 # Run all Go tests (Go is only available inside Docker)
 docker run --rm -w /app \
   -v $(pwd)/server:/app \
-  golang:1.24-alpine \
+  golang:1.26-alpine \
   sh -c "go test ./... -count=1"
 ```
 
@@ -547,7 +547,7 @@ docker compose up -d --build smtp-server
 
 | Component | Technology |
 |-----------|-----------|
-| Language | Go 1.24 |
+| Language | Go 1.26 |
 | SMTP Server | go-smtp + go-sasl |
 | HTTP Router | chi v5 |
 | Database | PostgreSQL 18 (pgx v5, sqlc) |

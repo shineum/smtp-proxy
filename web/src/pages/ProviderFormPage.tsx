@@ -51,6 +51,7 @@ export default function ProviderFormPage() {
   const [smtp, setSmtp] = useState<SmtpConfig>({ host: '', port: '587', username: '', password: '', encryption: 'starttls' });
   const [msgraph, setMsgraph] = useState<MsGraphConfig>({ tenant_id: '', client_id: '', client_secret: '', user_id: '' });
   const [apiKey, setApiKey] = useState<ApiKeyConfig>({ api_key: '', secret_key: '', region: 'us-east-1', domain: '' });
+  const [defaultSender, setDefaultSender] = useState('');
 
   // Test email modal state
   const [isTestModalOpen, setIsTestModalOpen] = useState(false);
@@ -63,7 +64,7 @@ export default function ProviderFormPage() {
   } | null>(null);
 
   const isEmail = (v: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-  const hasSender = providerType === 'msgraph';
+  const hasSender = providerType === 'msgraph' || !!defaultSender;
   const isTestFormValid = (!hasSender ? isEmail(testFrom) : true) && isEmail(testTo) && !!testSubject;
 
   const testMutation = useMutation({
@@ -104,6 +105,7 @@ export default function ProviderFormPage() {
         region: (cfg.region as string) || 'us-east-1',
         domain: (cfg.domain as string) || '',
       });
+      setDefaultSender((cfg.default_sender as string) || '');
     }
   }, [existing]);
 
@@ -137,6 +139,7 @@ export default function ProviderFormPage() {
         smtpConfig = { api_key: apiKey.api_key, domain: apiKey.domain };
         break;
     }
+    if (defaultSender) smtpConfig.default_sender = defaultSender;
     return { name, provider_type: providerType, enabled, visibility, smtp_config: smtpConfig };
   };
 
@@ -332,6 +335,13 @@ export default function ProviderFormPage() {
                 <FormSelectOption value="stdout" label="Stdout" />
               </FormSelect>
             </FormGroup>
+
+            {providerType !== 'msgraph' && (
+              <FormGroup label="Default Sender (optional)" fieldId="default-sender">
+                <TextInput id="default-sender" value={defaultSender} onChange={(_e, v) => setDefaultSender(v)} placeholder="noreply@example.com"
+                  validated={defaultSender && !isEmail(defaultSender) ? 'error' : 'default'} />
+              </FormGroup>
+            )}
 
             {providerType === 'smtp' && (
               <>

@@ -178,15 +178,16 @@ func (r *ProviderResolver) cacheProvider(id uuid.UUID, p Provider) {
 
 // smtpConfigExtra holds optional fields parsed from the esp_providers.smtp_config JSONB column.
 type smtpConfigExtra struct {
-	APIKey       string `json:"api_key,omitempty"`
-	Region       string `json:"region,omitempty"`
-	Domain       string `json:"domain,omitempty"`
-	SecretKey    string `json:"secret_key,omitempty"`
-	TenantID     string `json:"tenant_id,omitempty"`
-	ClientID     string `json:"client_id,omitempty"`
-	ClientSecret string `json:"client_secret,omitempty"`
-	UserID       string `json:"user_id,omitempty"`
-	Endpoint     string `json:"endpoint,omitempty"`
+	APIKey        string `json:"api_key,omitempty"`
+	Region        string `json:"region,omitempty"`
+	Domain        string `json:"domain,omitempty"`
+	SecretKey     string `json:"secret_key,omitempty"`
+	TenantID      string `json:"tenant_id,omitempty"`
+	ClientID      string `json:"client_id,omitempty"`
+	ClientSecret  string `json:"client_secret,omitempty"`
+	UserID        string `json:"user_id,omitempty"`
+	Endpoint      string `json:"endpoint,omitempty"`
+	DefaultSender string `json:"default_sender,omitempty"`
 }
 
 // EspToConfig converts a storage.EspProvider to a provider.ProviderConfig.
@@ -220,6 +221,7 @@ func EspToConfig(esp *storage.EspProvider) (ProviderConfig, error) {
 		if extra.Endpoint != "" {
 			cfg.Endpoint = extra.Endpoint
 		}
+		cfg.DefaultSender = extra.DefaultSender
 	}
 
 	return cfg, nil

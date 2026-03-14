@@ -586,12 +586,6 @@ func TestProviderHandler(queries storage.Querier) http.HandlerFunc {
 			respondError(w, http.StatusBadRequest, "to and subject are required")
 			return
 		}
-		// Providers with a built-in sender (e.g. msgraph) don't require from
-		hasSender := esp.ProviderType == storage.ProviderTypeMsgraph
-		if req.From == "" && !hasSender {
-			respondError(w, http.StatusBadRequest, "from is required for this provider type")
-			return
-		}
 
 		// Build provider instance from DB config
 		cfg, err := provider.EspToConfig(&esp)
@@ -600,6 +594,18 @@ func TestProviderHandler(queries storage.Querier) http.HandlerFunc {
 				Success: false,
 				Error:   "failed to build provider config: " + err.Error(),
 			})
+			return
+		}
+
+		// Use default sender from provider config if From is not specified
+		sender := req.From
+		if sender == "" && cfg.DefaultSender != "" {
+			sender = cfg.DefaultSender
+		}
+		// MSGraph uses user_id as sender; others require a From address
+		hasSender := esp.ProviderType == storage.ProviderTypeMsgraph
+		if sender == "" && !hasSender {
+			respondError(w, http.StatusBadRequest, "from is required: set a default sender on the provider or specify one")
 			return
 		}
 
@@ -617,7 +623,7 @@ func TestProviderHandler(queries storage.Querier) http.HandlerFunc {
 		msg := &provider.Message{
 			ID:       uuid.New().String(),
 			TenantID: groupID.String(),
-			From:     req.From,
+			From:     sender,
 			To:       []string{req.To},
 			Subject:  req.Subject,
 			HTMLBody: req.Body,

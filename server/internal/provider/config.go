@@ -34,6 +34,9 @@ type ProviderConfig struct {
 	ClientID     string // Azure AD application client ID
 	ClientSecret string // Azure AD application client secret
 	UserID       string // Microsoft 365 user ID or UPN for sendMail
+
+	// DefaultSender is the default sender email address for this provider.
+	DefaultSender string
 }
 
 const defaultTimeout = 30 * time.Second

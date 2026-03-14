@@ -31,8 +31,10 @@
   --sidebar-icon:          #8899b4;
   --sidebar-icon-active:   #ffffff;
 
-  /* Masthead */
-  --masthead-bg:           #1b3a6b;
+  /* Layout dimensions */
+  --header-height:         56px;
+  --sidebar-width:         200px;
+  --sidebar-collapsed-width: 52px;
 
   /* Card accents */
   --card-accent-total:     #4d8ef0;
@@ -53,6 +55,20 @@
 /* ============================================================
    Global Resets & Base
    ============================================================ */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'RedHatText', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+}
+
+/* PatternFly component overrides (keep using PF components inside content) */
 .pf-v5-c-table td {
   padding-top: 12px !important;
   padding-bottom: 12px !important;
@@ -68,16 +84,12 @@
   box-shadow: var(--shadow-card-hover);
 }
 
-.pf-v5-c-page__main-section {
-  padding: 24px 32px;
-}
-
 .pf-v5-c-description-list__term {
   font-weight: 600;
 }
 
 /* ============================================================
-   Utility Classes (preserved from original)
+   Utility Classes
    ============================================================ */
 .mono {
   font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
@@ -117,7 +129,6 @@
   overflow: hidden;
 }
 
-/* Subtle grid pattern overlay */
 .login-page-wrapper::before {
   content: '';
   position: absolute;
@@ -129,7 +140,6 @@
   pointer-events: none;
 }
 
-/* Glowing orbs for depth */
 .login-page-wrapper::after {
   content: '';
   position: absolute;
@@ -154,7 +164,6 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Brand / logo area */
 .login-brand {
   text-align: center;
   margin-bottom: 32px;
@@ -209,7 +218,6 @@
   font-weight: 500;
 }
 
-/* Override PatternFly login form styles inside card */
 .login-form-wrapper .pf-v5-c-login__main-body {
   padding: 0;
 }
@@ -241,48 +249,69 @@
 }
 
 /* ============================================================
-   Masthead
+   Custom Layout: App Shell
    ============================================================ */
-.pf-v5-c-masthead {
-  --pf-v5-c-masthead--BackgroundColor: transparent !important;
-  background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%) !important;
+.app-layout {
+  display: grid;
+  grid-template-rows: var(--header-height) 1fr;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "header  header"
+    "sidebar content";
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* ============================================================
+   Header
+   ============================================================ */
+.app-header {
+  grid-area: header;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--header-height);
+  background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  position: relative;
-  z-index: 400;
+  padding: 0 16px;
+  position: sticky;
+  top: 0;
+  z-index: 300;
 }
 
-.pf-v5-c-masthead *,
-.pf-v5-c-masthead__content,
-.pf-v5-c-masthead__main,
-.pf-v5-c-masthead__toggle,
-.pf-v5-c-masthead__brand {
-  background-color: transparent !important;
-  background: transparent !important;
+.app-header__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-/* Toggle button */
-.pf-v5-c-masthead .pf-v5-c-masthead__toggle .pf-v5-c-button {
-  color: rgba(255, 255, 255, 0.8) !important;
+.app-header__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
   transition: color var(--transition-fast), background-color var(--transition-fast);
 }
 
-.pf-v5-c-masthead .pf-v5-c-masthead__toggle .pf-v5-c-button:hover {
-  color: #ffffff !important;
-  background-color: rgba(255, 255, 255, 0.1) !important;
-  border-radius: 6px;
+.app-header__toggle:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
-/* Brand */
-.masthead-brand {
+.app-header__brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  text-decoration: none;
-  color: #ffffff !important;
 }
 
-.masthead-brand-icon {
+.app-header__brand-icon {
   color: #7eb8f7;
   width: 22px;
   height: 22px;
@@ -290,15 +319,20 @@
   filter: drop-shadow(0 1px 3px rgba(126, 184, 247, 0.4));
 }
 
-.masthead-brand-text {
+.app-header__brand-text {
   font-size: 1.05rem;
   font-weight: 700;
   color: #ffffff;
   letter-spacing: -0.01em;
 }
 
-/* Toolbar dropdown toggles in masthead */
-.pf-v5-c-masthead .pf-v5-c-menu-toggle {
+.app-header__right {
+  display: flex;
+  align-items: center;
+}
+
+/* Header dropdown toggles */
+.app-header__dropdown-toggle {
   background-color: rgba(255, 255, 255, 0.08) !important;
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
   border-radius: 6px !important;
@@ -309,23 +343,23 @@
   font-weight: 500;
 }
 
-.pf-v5-c-masthead .pf-v5-c-menu-toggle:hover {
+.app-header__dropdown-toggle:hover {
   background-color: rgba(255, 255, 255, 0.15) !important;
   border-color: rgba(255, 255, 255, 0.25) !important;
 }
 
-.pf-v5-c-masthead .pf-v5-c-menu-toggle.pf-m-expanded {
+.app-header__dropdown-toggle.pf-m-expanded {
   background-color: rgba(255, 255, 255, 0.18) !important;
   border-color: rgba(255, 255, 255, 0.3) !important;
 }
 
-/* Toggle arrow icon */
-.pf-v5-c-masthead .pf-v5-c-menu-toggle__controls {
+/* Toggle arrow */
+.app-header__dropdown-toggle .pf-v5-c-menu-toggle__controls {
   color: rgba(255, 255, 255, 0.6);
 }
 
 /* User avatar circle */
-.masthead-user-avatar {
+.app-header__avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -342,7 +376,7 @@
 }
 
 /* Group icon */
-.masthead-group-icon {
+.app-header__group-icon {
   display: inline-flex;
   align-items: center;
   margin-right: 6px;
@@ -350,64 +384,81 @@
   flex-shrink: 0;
 }
 
-.masthead-group-icon svg {
+.app-header__group-icon svg {
   width: 14px;
   height: 14px;
 }
 
-/* Dropdown menu styling */
-.pf-v5-c-masthead .pf-v5-c-menu {
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  border: 1px solid var(--color-border-light);
+/* Email text */
+.app-header__email {
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
 }
 
-.pf-v5-c-masthead .pf-v5-c-menu__item:hover {
-  background-color: rgba(77, 142, 240, 0.08);
+/* Toolbar background fix inside header */
+.app-header .pf-v5-c-toolbar,
+.app-header .pf-v5-c-toolbar__content,
+.app-header .pf-v5-c-toolbar__group,
+.app-header .pf-v5-c-toolbar__item {
+  background: transparent !important;
 }
 
 /* ============================================================
    Sidebar
    ============================================================ */
-.pf-v5-c-page__sidebar {
-  background-color: var(--sidebar-bg) !important;
-  --pf-v5-c-page__sidebar--Width: 200px;
-  width: 200px !important;
+.app-sidebar {
+  grid-area: sidebar;
+  background-color: var(--sidebar-bg);
+  width: var(--sidebar-width);
   transition: width var(--transition-medium);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.pf-v5-c-nav__link {
-  color: var(--sidebar-text) !important;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
-  font-size: 0.84rem;
-  padding: 8px 14px !important;
+.app-sidebar--collapsed {
+  width: var(--sidebar-collapsed-width);
 }
 
-.pf-v5-c-nav__link:hover {
-  background-color: var(--sidebar-bg-hover) !important;
-  color: var(--sidebar-text-active) !important;
+.app-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+  flex: 1;
+  overflow-y: auto;
 }
 
-.pf-v5-c-nav__item.pf-m-current > .pf-v5-c-nav__link,
-.pf-v5-c-nav__link.pf-m-current {
-  background-color: var(--sidebar-bg-active) !important;
-  color: var(--sidebar-text-active) !important;
-  font-weight: 600;
-}
-
-.pf-v5-c-nav__link.pf-m-current::before {
-  background-color: var(--color-accent) !important;
-}
-
-/* Nav item layout with icon */
-.nav-item-content {
+/* Sidebar nav item */
+.app-sidebar__item {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--sidebar-text);
+  font-size: 0.84rem;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+  text-align: left;
+  white-space: nowrap;
 }
 
-.nav-item-icon {
+.app-sidebar__item:hover {
+  background-color: var(--sidebar-bg-hover);
+  color: var(--sidebar-text-active);
+}
+
+.app-sidebar__item--active {
+  background-color: var(--sidebar-bg-active);
+  color: var(--sidebar-text-active);
+  font-weight: 600;
+}
+
+.app-sidebar__item-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -418,58 +469,82 @@
   transition: color var(--transition-fast);
 }
 
-.pf-v5-c-nav__link:hover .nav-item-icon,
-.pf-v5-c-nav__link.pf-m-current .nav-item-icon {
-  color: var(--sidebar-icon-active);
-}
-
-.nav-item-icon svg {
+.app-sidebar__item-icon svg {
   width: 18px;
   height: 18px;
 }
 
-.nav-item-label {
+.app-sidebar__item:hover .app-sidebar__item-icon,
+.app-sidebar__item--active .app-sidebar__item-icon {
+  color: var(--sidebar-icon-active);
+}
+
+.app-sidebar__item-label {
   flex: 1;
-  white-space: nowrap;
   overflow: hidden;
-  transition: opacity var(--transition-medium);
+  text-overflow: ellipsis;
+  transition: opacity var(--transition-medium), width var(--transition-medium);
 }
 
-/* ============================================================
-   Sidebar Collapsed (Desktop icon-only mode)
-   ============================================================ */
-.sidebar-collapsed .pf-v5-c-page__sidebar {
-  --pf-v5-c-page__sidebar--Width: 52px;
-  width: 52px !important;
+/* Collapsed state: icon-only, centered */
+.app-sidebar--collapsed .app-sidebar__item {
+  justify-content: center;
+  padding: 12px 0;
+  gap: 0;
 }
 
-.sidebar-collapsed .nav-item-label {
+.app-sidebar--collapsed .app-sidebar__item-label {
   opacity: 0;
   width: 0;
   overflow: hidden;
 }
 
-.sidebar-collapsed .nav-item-content {
+/* Icon rail (tablet collapsed) is same as collapsed */
+.app-sidebar--icon-rail .app-sidebar__item {
   justify-content: center;
+  padding: 12px 0;
   gap: 0;
-  width: 100%;
 }
 
-.sidebar-collapsed .pf-v5-c-nav__link {
-  padding: 12px 0 !important;
-  display: flex !important;
-  justify-content: center !important;
-  align-items: center !important;
+.app-sidebar--icon-rail .app-sidebar__item-label {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
 }
 
-.sidebar-collapsed .nav-item-icon {
-  width: 18px;
-  height: 18px;
+/* Overlay sidebar (tablet/mobile expanded) */
+.app-sidebar--overlay {
+  position: fixed;
+  top: var(--header-height);
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  z-index: 200;
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.3);
 }
 
-.sidebar-collapsed .nav-item-icon svg {
-  width: 18px;
-  height: 18px;
+/* Backdrop for overlay */
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  top: var(--header-height);
+  background-color: rgba(0, 0, 0, 0.4);
+  z-index: 199;
+}
+
+/* ============================================================
+   Main Content
+   ============================================================ */
+.app-content {
+  grid-area: content;
+  padding: 24px 32px;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+/* Fix PageSection padding inside custom layout */
+.app-content .pf-v5-c-page__main-section {
+  padding: 0;
 }
 
 /* ============================================================
@@ -569,161 +644,65 @@
 }
 
 /* ============================================================
-   Responsive Layout
-   ============================================================ */
-
-/* Overlay dim when sidebar is expanded on tablet/mobile */
-.sidebar-overlay-active > .pf-v5-c-page__main {
-  position: relative;
-}
-
-.sidebar-overlay-active > .pf-v5-c-page__main::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-color: rgba(0, 0, 0, 0.4);
-  z-index: 1;
-  pointer-events: none;
-}
-
-/* ============================================================
-   Tablet / iPad: 768px - 1199px
-   - Default: icon-only sidebar always visible
-   - Expanded: full sidebar as overlay
+   Responsive: Tablet (768px - 1199px)
+   - Default: icon-only rail (52px)
+   - Expanded: overlay full sidebar
    ============================================================ */
 @media (max-width: 1199px) and (min-width: 768px) {
-  /* Sidebar always visible, icon-only by default */
-  .pf-v5-c-page__sidebar {
-    --pf-v5-c-page__sidebar--Width: 52px;
-    width: 52px !important;
-    transition: width var(--transition-medium);
+  .app-layout.screen-tablet {
+    grid-template-columns: var(--sidebar-collapsed-width) 1fr;
   }
 
-  /* Icon-only: hide labels, center icons */
-  .screen-tablet .nav-item-label,
-  .screen-tablet.sidebar-collapsed .nav-item-label {
-    opacity: 0;
-    width: 0;
-    overflow: hidden;
-  }
-
-  .screen-tablet .nav-item-content,
-  .screen-tablet.sidebar-collapsed .nav-item-content {
-    justify-content: center;
-    gap: 0;
-    width: 100%;
-  }
-
-  .screen-tablet .pf-v5-c-nav__link,
-  .screen-tablet.sidebar-collapsed .pf-v5-c-nav__link {
-    padding: 12px 0 !important;
-    display: flex !important;
-    justify-content: center !important;
-    align-items: center !important;
-  }
-
-  .screen-tablet .nav-item-icon,
-  .screen-tablet.sidebar-collapsed .nav-item-icon {
-    width: 18px;
-    height: 18px;
-  }
-
-  .screen-tablet .nav-item-icon svg,
-  .screen-tablet.sidebar-collapsed .nav-item-icon svg {
-    width: 18px;
-    height: 18px;
-  }
-
-  /* When expanded on tablet: full overlay sidebar BELOW masthead */
-  .screen-tablet.sidebar-overlay-active .pf-v5-c-page__sidebar {
-    --pf-v5-c-page__sidebar--Width: 220px;
-    width: 220px !important;
-    position: fixed !important;
-    top: 60px !important;
-    padding-top: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 301;
-    height: auto;
-    overflow-y: auto;
-  }
-
-  /* Expanded: show full nav items */
-  .screen-tablet.sidebar-overlay-active .nav-item-label {
-    opacity: 1;
-    width: auto;
-  }
-
-  .screen-tablet.sidebar-overlay-active .nav-item-content {
-    justify-content: flex-start;
-    gap: 10px;
-    width: auto;
-  }
-
-  .screen-tablet.sidebar-overlay-active .pf-v5-c-nav__link {
-    padding: 8px 14px !important;
-    display: flex !important;
-    justify-content: flex-start !important;
-  }
-
-  .screen-tablet.sidebar-overlay-active .nav-item-icon,
-  .screen-tablet.sidebar-overlay-active .nav-item-icon svg {
-    width: 18px;
-    height: 18px;
+  .app-layout.screen-tablet .app-sidebar {
+    width: var(--sidebar-collapsed-width);
   }
 
   /* Compact toolbar dropdowns */
-  .pf-v5-c-masthead .pf-v5-c-menu-toggle {
+  .app-header__dropdown-toggle {
     max-width: 160px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* Reduce page section padding */
-  .pf-v5-c-page__main-section {
+  .app-content {
     padding: 16px 20px;
   }
 }
 
 /* ============================================================
-   Mobile: < 768px
+   Responsive: Mobile (< 768px)
    - Sidebar hidden by default
-   - Hamburger opens full overlay
+   - Overlay when open
    ============================================================ */
 @media (max-width: 767px) {
-  /* Hide brand text on mobile, show only icon */
-  .masthead-brand-text {
+  .app-layout.screen-mobile {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "content";
+  }
+
+  /* Hide brand text on mobile */
+  .app-header__brand-text {
     display: none;
   }
 
-  /* Sidebar overlay when expanded */
-  .pf-v5-c-page__sidebar {
-    position: fixed !important;
-    top: 0 !important;
-    padding-top: 60px;
-    bottom: 0;
-    left: 0;
-    width: 220px !important;
-    z-index: 301;
-    height: 100vh;
-    overflow-y: auto;
+  .app-header__email {
+    max-width: 100px;
   }
 
-  /* Truncate long email in user menu toggle */
-  .pf-v5-c-masthead .pf-v5-c-menu-toggle {
+  .app-header__dropdown-toggle {
     max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* Reduce page section padding on mobile */
-  .pf-v5-c-page__main-section {
+  .app-content {
     padding: 12px 16px;
   }
 
-  /* Stack page header on mobile */
   .page-header {
     flex-direction: column;
     align-items: flex-start;
@@ -734,5 +713,10 @@
   .stat-cards-grid > .stat-card {
     flex: 1 1 calc(50% - 8px);
     min-width: 140px;
+  }
+
+  /* Overlay sidebar on mobile */
+  .app-sidebar--overlay {
+    width: 220px;
   }
 }

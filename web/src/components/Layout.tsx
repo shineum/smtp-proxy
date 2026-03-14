@@ -1,12 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
-  Page, Masthead, MastheadMain, MastheadBrand, MastheadContent, MastheadToggle,
-  PageSidebar, PageSidebarBody,
-  Nav, NavItem, NavList,
   Toolbar, ToolbarContent, ToolbarItem, ToolbarGroup,
   Dropdown, DropdownItem, DropdownList, MenuToggle,
-  PageToggleButton,
+  Tooltip,
 } from '@patternfly/react-core';
 import {
   BarsIcon,
@@ -40,57 +37,40 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [screenSize, setScreenSize] = useState<ScreenSize>(getScreenSize);
-  const [isExpanded, setIsExpanded] = useState(() => getScreenSize() === 'desktop');
+  const [sidebarExpanded, setSidebarExpanded] = useState(() => getScreenSize() === 'desktop');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGroupMenuOpen, setIsGroupMenuOpen] = useState(false);
 
-  // Track screen size changes
   useEffect(() => {
     const handleResize = () => {
-      const newSize = getScreenSize();
-      setScreenSize(newSize);
-      // Auto-expand on desktop, auto-collapse on resize to smaller
-      if (newSize === 'desktop') {
-        setIsExpanded(true);
-      } else {
-        setIsExpanded(false);
-      }
+      const size = getScreenSize();
+      setScreenSize(size);
+      setSidebarExpanded(size === 'desktop');
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Close expanded sidebar when clicking outside (tablet/mobile)
+  // Close sidebar on outside click (tablet/mobile overlay)
   useEffect(() => {
-    if (!isExpanded || screenSize === 'desktop') return;
-
-    const handleClickOutside = (e: MouseEvent) => {
+    if (screenSize === 'desktop' || !sidebarExpanded) return;
+    const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest('.pf-v5-c-page__sidebar')) return;
-      if (target.closest('.pf-v5-c-masthead__toggle')) return;
-      setIsExpanded(false);
+      if (target.closest('.app-sidebar') || target.closest('.app-header__toggle')) return;
+      setSidebarExpanded(false);
     };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isExpanded, screenSize]);
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [sidebarExpanded, screenSize]);
 
   const handleToggle = useCallback(() => {
-    if (screenSize === 'mobile') {
-      // Mobile: toggle visibility (hidden <-> expanded overlay)
-      setIsExpanded(prev => !prev);
-    } else {
-      // Desktop & Tablet: toggle expanded <-> collapsed (icon-only)
-      setIsExpanded(prev => !prev);
-    }
-  }, [screenSize]);
+    setSidebarExpanded(prev => !prev);
+  }, []);
 
-  const handleNavItemClick = useCallback((path: string) => {
+  const handleNavClick = useCallback((path: string) => {
     navigate(path);
-    // On tablet: collapse back to icon-only after nav
-    // On mobile: hide sidebar after nav
     if (screenSize !== 'desktop') {
-      setIsExpanded(false);
+      setSidebarExpanded(false);
     }
   }, [navigate, screenSize]);
 
@@ -115,138 +95,154 @@ export default function Layout() {
     navigate('/');
   };
 
-  // Sidebar is always visible on desktop/tablet, only hidden on mobile when not expanded
-  const isSidebarVisible = screenSize !== 'mobile' || isExpanded;
+  // Sidebar state classes
+  const isCollapsed = !sidebarExpanded;
+  const isOverlay = sidebarExpanded && screenSize !== 'desktop';
+  // Mobile: sidebar hidden unless expanded
+  const isMobileHidden = screenSize === 'mobile' && !sidebarExpanded;
+  // Tablet: always show icon rail (collapsed), overlay when expanded
+  const showIconRail = screenSize === 'tablet' && !sidebarExpanded;
 
-  const masthead = (
-    <Masthead>
-      <MastheadToggle>
-        <PageToggleButton
-          variant="plain"
-          aria-label="Global navigation"
-          isSidebarOpen={isExpanded}
-          onSidebarToggle={handleToggle}
-        >
-          <BarsIcon />
-        </PageToggleButton>
-      </MastheadToggle>
-      <MastheadMain>
-        <MastheadBrand data-codemods className="masthead-brand">
-          <EnvelopeIcon className="masthead-brand-icon" />
-          <span className="masthead-brand-text">SMTP Proxy</span>
-        </MastheadBrand>
-      </MastheadMain>
-      <MastheadContent>
-        <Toolbar isFullHeight>
-          <ToolbarContent>
-            <ToolbarGroup align={{ default: 'alignRight' }}>
-              {me && me.memberships.length > 1 && (
+  const sidebarVisible = !isMobileHidden;
+
+  return (
+    <div className={[
+      'app-layout',
+      sidebarExpanded ? 'sidebar-expanded' : 'sidebar-collapsed',
+      `screen-${screenSize}`,
+    ].join(' ')}>
+
+      {/* Header */}
+      <header className="app-header">
+        <div className="app-header__left">
+          <button
+            className="app-header__toggle"
+            onClick={handleToggle}
+            aria-label="Toggle navigation"
+          >
+            <BarsIcon />
+          </button>
+          <div className="app-header__brand">
+            <EnvelopeIcon className="app-header__brand-icon" />
+            <span className="app-header__brand-text">SMTP Proxy</span>
+          </div>
+        </div>
+        <div className="app-header__right">
+          <Toolbar isFullHeight>
+            <ToolbarContent>
+              <ToolbarGroup align={{ default: 'alignRight' }}>
+                {me && me.memberships.length > 1 && (
+                  <ToolbarItem>
+                    <Dropdown
+                      isOpen={isGroupMenuOpen}
+                      onOpenChange={setIsGroupMenuOpen}
+                      toggle={(toggleRef) => (
+                        <MenuToggle
+                          ref={toggleRef}
+                          onClick={() => setIsGroupMenuOpen(!isGroupMenuOpen)}
+                          isExpanded={isGroupMenuOpen}
+                          className="app-header__dropdown-toggle"
+                        >
+                          <span className="app-header__group-icon"><UsersIcon /></span>
+                          {currentGroup?.group_name || 'Select Group'}
+                        </MenuToggle>
+                      )}
+                    >
+                      <DropdownList>
+                        {me.memberships.map((m) => (
+                          <DropdownItem
+                            key={m.group_id}
+                            onClick={() => handleGroupSwitch(m.group_id)}
+                            isDisabled={m.group_id === me.current_group.group_id}
+                          >
+                            {m.group_name} ({m.role})
+                          </DropdownItem>
+                        ))}
+                      </DropdownList>
+                    </Dropdown>
+                  </ToolbarItem>
+                )}
                 <ToolbarItem>
                   <Dropdown
-                    isOpen={isGroupMenuOpen}
-                    onOpenChange={setIsGroupMenuOpen}
+                    isOpen={isUserMenuOpen}
+                    onOpenChange={setIsUserMenuOpen}
                     toggle={(toggleRef) => (
                       <MenuToggle
                         ref={toggleRef}
-                        onClick={() => setIsGroupMenuOpen(!isGroupMenuOpen)}
-                        isExpanded={isGroupMenuOpen}
+                        onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                        isExpanded={isUserMenuOpen}
+                        className="app-header__dropdown-toggle"
                       >
-                        <span className="masthead-group-icon"><UsersIcon /></span>
-                        {currentGroup?.group_name || 'Select Group'}
+                        <span className="app-header__avatar">
+                          {(me?.user.email || 'U').charAt(0)}
+                        </span>
+                        <span className="app-header__email">{me?.user.email || 'User'}</span>
                       </MenuToggle>
                     )}
                   >
                     <DropdownList>
-                      {me.memberships.map((m) => (
-                        <DropdownItem
-                          key={m.group_id}
-                          onClick={() => handleGroupSwitch(m.group_id)}
-                          isDisabled={m.group_id === me.current_group.group_id}
-                        >
-                          {m.group_name} ({m.role})
-                        </DropdownItem>
-                      ))}
+                      <DropdownItem onClick={() => { setIsUserMenuOpen(false); navigate('/settings'); }}>
+                        Settings
+                      </DropdownItem>
+                      <DropdownItem onClick={() => { setIsUserMenuOpen(false); logout(); navigate('/login'); }}>
+                        Logout
+                      </DropdownItem>
                     </DropdownList>
                   </Dropdown>
                 </ToolbarItem>
-              )}
-              <ToolbarItem>
-                <Dropdown
-                  isOpen={isUserMenuOpen}
-                  onOpenChange={setIsUserMenuOpen}
-                  toggle={(toggleRef) => (
-                    <MenuToggle
-                      ref={toggleRef}
-                      onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                      isExpanded={isUserMenuOpen}
-                    >
-                      <span className="masthead-user-avatar">
-                        {(me?.user.email || 'U').charAt(0)}
-                      </span>
-                      {me?.user.email || 'User'}
-                    </MenuToggle>
-                  )}
+              </ToolbarGroup>
+            </ToolbarContent>
+          </Toolbar>
+        </div>
+      </header>
+
+      {/* Backdrop */}
+      {isOverlay && (
+        <div className="app-backdrop" onClick={() => setSidebarExpanded(false)} />
+      )}
+
+      {/* Sidebar */}
+      {sidebarVisible && (
+        <aside className={[
+          'app-sidebar',
+          isCollapsed ? 'app-sidebar--collapsed' : 'app-sidebar--expanded',
+          isOverlay ? 'app-sidebar--overlay' : '',
+          showIconRail ? 'app-sidebar--icon-rail' : '',
+        ].filter(Boolean).join(' ')}>
+          <nav className="app-sidebar__nav">
+            {navItems.map((item) => {
+              const isActive = item.path === '/'
+                ? location.pathname === '/'
+                : location.pathname.startsWith(item.path);
+              const navLink = (
+                <button
+                  key={item.path}
+                  className={`app-sidebar__item ${isActive ? 'app-sidebar__item--active' : ''}`}
+                  onClick={() => handleNavClick(item.path)}
                 >
-                  <DropdownList>
-                    <DropdownItem onClick={() => { setIsUserMenuOpen(false); navigate('/settings'); }}>
-                      Settings
-                    </DropdownItem>
-                    <DropdownItem onClick={() => { setIsUserMenuOpen(false); logout(); navigate('/login'); }}>
-                      Logout
-                    </DropdownItem>
-                  </DropdownList>
-                </Dropdown>
-              </ToolbarItem>
-            </ToolbarGroup>
-          </ToolbarContent>
-        </Toolbar>
-      </MastheadContent>
-    </Masthead>
-  );
+                  <span className="app-sidebar__item-icon">{item.icon}</span>
+                  <span className="app-sidebar__item-label">{item.label}</span>
+                </button>
+              );
 
-  const sidebar = (
-    <PageSidebar isSidebarOpen={isSidebarVisible}>
-      <PageSidebarBody>
-        <Nav>
-          <NavList>
-            {navItems.map((item) => (
-              <NavItem
-                key={item.path}
-                isActive={
-                  item.path === '/'
-                    ? location.pathname === '/'
-                    : location.pathname.startsWith(item.path)
-                }
-                onClick={() => handleNavItemClick(item.path)}
-              >
-                <span className="nav-item-content">
-                  <span className="nav-item-icon">{item.icon}</span>
-                  <span className="nav-item-label">{item.label}</span>
-                </span>
-              </NavItem>
-            ))}
-          </NavList>
-        </Nav>
-      </PageSidebarBody>
-    </PageSidebar>
-  );
+              // Show tooltip on icon-only modes
+              if (isCollapsed || showIconRail) {
+                return (
+                  <Tooltip key={item.path} content={item.label} position="right">
+                    {navLink}
+                  </Tooltip>
+                );
+              }
+              return navLink;
+            })}
+          </nav>
+        </aside>
+      )}
 
-  // Build page CSS classes
-  const isOverlay = isExpanded && screenSize !== 'desktop';
-  const isCollapsed = !isExpanded && screenSize !== 'mobile';
-  const pageClasses = [
-    isOverlay ? 'sidebar-overlay-active' : '',
-    isCollapsed ? 'sidebar-collapsed' : '',
-    `screen-${screenSize}`,
-  ].filter(Boolean).join(' ');
-
-  return (
-    <Page
-      header={masthead}
-      sidebar={sidebar}
-      className={pageClasses}
-    >
-      <Outlet />
-    </Page>
+      {/* Main content */}
+      <main className="app-content">
+        <Outlet />
+      </main>
+    </div>
   );
 }

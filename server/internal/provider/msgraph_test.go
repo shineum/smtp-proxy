@@ -1,8 +1,11 @@
 package provider
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -259,5 +262,327 @@ func TestMSGraph_buildPayload_JSONMarshal(t *testing.T) {
 	}
 	if decoded.Message.Body.ContentType != "HTML" {
 		t.Errorf("expected HTML content type, got %s", decoded.Message.Body.ContentType)
+	}
+}
+
+// graphMockClient routes requests: token endpoint returns a token, Graph API returns configured response.
+func newGraphMockClient(sendStatus int, sendBody string) *mockHTTPClient2 {
+	return &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			// Token request (Azure AD)
+			if strings.Contains(req.URL, "login.microsoftonline.com") {
+				return &HTTPResponse{
+					StatusCode: 200,
+					Body:       []byte(`{"access_token":"mock-token","expires_in":3600}`),
+				}, nil
+			}
+			// Graph API request
+			return &HTTPResponse{
+				StatusCode: sendStatus,
+				Body:       []byte(sendBody),
+			}, nil
+		},
+	}
+}
+
+func TestMSGraph_Send_Success(t *testing.T) {
+	client := newGraphMockClient(202, ``)
+
+	mg := NewMSGraph(ProviderConfig{
+		Type:         "msgraph",
+		TenantID:     "test-tenant",
+		ClientID:     "test-client",
+		ClientSecret: "test-value",
+		UserID:       "user@example.com",
+	}, client)
+
+	result, err := mg.Send(context.Background(), &Message{
+		ID:       "msg-123",
+		From:     "sender@example.com",
+		To:       []string{"r@example.com"},
+		Subject:  "Test",
+		TextBody: "Hello",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != StatusSent {
+		t.Errorf("expected status sent, got %q", result.Status)
+	}
+	if result.ProviderMessageID != "msg-123" {
+		t.Errorf("expected message ID 'msg-123', got %q", result.ProviderMessageID)
+	}
+	if result.Metadata["provider"] != "msgraph" {
+		t.Errorf("expected provider metadata 'msgraph', got %q", result.Metadata["provider"])
+	}
+}
+
+func TestMSGraph_Send_CorrectURL(t *testing.T) {
+	var capturedURL string
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			if strings.Contains(req.URL, "login.microsoftonline.com") {
+				return &HTTPResponse{
+					StatusCode: 200,
+					Body:       []byte(`{"access_token":"tok","expires_in":3600}`),
+				}, nil
+			}
+			capturedURL = req.URL
+			return &HTTPResponse{StatusCode: 202, Body: []byte(``)}, nil
+		},
+	}
+
+	mg := NewMSGraph(ProviderConfig{
+		Type: "msgraph", TenantID: "t", ClientID: "c",
+		ClientSecret: "s", UserID: "user@contoso.com",
+	}, client)
+
+	_, _ = mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+
+	expected := "https://graph.microsoft.com/v1.0/users/user@contoso.com/sendMail"
+	if capturedURL != expected {
+		t.Errorf("expected URL %q, got %q", expected, capturedURL)
+	}
+}
+
+func TestMSGraph_Send_BearerToken(t *testing.T) {
+	var capturedAuth string
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			if strings.Contains(req.URL, "login.microsoftonline.com") {
+				return &HTTPResponse{
+					StatusCode: 200,
+					Body:       []byte(`{"access_token":"my-access-token","expires_in":3600}`),
+				}, nil
+			}
+			capturedAuth = req.Headers["Authorization"]
+			return &HTTPResponse{StatusCode: 202, Body: []byte(``)}, nil
+		},
+	}
+
+	mg := NewMSGraph(ProviderConfig{
+		Type: "msgraph", TenantID: "t", ClientID: "c",
+		ClientSecret: "s", UserID: "u@example.com",
+	}, client)
+
+	_, _ = mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+
+	if capturedAuth != "Bearer my-access-token" {
+		t.Errorf("expected 'Bearer my-access-token', got %q", capturedAuth)
+	}
+}
+
+func TestMSGraph_Send_HTTPError(t *testing.T) {
+	client := newGraphMockClient(400, `{"error":{"message":"bad request"}}`)
+
+	mg := NewMSGraph(ProviderConfig{
+		Type: "msgraph", TenantID: "t", ClientID: "c",
+		ClientSecret: "s", UserID: "u@example.com",
+	}, client)
+
+	_, err := mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+	if err == nil {
+		t.Fatal("expected error for 400 response")
+	}
+}
+
+func TestMSGraph_Send_401RetryWithTokenRefresh(t *testing.T) {
+	callCount := 0
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			if strings.Contains(req.URL, "login.microsoftonline.com") {
+				return &HTTPResponse{
+					StatusCode: 200,
+					Body:       []byte(`{"access_token":"fresh-token","expires_in":3600}`),
+				}, nil
+			}
+			callCount++
+			if callCount == 1 {
+				// First attempt: 401 (expired token)
+				return &HTTPResponse{StatusCode: 401, Body: []byte(`{"error":"InvalidAuthenticationToken"}`)}, nil
+			}
+			// Retry after token refresh: success
+			return &HTTPResponse{StatusCode: 202, Body: []byte(``)}, nil
+		},
+	}
+
+	mg := NewMSGraph(ProviderConfig{
+		Type: "msgraph", TenantID: "t", ClientID: "c",
+		ClientSecret: "s", UserID: "u@example.com",
+	}, client)
+
+	result, err := mg.Send(context.Background(), &Message{
+		ID: "retry-msg", From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+	if err != nil {
+		t.Fatalf("expected retry to succeed, got error: %v", err)
+	}
+	if result.Status != StatusSent {
+		t.Errorf("expected sent, got %q", result.Status)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 send attempts (1 fail + 1 retry), got %d", callCount)
+	}
+}
+
+func TestMSGraph_Send_NetworkError(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			if strings.Contains(req.URL, "login.microsoftonline.com") {
+				return &HTTPResponse{
+					StatusCode: 200,
+					Body:       []byte(`{"access_token":"tok","expires_in":3600}`),
+				}, nil
+			}
+			return nil, fmt.Errorf("connection reset")
+		},
+	}
+
+	mg := NewMSGraph(ProviderConfig{
+		Type: "msgraph", TenantID: "t", ClientID: "c",
+		ClientSecret: "s", UserID: "u@example.com",
+	}, client)
+
+	_, err := mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+	if err == nil {
+		t.Fatal("expected error for network failure")
+	}
+	if !strings.Contains(err.Error(), "connection reset") {
+		t.Errorf("expected network error, got %v", err)
+	}
+}
+
+func TestMSGraph_Send_TokenAcquireError(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			if strings.Contains(req.URL, "login.microsoftonline.com") {
+				return &HTTPResponse{
+					StatusCode: 400,
+					Body:       []byte(`{"error":"invalid_client"}`),
+				}, nil
+			}
+			return &HTTPResponse{StatusCode: 202, Body: []byte(``)}, nil
+		},
+	}
+
+	mg := NewMSGraph(ProviderConfig{
+		Type: "msgraph", TenantID: "t", ClientID: "bad-client",
+		ClientSecret: "s", UserID: "u@example.com",
+	}, client)
+
+	_, err := mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+	if err == nil {
+		t.Fatal("expected error when token acquisition fails")
+	}
+	if !strings.Contains(err.Error(), "token") {
+		t.Errorf("expected token-related error, got %v", err)
+	}
+}
+
+func TestMSGraph_HealthCheck_Success(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			if strings.Contains(req.URL, "login.microsoftonline.com") {
+				return &HTTPResponse{
+					StatusCode: 200,
+					Body:       []byte(`{"access_token":"tok","expires_in":3600}`),
+				}, nil
+			}
+			if !strings.Contains(req.URL, "/v1.0/users/u@example.com") {
+				t.Errorf("expected user endpoint, got %s", req.URL)
+			}
+			return &HTTPResponse{StatusCode: 200, Body: []byte(`{}`)}, nil
+		},
+	}
+
+	mg := NewMSGraph(ProviderConfig{
+		Type: "msgraph", TenantID: "t", ClientID: "c",
+		ClientSecret: "s", UserID: "u@example.com",
+	}, client)
+
+	if err := mg.HealthCheck(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMSGraph_HealthCheck_Failure(t *testing.T) {
+	client := newGraphMockClient(403, `{"error":"Access Denied"}`)
+	// Override: make healthcheck return 403 but token endpoint return OK
+	client.doFn = func(req *HTTPRequest) (*HTTPResponse, error) {
+		if strings.Contains(req.URL, "login.microsoftonline.com") {
+			return &HTTPResponse{
+				StatusCode: 200,
+				Body:       []byte(`{"access_token":"tok","expires_in":3600}`),
+			}, nil
+		}
+		return &HTTPResponse{StatusCode: 403, Body: []byte(`{}`)}, nil
+	}
+
+	mg := NewMSGraph(ProviderConfig{
+		Type: "msgraph", TenantID: "t", ClientID: "c",
+		ClientSecret: "s", UserID: "u@example.com",
+	}, client)
+
+	err := mg.HealthCheck(context.Background())
+	if err == nil {
+		t.Fatal("expected error for 403 response")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("expected 403 in error, got %v", err)
+	}
+}
+
+func TestMSGraph_GetName(t *testing.T) {
+	mg := &MSGraph{}
+	if mg.GetName() != "msgraph" {
+		t.Errorf("expected 'msgraph', got %q", mg.GetName())
+	}
+}
+
+func TestMSGraph_CustomEndpoint(t *testing.T) {
+	var capturedURL string
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			if strings.Contains(req.URL, "login.microsoftonline.com") {
+				return &HTTPResponse{
+					StatusCode: 200,
+					Body:       []byte(`{"access_token":"tok","expires_in":3600}`),
+				}, nil
+			}
+			capturedURL = req.URL
+			return &HTTPResponse{StatusCode: 202, Body: []byte(``)}, nil
+		},
+	}
+
+	mg := NewMSGraph(ProviderConfig{
+		Type: "msgraph", TenantID: "t", ClientID: "c",
+		ClientSecret: "s", UserID: "u@example.com",
+		Endpoint: "https://graph.microsoft.us",
+	}, client)
+
+	_, _ = mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+
+	expected := "https://graph.microsoft.us/v1.0/users/u@example.com/sendMail"
+	if capturedURL != expected {
+		t.Errorf("expected URL %q, got %q", expected, capturedURL)
 	}
 }

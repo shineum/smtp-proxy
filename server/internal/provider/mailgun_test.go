@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -224,4 +226,198 @@ type mockHTTPClient2 struct {
 
 func (m *mockHTTPClient2) Do(req *HTTPRequest) (*HTTPResponse, error) {
 	return m.doFn(req)
+}
+
+func TestMailgun_Send_Success(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			return &HTTPResponse{
+				StatusCode: 200,
+				Body:       []byte(`{"id":"<msg-id@mg>","message":"Queued. Thank you."}`),
+			}, nil
+		},
+	}
+
+	mg := NewMailgun(ProviderConfig{
+		Type: "mailgun", APIKey: "key-test", Domain: "mg.example.com",
+	}, client)
+
+	result, err := mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "Hello",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ProviderMessageID != "<msg-id@mg>" {
+		t.Errorf("expected message ID '<msg-id@mg>', got %q", result.ProviderMessageID)
+	}
+	if result.Status != StatusSent {
+		t.Errorf("expected status sent, got %q", result.Status)
+	}
+	if result.Metadata["message"] != "Queued. Thank you." {
+		t.Errorf("expected metadata message, got %q", result.Metadata["message"])
+	}
+}
+
+func TestMailgun_Send_BasicAuth(t *testing.T) {
+	var capturedAuth string
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			capturedAuth = req.Headers["Authorization"]
+			return &HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"<id>","message":"Queued"}`)}, nil
+		},
+	}
+
+	mg := NewMailgun(ProviderConfig{
+		Type: "mailgun", APIKey: "key-abc123", Domain: "mg.example.com",
+	}, client)
+
+	_, _ = mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+
+	expectedAuth := "Basic " + basicAuth("api", "key-abc123")
+	if capturedAuth != expectedAuth {
+		t.Errorf("expected %q, got %q", expectedAuth, capturedAuth)
+	}
+}
+
+func TestMailgun_Send_CorrectURL(t *testing.T) {
+	var capturedURL string
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			capturedURL = req.URL
+			return &HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"<id>","message":"Queued"}`)}, nil
+		},
+	}
+
+	mg := NewMailgun(ProviderConfig{
+		Type: "mailgun", APIKey: "key", Domain: "mg.example.com",
+	}, client)
+
+	_, _ = mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+
+	expected := "https://api.mailgun.net/v3/mg.example.com/messages"
+	if capturedURL != expected {
+		t.Errorf("expected URL %q, got %q", expected, capturedURL)
+	}
+}
+
+func TestMailgun_Send_HTTPError(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			return &HTTPResponse{
+				StatusCode: 401,
+				Body:       []byte(`{"message":"Forbidden"}`),
+			}, nil
+		},
+	}
+
+	mg := NewMailgun(ProviderConfig{
+		Type: "mailgun", APIKey: "bad-key", Domain: "mg.example.com",
+	}, client)
+
+	_, err := mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+	var pe *ProviderError
+	if !isProviderError(err, &pe) {
+		t.Fatalf("expected ProviderError, got %T", err)
+	}
+}
+
+func TestMailgun_Send_NetworkError(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			return nil, fmt.Errorf("dns resolution failed")
+		},
+	}
+
+	mg := NewMailgun(ProviderConfig{
+		Type: "mailgun", APIKey: "key", Domain: "mg.example.com",
+	}, client)
+
+	_, err := mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+	if err == nil {
+		t.Fatal("expected error for network failure")
+	}
+	if !strings.Contains(err.Error(), "dns resolution failed") {
+		t.Errorf("expected dns error, got %v", err)
+	}
+}
+
+func TestMailgun_HealthCheck_Success(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			if !strings.Contains(req.URL, "/v3/domains/mg.example.com") {
+				t.Errorf("expected domains URL, got %s", req.URL)
+			}
+			return &HTTPResponse{StatusCode: 200, Body: []byte(`{}`)}, nil
+		},
+	}
+
+	mg := NewMailgun(ProviderConfig{
+		Type: "mailgun", APIKey: "key", Domain: "mg.example.com",
+	}, client)
+
+	if err := mg.HealthCheck(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestMailgun_HealthCheck_Failure(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			return &HTTPResponse{StatusCode: 404, Body: []byte(`{}`)}, nil
+		},
+	}
+
+	mg := NewMailgun(ProviderConfig{
+		Type: "mailgun", APIKey: "key", Domain: "bad-domain.com",
+	}, client)
+
+	err := mg.HealthCheck(context.Background())
+	if err == nil {
+		t.Fatal("expected error for 404 response")
+	}
+	if !strings.Contains(err.Error(), "404") {
+		t.Errorf("expected 404 in error, got %v", err)
+	}
+}
+
+func TestMailgun_CustomEndpoint(t *testing.T) {
+	var capturedURL string
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			capturedURL = req.URL
+			return &HTTPResponse{StatusCode: 200, Body: []byte(`{"id":"<id>","message":"Queued"}`)}, nil
+		},
+	}
+
+	mg := NewMailgun(ProviderConfig{
+		Type: "mailgun", APIKey: "key", Domain: "mg.example.com",
+		Endpoint: "https://api.eu.mailgun.net",
+	}, client)
+
+	_, _ = mg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+
+	expected := "https://api.eu.mailgun.net/v3/mg.example.com/messages"
+	if capturedURL != expected {
+		t.Errorf("expected URL %q, got %q", expected, capturedURL)
+	}
 }

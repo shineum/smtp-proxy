@@ -1,8 +1,11 @@
 package provider
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -165,5 +168,208 @@ func TestSendGrid_buildPayload_JSONMarshal(t *testing.T) {
 	}
 	if len(decoded.Attachments) != 1 {
 		t.Errorf("expected 1 attachment after round-trip, got %d", len(decoded.Attachments))
+	}
+}
+
+func TestSendGrid_Send_Success(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			return &HTTPResponse{
+				StatusCode: 202,
+				Headers:    map[string]string{"X-Message-Id": "sg-msg-001"},
+				Body:       []byte(``),
+			}, nil
+		},
+	}
+
+	sg := NewSendGrid(ProviderConfig{
+		Type:   "sendgrid",
+		APIKey: "test-key",
+	}, client)
+
+	result, err := sg.Send(context.Background(), &Message{
+		From:     "sender@example.com",
+		To:       []string{"recipient@example.com"},
+		Subject:  "Test",
+		TextBody: "Hello",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ProviderMessageID != "sg-msg-001" {
+		t.Errorf("expected message ID 'sg-msg-001', got %q", result.ProviderMessageID)
+	}
+	if result.Status != StatusSent {
+		t.Errorf("expected status sent, got %q", result.Status)
+	}
+}
+
+func TestSendGrid_Send_AuthHeader(t *testing.T) {
+	var capturedAuth string
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			capturedAuth = req.Headers["Authorization"]
+			return &HTTPResponse{StatusCode: 202, Body: []byte(``)}, nil
+		},
+	}
+
+	sg := NewSendGrid(ProviderConfig{
+		Type:   "sendgrid",
+		APIKey: "SG.test-token",
+	}, client)
+
+	_, err := sg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedAuth != "Bearer SG.test-token" {
+		t.Errorf("expected 'Bearer SG.test-token', got %q", capturedAuth)
+	}
+}
+
+func TestSendGrid_Send_HTTPError(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			return &HTTPResponse{
+				StatusCode: 401,
+				Body:       []byte(`{"errors":[{"message":"invalid api key"}]}`),
+			}, nil
+		},
+	}
+
+	sg := NewSendGrid(ProviderConfig{Type: "sendgrid", APIKey: "bad-key"}, client)
+
+	_, err := sg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+	var pe *ProviderError
+	if !isProviderError(err, &pe) {
+		t.Fatalf("expected ProviderError, got %T", err)
+	}
+	if pe.StatusCode != 401 {
+		t.Errorf("expected status 401, got %d", pe.StatusCode)
+	}
+}
+
+func TestSendGrid_Send_NetworkError(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			return nil, fmt.Errorf("connection refused")
+		},
+	}
+
+	sg := NewSendGrid(ProviderConfig{Type: "sendgrid", APIKey: "key"}, client)
+
+	_, err := sg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+	if err == nil {
+		t.Fatal("expected error for network failure")
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("expected network error, got %v", err)
+	}
+}
+
+func TestSendGrid_Send_WithCCAndBCC(t *testing.T) {
+	var capturedBody []byte
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			capturedBody = req.Body
+			return &HTTPResponse{StatusCode: 202, Body: []byte(``)}, nil
+		},
+	}
+
+	sg := NewSendGrid(ProviderConfig{Type: "sendgrid", APIKey: "key"}, client)
+
+	_, err := sg.Send(context.Background(), &Message{
+		From:     "s@example.com",
+		To:       []string{"to@example.com"},
+		CC:       []string{"cc@example.com"},
+		BCC:      []string{"bcc@example.com"},
+		Subject:  "Test",
+		TextBody: "body",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var payload sendgridPayload
+	if err := json.Unmarshal(capturedBody, &payload); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(payload.Personalizations[0].Cc) != 1 || payload.Personalizations[0].Cc[0].Email != "cc@example.com" {
+		t.Errorf("expected CC cc@example.com, got %+v", payload.Personalizations[0].Cc)
+	}
+	if len(payload.Personalizations[0].Bcc) != 1 || payload.Personalizations[0].Bcc[0].Email != "bcc@example.com" {
+		t.Errorf("expected BCC bcc@example.com, got %+v", payload.Personalizations[0].Bcc)
+	}
+}
+
+func TestSendGrid_HealthCheck_Success(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			if !strings.HasSuffix(req.URL, "/v3/scopes") {
+				t.Errorf("expected scopes URL, got %s", req.URL)
+			}
+			return &HTTPResponse{StatusCode: 200, Body: []byte(`{"scopes":["mail.send"]}`)}, nil
+		},
+	}
+
+	sg := NewSendGrid(ProviderConfig{Type: "sendgrid", APIKey: "key"}, client)
+
+	if err := sg.HealthCheck(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSendGrid_HealthCheck_Failure(t *testing.T) {
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			return &HTTPResponse{StatusCode: 403, Body: []byte(`{}`)}, nil
+		},
+	}
+
+	sg := NewSendGrid(ProviderConfig{Type: "sendgrid", APIKey: "bad-key"}, client)
+
+	err := sg.HealthCheck(context.Background())
+	if err == nil {
+		t.Fatal("expected error for 403 response")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("expected 403 in error, got %v", err)
+	}
+}
+
+func TestSendGrid_CustomEndpoint(t *testing.T) {
+	var capturedURL string
+	client := &mockHTTPClient2{
+		doFn: func(req *HTTPRequest) (*HTTPResponse, error) {
+			capturedURL = req.URL
+			return &HTTPResponse{StatusCode: 202, Body: []byte(``)}, nil
+		},
+	}
+
+	sg := NewSendGrid(ProviderConfig{
+		Type:     "sendgrid",
+		APIKey:   "key",
+		Endpoint: "https://custom.sendgrid.example.com",
+	}, client)
+
+	_, _ = sg.Send(context.Background(), &Message{
+		From: "s@example.com", To: []string{"r@example.com"},
+		Subject: "Test", TextBody: "body",
+	})
+
+	if capturedURL != "https://custom.sendgrid.example.com/v3/mail/send" {
+		t.Errorf("expected custom endpoint URL, got %s", capturedURL)
 	}
 }

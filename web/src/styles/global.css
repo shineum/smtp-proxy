@@ -429,14 +429,14 @@
 
 /* Tablet / iPad: 768px - 1199px */
 @media (max-width: 1199px) {
-  /* Make sidebar position fixed so it overlays content */
+  /* Make sidebar position fixed so it overlays content, below masthead */
   .pf-v5-c-page__sidebar {
     position: fixed !important;
-    top: 0;
+    top: var(--pf-v5-c-page__header--MinHeight, 4rem);
     bottom: 0;
     left: 0;
     z-index: 301;
-    height: 100vh;
+    height: auto;
     overflow-y: auto;
   }
 
@@ -461,15 +461,15 @@
     display: none;
   }
 
-  /* Sidebar full-width overlay on mobile */
+  /* Sidebar full-width overlay on mobile, below masthead */
   .pf-v5-c-page__sidebar {
     position: fixed !important;
-    top: 0;
+    top: var(--pf-v5-c-page__header--MinHeight, 4rem);
     bottom: 0;
     left: 0;
     width: 260px !important;
     z-index: 301;
-    height: 100vh;
+    height: auto;
     overflow-y: auto;
   }
 

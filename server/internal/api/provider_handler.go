@@ -1,14 +1,17 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
+	"github.com/sungwon/smtp-proxy/server/internal/provider"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 )
 
@@ -516,6 +519,126 @@ func ProviderUsageHandler(queries storage.Querier) http.HandlerFunc {
 		}
 
 		respondJSON(w, http.StatusOK, result)
+	}
+}
+
+// testProviderRequest is the JSON body for testing a provider.
+type testProviderRequest struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Subject string `json:"subject"`
+	Body    string `json:"body"`
+}
+
+// testProviderResponse is the JSON response for a provider test.
+type testProviderResponse struct {
+	Success           bool   `json:"success"`
+	ProviderMessageID string `json:"provider_message_id,omitempty"`
+	Error             string `json:"error,omitempty"`
+	DurationMs        int64  `json:"duration_ms"`
+}
+
+// TestProviderHandler handles POST /api/v1/providers/{id}/test.
+// Sends a test email directly through the provider (bypasses queue).
+func TestProviderHandler(queries storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		groupID := auth.GroupIDFromContext(r.Context())
+		if groupID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid provider ID format")
+			return
+		}
+
+		// Verify provider exists and caller has access
+		esp, err := queries.GetProviderByID(r.Context(), id)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "provider not found")
+			return
+		}
+
+		accessible, err := queries.IsProviderAccessible(r.Context(), storage.IsProviderAccessibleParams{
+			ID:      id,
+			GroupID: groupID,
+		})
+		if err != nil || !accessible {
+			respondError(w, http.StatusForbidden, "access denied to this provider")
+			return
+		}
+
+		// Require owner or admin role
+		if _, err := requireGroupRole(queries, r, esp.GroupID, "owner", "admin"); err != nil {
+			respondError(w, http.StatusForbidden, "owner or admin role required")
+			return
+		}
+
+		var req testProviderRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		if req.From == "" || req.To == "" || req.Subject == "" {
+			respondError(w, http.StatusBadRequest, "from, to, and subject are required")
+			return
+		}
+
+		// Build provider instance from DB config
+		cfg, err := provider.EspToConfig(&esp)
+		if err != nil {
+			respondJSON(w, http.StatusOK, testProviderResponse{
+				Success: false,
+				Error:   "failed to build provider config: " + err.Error(),
+			})
+			return
+		}
+
+		httpClient := provider.NewHTTPClient(30 * time.Second)
+		p, err := provider.NewProvider(cfg, httpClient)
+		if err != nil {
+			respondJSON(w, http.StatusOK, testProviderResponse{
+				Success: false,
+				Error:   "failed to create provider: " + err.Error(),
+			})
+			return
+		}
+
+		// Build and send test message
+		msg := &provider.Message{
+			ID:       uuid.New().String(),
+			TenantID: groupID.String(),
+			From:     req.From,
+			To:       []string{req.To},
+			Subject:  req.Subject,
+			HTMLBody: req.Body,
+			TextBody: req.Body,
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
+		start := time.Now()
+		result, sendErr := p.Send(ctx, msg)
+		duration := time.Since(start).Milliseconds()
+
+		if sendErr != nil {
+			respondJSON(w, http.StatusOK, testProviderResponse{
+				Success:    false,
+				Error:      sendErr.Error(),
+				DurationMs: duration,
+			})
+			return
+		}
+
+		respondJSON(w, http.StatusOK, testProviderResponse{
+			Success:           true,
+			ProviderMessageID: result.ProviderMessageID,
+			DurationMs:        duration,
+		})
 	}
 }
 

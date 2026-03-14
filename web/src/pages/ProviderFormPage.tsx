@@ -10,8 +10,12 @@ import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import {
   fetchProvider, createProvider, updateProvider,
   fetchProviderAccess, grantProviderAccess, revokeProviderAccess,
-  fetchGroups, fetchProviderUsage,
+  fetchGroups, fetchProviderUsage, sendTestEmail,
 } from '../api/resources';
+import {
+  Modal, ModalVariant, TextArea,
+  Alert, AlertVariant,
+} from '@patternfly/react-core';
 
 interface SmtpConfig {
   host: string;
@@ -47,6 +51,22 @@ export default function ProviderFormPage() {
   const [smtp, setSmtp] = useState<SmtpConfig>({ host: '', port: '587', username: '', password: '', encryption: 'starttls' });
   const [msgraph, setMsgraph] = useState<MsGraphConfig>({ tenant_id: '', client_id: '', client_secret: '', user_id: '' });
   const [apiKey, setApiKey] = useState<ApiKeyConfig>({ api_key: '', secret_key: '', region: 'us-east-1', domain: '' });
+
+  // Test email modal state
+  const [isTestModalOpen, setIsTestModalOpen] = useState(false);
+  const [testFrom, setTestFrom] = useState('');
+  const [testTo, setTestTo] = useState('');
+  const [testSubject, setTestSubject] = useState('SMTP Proxy Test Email');
+  const [testBody, setTestBody] = useState('This is a test email sent from SMTP Proxy admin.');
+  const [testResult, setTestResult] = useState<{
+    success: boolean; provider_message_id?: string; error?: string; duration_ms: number;
+  } | null>(null);
+
+  const testMutation = useMutation({
+    mutationFn: () => sendTestEmail(id!, { from: testFrom, to: testTo, subject: testSubject, body: testBody }),
+    onSuccess: (data) => setTestResult(data),
+    onError: (err: Error) => setTestResult({ success: false, error: err.message, duration_ms: 0 }),
+  });
 
   const { data: existing, isLoading } = useQuery({
     queryKey: ['provider', id],
@@ -188,9 +208,22 @@ export default function ProviderFormPage() {
 
   return (
     <PageSection>
-      <Title headingLevel="h1" size="lg" className="page-title">
-        {isEdit ? `Edit Provider: ${existing?.name}` : 'Add Provider'}
-      </Title>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Title headingLevel="h1" size="lg" className="page-title">
+          {isEdit ? `Edit Provider: ${existing?.name}` : 'Add Provider'}
+        </Title>
+        {isEdit && (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setTestResult(null);
+              setIsTestModalOpen(true);
+            }}
+          >
+            Send Test Email
+          </Button>
+        )}
+      </div>
 
       <Card>
         <CardBody>
@@ -410,6 +443,58 @@ export default function ProviderFormPage() {
           </Form>
         </CardBody>
       </Card>
+      <Modal
+        variant={ModalVariant.medium}
+        title="Send Test Email"
+        isOpen={isTestModalOpen}
+        onClose={() => setIsTestModalOpen(false)}
+        actions={[
+          <Button
+            key="send"
+            onClick={() => { setTestResult(null); testMutation.mutate(); }}
+            isDisabled={!testFrom || !testTo || !testSubject || testMutation.isPending}
+            isLoading={testMutation.isPending}
+          >
+            {testMutation.isPending ? 'Sending...' : 'Send'}
+          </Button>,
+          <Button key="close" variant="link" onClick={() => setIsTestModalOpen(false)}>
+            Close
+          </Button>,
+        ]}
+      >
+        <Form>
+          <FormGroup label="From" isRequired fieldId="test-from">
+            <TextInput id="test-from" value={testFrom} onChange={(_e, v) => setTestFrom(v)} placeholder="sender@example.com" isRequired />
+          </FormGroup>
+          <FormGroup label="To" isRequired fieldId="test-to">
+            <TextInput id="test-to" value={testTo} onChange={(_e, v) => setTestTo(v)} placeholder="recipient@example.com" isRequired />
+          </FormGroup>
+          <FormGroup label="Subject" isRequired fieldId="test-subject">
+            <TextInput id="test-subject" value={testSubject} onChange={(_e, v) => setTestSubject(v)} isRequired />
+          </FormGroup>
+          <FormGroup label="Body" fieldId="test-body">
+            <TextArea id="test-body" value={testBody} onChange={(_e, v) => setTestBody(v)} rows={5} />
+          </FormGroup>
+        </Form>
+        {testResult && (
+          <Alert
+            variant={testResult.success ? AlertVariant.success : AlertVariant.danger}
+            title={testResult.success ? 'Email sent successfully' : 'Failed to send email'}
+            style={{ marginTop: '1rem' }}
+            isInline
+          >
+            {testResult.success ? (
+              <p>
+                Provider Message ID: <code>{testResult.provider_message_id || 'N/A'}</code>
+                <br />
+                Duration: {testResult.duration_ms}ms
+              </p>
+            ) : (
+              <p>{testResult.error}</p>
+            )}
+          </Alert>
+        )}
+      </Modal>
     </PageSection>
   );
 }

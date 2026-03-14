@@ -147,7 +147,7 @@ func (r *ProviderResolver) resolveProviderByID(ctx context.Context, cacheKey uui
 
 // buildAndCache converts an ESP provider to a Provider instance and caches it.
 func (r *ProviderResolver) buildAndCache(cacheKey uuid.UUID, espProvider *storage.EspProvider) (Provider, error) {
-	cfg, err := espToConfig(espProvider)
+	cfg, err := EspToConfig(espProvider)
 	if err != nil {
 		return nil, fmt.Errorf("convert provider config for %q: %w", espProvider.Name, err)
 	}
@@ -189,8 +189,8 @@ type smtpConfigExtra struct {
 	Endpoint     string `json:"endpoint,omitempty"`
 }
 
-// espToConfig converts a storage.EspProvider to a provider.ProviderConfig.
-func espToConfig(esp *storage.EspProvider) (ProviderConfig, error) {
+// EspToConfig converts a storage.EspProvider to a provider.ProviderConfig.
+func EspToConfig(esp *storage.EspProvider) (ProviderConfig, error) {
 	cfg := ProviderConfig{
 		Type: string(esp.ProviderType),
 	}

@@ -101,6 +101,10 @@ export const revokeProviderAccess = async (id: string, groupId: string): Promise
   { await api.delete(`/providers/${id}/access/${groupId}`); };
 export const fetchProviderUsage = async (id: string): Promise<ProviderUsage[]> =>
   (await api.get(`/providers/${id}/usage`)).data;
+export const sendTestEmail = async (
+  id: string, data: { from: string; to: string; subject: string; body: string }
+): Promise<{ success: boolean; provider_message_id?: string; error?: string; duration_ms: number }> =>
+  (await api.post(`/providers/${id}/send`, data)).data;
 
 // Routing Rules
 export const fetchRoutingRules = async (): Promise<RoutingRule[]> => (await api.get('/routing-rules')).data;

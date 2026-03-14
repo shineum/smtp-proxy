@@ -122,6 +122,7 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			r.Get("/{id}/access", ListProviderAccessHandler(cfg.Queries))
 			r.Post("/{id}/access", GrantProviderAccessHandler(cfg.Queries))
 			r.Delete("/{id}/access/{groupId}", RevokeProviderAccessHandler(cfg.Queries))
+			r.Post("/{id}/send", TestProviderHandler(cfg.Queries))
 		})
 
 		// Routing Rules

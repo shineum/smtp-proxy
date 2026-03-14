@@ -202,72 +202,66 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Stat Cards - flex wrap with fixed width */}
+      <div className="stat-cards-grid">
+        <Card className="stat-card stat-card--total">
+          <CardTitle>
+            <span className="stat-card__title">
+              <EnvelopeIcon className="stat-card__icon" />
+              Total Messages
+            </span>
+          </CardTitle>
+          <CardBody>
+            <span className="stat-card__value">
+              {stats.total_messages.toLocaleString()}
+            </span>
+          </CardBody>
+        </Card>
+
+        <Card className="stat-card stat-card--success">
+          <CardTitle>
+            <span className="stat-card__title">
+              <CheckCircleIcon className="stat-card__icon" />
+              Success Rate
+            </span>
+          </CardTitle>
+          <CardBody>
+            <span className="stat-card__value" style={{ color: successRateColor }}>
+              {stats.success_rate.toFixed(1)}%
+            </span>
+          </CardBody>
+        </Card>
+
+        <Card className="stat-card stat-card--delivered">
+          <CardTitle>
+            <span className="stat-card__title">
+              <PaperPlaneIcon className="stat-card__icon" />
+              Delivered
+            </span>
+          </CardTitle>
+          <CardBody>
+            <span className="stat-card__value stat-card__value--delivered">
+              {(stats.status_counts['delivered'] || 0).toLocaleString()}
+            </span>
+          </CardBody>
+        </Card>
+
+        <Card className="stat-card stat-card--failed">
+          <CardTitle>
+            <span className="stat-card__title">
+              <ExclamationCircleIcon className="stat-card__icon" />
+              Failed
+            </span>
+          </CardTitle>
+          <CardBody>
+            <span className="stat-card__value stat-card__value--failed">
+              {(stats.status_counts['failed'] || 0).toLocaleString()}
+            </span>
+          </CardBody>
+        </Card>
+      </div>
+
       <Grid hasGutter>
-        {/* Stat Cards */}
-        <GridItem span={3}>
-          <Card className="stat-card stat-card--total">
-            <CardTitle>
-              <span className="stat-card__title">
-                <EnvelopeIcon className="stat-card__icon" />
-                Total Messages
-              </span>
-            </CardTitle>
-            <CardBody>
-              <span className="stat-card__value">
-                {stats.total_messages.toLocaleString()}
-              </span>
-            </CardBody>
-          </Card>
-        </GridItem>
-
-        <GridItem span={3}>
-          <Card className="stat-card stat-card--success">
-            <CardTitle>
-              <span className="stat-card__title">
-                <CheckCircleIcon className="stat-card__icon" />
-                Success Rate
-              </span>
-            </CardTitle>
-            <CardBody>
-              <span className="stat-card__value" style={{ color: successRateColor }}>
-                {stats.success_rate.toFixed(1)}%
-              </span>
-            </CardBody>
-          </Card>
-        </GridItem>
-
-        <GridItem span={3}>
-          <Card className="stat-card stat-card--delivered">
-            <CardTitle>
-              <span className="stat-card__title">
-                <PaperPlaneIcon className="stat-card__icon" />
-                Delivered
-              </span>
-            </CardTitle>
-            <CardBody>
-              <span className="stat-card__value stat-card__value--delivered">
-                {(stats.status_counts['delivered'] || 0).toLocaleString()}
-              </span>
-            </CardBody>
-          </Card>
-        </GridItem>
-
-        <GridItem span={3}>
-          <Card className="stat-card stat-card--failed">
-            <CardTitle>
-              <span className="stat-card__title">
-                <ExclamationCircleIcon className="stat-card__icon" />
-                Failed
-              </span>
-            </CardTitle>
-            <CardBody>
-              <span className="stat-card__value stat-card__value--failed">
-                {(stats.status_counts['failed'] || 0).toLocaleString()}
-              </span>
-            </CardBody>
-          </Card>
-        </GridItem>
-
         {/* Daily Trend Table */}
         <GridItem span={12}>
           <Card>

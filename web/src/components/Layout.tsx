@@ -218,12 +218,16 @@ export default function Layout() {
   );
 
   const showOverlay = isSidebarOpen && isMobileOrTablet();
+  const pageClasses = [
+    showOverlay ? 'sidebar-overlay-active' : '',
+    !isSidebarOpen && !isMobileOrTablet() ? 'sidebar-collapsed' : '',
+  ].filter(Boolean).join(' ');
 
   return (
     <Page
       header={masthead}
       sidebar={sidebar}
-      className={showOverlay ? 'sidebar-overlay-active' : ''}
+      className={pageClasses}
     >
       <Outlet />
     </Page>

@@ -360,11 +360,16 @@
    ============================================================ */
 .pf-v5-c-page__sidebar {
   background-color: var(--sidebar-bg) !important;
+  --pf-v5-c-page__sidebar--Width: 200px;
+  width: 200px !important;
+  transition: width var(--transition-medium);
 }
 
 .pf-v5-c-nav__link {
   color: var(--sidebar-text) !important;
   transition: background-color var(--transition-fast), color var(--transition-fast);
+  font-size: 0.84rem;
+  padding: 8px 14px !important;
 }
 
 .pf-v5-c-nav__link:hover {
@@ -412,6 +417,59 @@
 
 .nav-item-label {
   flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: opacity var(--transition-medium);
+}
+
+/* ============================================================
+   Sidebar Collapsed (Desktop icon-only mode)
+   ============================================================ */
+.sidebar-collapsed .pf-v5-c-page__sidebar {
+  --pf-v5-c-page__sidebar--Width: 52px;
+  width: 52px !important;
+}
+
+.sidebar-collapsed .nav-item-label {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+}
+
+.sidebar-collapsed .nav-item-content {
+  justify-content: center;
+  gap: 0;
+}
+
+.sidebar-collapsed .pf-v5-c-nav__link {
+  padding: 10px 0 !important;
+  display: flex;
+  justify-content: center;
+}
+
+.sidebar-collapsed .nav-item-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.sidebar-collapsed .nav-item-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ============================================================
+   Stat Cards Grid (Dashboard)
+   ============================================================ */
+.stat-cards-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.stat-cards-grid > .stat-card {
+  flex: 0 0 220px;
+  min-width: 180px;
 }
 
 /* ============================================================
@@ -518,16 +576,39 @@
   /* Make sidebar position fixed so it overlays content, below masthead */
   .pf-v5-c-page__sidebar {
     position: fixed !important;
-    top: var(--pf-v5-c-page__header--MinHeight, 4rem);
+    top: 0 !important;
+    padding-top: 60px;
     bottom: 0;
     left: 0;
     z-index: 301;
-    height: auto;
+    height: 100vh;
     overflow-y: auto;
+    width: 220px !important;
+  }
+
+  /* Reset collapsed mode on tablet/mobile */
+  .sidebar-collapsed .pf-v5-c-page__sidebar {
+    width: 220px !important;
+  }
+
+  .sidebar-collapsed .nav-item-label {
+    opacity: 1;
+    width: auto;
+  }
+
+  .sidebar-collapsed .nav-item-content {
+    justify-content: flex-start;
+    gap: 10px;
+  }
+
+  .sidebar-collapsed .pf-v5-c-nav__link {
+    padding: 8px 14px !important;
+    display: block;
+    justify-content: initial;
   }
 
   /* Slightly compact toolbar dropdowns */
-  .pf-v5-c-menu-toggle {
+  .pf-v5-c-masthead .pf-v5-c-menu-toggle {
     max-width: 160px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -550,17 +631,18 @@
   /* Sidebar full-width overlay on mobile, below masthead */
   .pf-v5-c-page__sidebar {
     position: fixed !important;
-    top: var(--pf-v5-c-page__header--MinHeight, 4rem);
+    top: 0 !important;
+    padding-top: 60px;
     bottom: 0;
     left: 0;
-    width: 260px !important;
+    width: 220px !important;
     z-index: 301;
-    height: auto;
+    height: 100vh;
     overflow-y: auto;
   }
 
   /* Truncate long email in user menu toggle */
-  .pf-v5-c-menu-toggle {
+  .pf-v5-c-masthead .pf-v5-c-menu-toggle {
     max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -577,5 +659,11 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+
+  /* Stat cards: 2 per row on mobile */
+  .stat-cards-grid > .stat-card {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 140px;
   }
 }

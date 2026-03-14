@@ -386,7 +386,7 @@ code {
   box-shadow: var(--shadow-login);
   width: 100%;
   max-width: 440px;
-  padding: 40px 40px 32px;
+  padding: 28px 40px 24px;
   position: relative;
   z-index: 1;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -394,8 +394,8 @@ code {
 
 .login-brand {
   text-align: center;
-  margin-bottom: 32px;
-  padding-bottom: 28px;
+  margin-bottom: 20px;
+  padding-bottom: 18px;
   border-bottom: 1px solid var(--color-border-light);
 }
 
@@ -405,9 +405,9 @@ code {
   justify-content: center;
   gap: 4px;
   background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
-  border-radius: 16px;
-  padding: 14px 18px;
-  margin-bottom: 16px;
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
   box-shadow: 0 4px 16px rgba(27, 58, 107, 0.4);
 }
 
@@ -430,10 +430,10 @@ code {
 }
 
 .login-brand-title {
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   font-weight: 700;
   color: var(--color-primary);
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   letter-spacing: -0.02em;
 }
 
@@ -450,12 +450,20 @@ code {
   padding: 0;
 }
 
+.login-form-wrapper .pf-v5-c-form__group {
+  margin-bottom: 12px;
+}
+
+.login-form-wrapper .pf-v5-c-form__actions {
+  margin-top: 8px;
+}
+
 .login-form-wrapper .pf-v5-c-form__actions .pf-v5-c-button--primary,
 .login-form-wrapper .pf-v5-c-button[data-ouia-component-type="PF5/Button"][class*="primary"] {
   background-color: var(--color-primary);
   border-color: var(--color-primary);
   width: 100%;
-  height: 44px;
+  height: 40px;
   font-size: 0.95rem;
   font-weight: 600;
   border-radius: 8px;
@@ -471,8 +479,8 @@ code {
   text-align: center;
   font-size: 0.78rem;
   color: var(--color-text-muted);
-  margin: 20px 0 0;
-  padding-top: 16px;
+  margin: 14px 0 0;
+  padding-top: 12px;
   border-top: 1px solid var(--color-border-light);
 }
 

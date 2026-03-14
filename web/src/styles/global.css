@@ -244,9 +244,24 @@
    Masthead
    ============================================================ */
 .pf-v5-c-masthead {
-  background-color: var(--masthead-bg) !important;
+  background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
+/* Toggle button */
+.pf-v5-c-masthead .pf-v5-c-masthead__toggle .pf-v5-c-button {
+  color: rgba(255, 255, 255, 0.8) !important;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.pf-v5-c-masthead .pf-v5-c-masthead__toggle .pf-v5-c-button:hover {
+  color: #ffffff !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-radius: 6px;
+}
+
+/* Brand */
 .masthead-brand {
   display: flex;
   align-items: center;
@@ -257,16 +272,87 @@
 
 .masthead-brand-icon {
   color: #7eb8f7;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
+  filter: drop-shadow(0 1px 3px rgba(126, 184, 247, 0.4));
 }
 
 .masthead-brand-text {
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-weight: 700;
   color: #ffffff;
   letter-spacing: -0.01em;
+}
+
+/* Toolbar dropdown toggles in masthead */
+.pf-v5-c-masthead .pf-v5-c-menu-toggle {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 6px !important;
+  color: #ffffff !important;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.pf-v5-c-masthead .pf-v5-c-menu-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+.pf-v5-c-masthead .pf-v5-c-menu-toggle.pf-m-expanded {
+  background-color: rgba(255, 255, 255, 0.18) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Toggle arrow icon */
+.pf-v5-c-masthead .pf-v5-c-menu-toggle__controls {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* User avatar circle */
+.masthead-user-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-primary-light));
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-right: 6px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+/* Group icon */
+.masthead-group-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  flex-shrink: 0;
+}
+
+.masthead-group-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Dropdown menu styling */
+.pf-v5-c-masthead .pf-v5-c-menu {
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--color-border-light);
+  overflow: hidden;
+}
+
+.pf-v5-c-masthead .pf-v5-c-menu__item:hover {
+  background-color: rgba(77, 142, 240, 0.08);
 }
 
 /* ============================================================

@@ -19,6 +19,7 @@ import {
   CogIcon,
   ServerAltIcon,
   ClipboardListIcon,
+  UserIcon,
 } from '@patternfly/react-icons';
 import { useAuth } from '../context/AuthContext';
 
@@ -136,6 +137,7 @@ export default function Layout() {
                         onClick={() => setIsGroupMenuOpen(!isGroupMenuOpen)}
                         isExpanded={isGroupMenuOpen}
                       >
+                        <span className="masthead-group-icon"><UsersIcon /></span>
                         {currentGroup?.group_name || 'Select Group'}
                       </MenuToggle>
                     )}
@@ -164,6 +166,9 @@ export default function Layout() {
                       onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                       isExpanded={isUserMenuOpen}
                     >
+                      <span className="masthead-user-avatar">
+                        {(me?.user.email || 'U').charAt(0)}
+                      </span>
                       {me?.user.email || 'User'}
                     </MenuToggle>
                   )}

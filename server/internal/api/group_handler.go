@@ -97,10 +97,11 @@ func toGroupMemberResponse(gm storage.GroupMember) groupMemberResponse {
 
 // createServiceAccountRequest is the JSON body for POST /api/v1/groups/{id}/service-accounts.
 type createServiceAccountRequest struct {
-	Username       string   `json:"username"`
-	Email          string   `json:"email,omitempty"`
-	AllowedDomains []string `json:"allowed_domains,omitempty"`
-	ProviderID     string   `json:"provider_id"`
+	Username        string   `json:"username"`
+	Email           string   `json:"email,omitempty"`
+	AllowedDomains  []string `json:"allowed_domains,omitempty"`
+	ProviderID      string   `json:"provider_id"`
+	ApiKeyExpiresIn string   `json:"api_key_expires_in,omitempty"`
 }
 
 // resetAPIKeyRequest is the JSON body for reset-api-key endpoints.
@@ -831,6 +832,39 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			return
 		}
 
+		// Auto-generate API key for the service account
+		apiKeyExpiresAt, err := parseAPIKeyExpiration(req.ApiKeyExpiresIn)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		newKey, err := auth.GenerateAPIKey()
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		keyPrefix := auth.APIKeyPrefix(newKey)
+		keyHash, err := auth.HashAPIKey(newKey)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		_, err = queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
+			UserID:    user.ID,
+			KeyPrefix: keyPrefix,
+			KeyHash:   keyHash,
+			Label:     "default",
+			ExpiresAt: apiKeyExpiresAt,
+			IsActive:  true,
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to create API key")
+			return
+		}
+
 		if auditLogger != nil {
 			auditLogger.LogAdminAction(r.Context(), r, "admin.create_service_account", "user", user.ID.String(), map[string]interface{}{
 				"username": req.Username,
@@ -838,7 +872,9 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			})
 		}
 
-		respondJSON(w, http.StatusCreated, toUserResponse(user))
+		resp := toUserResponse(user)
+		resp.ApiKey = &newKey
+		respondJSON(w, http.StatusCreated, resp)
 	}
 }
 

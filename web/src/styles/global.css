@@ -244,15 +244,20 @@
    Masthead
    ============================================================ */
 .pf-v5-c-masthead {
+  --pf-v5-c-masthead--BackgroundColor: transparent !important;
   background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  position: relative;
+  z-index: 400;
 }
 
+.pf-v5-c-masthead *,
 .pf-v5-c-masthead__content,
 .pf-v5-c-masthead__main,
 .pf-v5-c-masthead__toggle,
 .pf-v5-c-masthead__brand {
+  background-color: transparent !important;
   background: transparent !important;
 }
 
@@ -405,9 +410,10 @@
 .nav-item-icon {
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   color: var(--sidebar-icon);
   transition: color var(--transition-fast);
 }
@@ -418,8 +424,8 @@
 }
 
 .nav-item-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 .nav-item-label {
@@ -446,22 +452,24 @@
 .sidebar-collapsed .nav-item-content {
   justify-content: center;
   gap: 0;
+  width: 100%;
 }
 
 .sidebar-collapsed .pf-v5-c-nav__link {
-  padding: 10px 0 !important;
-  display: flex;
-  justify-content: center;
+  padding: 12px 0 !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
 }
 
 .sidebar-collapsed .nav-item-icon {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .sidebar-collapsed .nav-item-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 /* ============================================================
@@ -603,38 +611,40 @@
   .screen-tablet.sidebar-collapsed .nav-item-content {
     justify-content: center;
     gap: 0;
+    width: 100%;
   }
 
   .screen-tablet .pf-v5-c-nav__link,
   .screen-tablet.sidebar-collapsed .pf-v5-c-nav__link {
     padding: 12px 0 !important;
-    display: flex;
-    justify-content: center;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
   }
 
   .screen-tablet .nav-item-icon,
   .screen-tablet.sidebar-collapsed .nav-item-icon {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
   }
 
   .screen-tablet .nav-item-icon svg,
   .screen-tablet.sidebar-collapsed .nav-item-icon svg {
-    width: 20px;
-    height: 20px;
+    width: 18px;
+    height: 18px;
   }
 
-  /* When expanded on tablet: full overlay sidebar */
+  /* When expanded on tablet: full overlay sidebar BELOW masthead */
   .screen-tablet.sidebar-overlay-active .pf-v5-c-page__sidebar {
     --pf-v5-c-page__sidebar--Width: 220px;
     width: 220px !important;
     position: fixed !important;
-    top: 0 !important;
-    padding-top: 60px;
+    top: 60px !important;
+    padding-top: 0;
     bottom: 0;
     left: 0;
     z-index: 301;
-    height: 100vh;
+    height: auto;
     overflow-y: auto;
   }
 
@@ -647,18 +657,19 @@
   .screen-tablet.sidebar-overlay-active .nav-item-content {
     justify-content: flex-start;
     gap: 10px;
+    width: auto;
   }
 
   .screen-tablet.sidebar-overlay-active .pf-v5-c-nav__link {
     padding: 8px 14px !important;
-    display: flex;
-    justify-content: flex-start;
+    display: flex !important;
+    justify-content: flex-start !important;
   }
 
   .screen-tablet.sidebar-overlay-active .nav-item-icon,
   .screen-tablet.sidebar-overlay-active .nav-item-icon svg {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
   /* Compact toolbar dropdowns */

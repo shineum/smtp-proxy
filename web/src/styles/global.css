@@ -69,19 +69,32 @@ body {
 }
 
 /* PatternFly component overrides (keep using PF components inside content) */
-.pf-v5-c-table td {
-  padding-top: 12px !important;
-  padding-bottom: 12px !important;
+
+/* Unify backgrounds: content area is surface-raised, cards stay white */
+.pf-v5-c-page__main-section,
+.pf-v5-c-page > section {
+  background-color: var(--color-surface-raised) !important;
 }
 
 .pf-v5-c-card {
   margin-bottom: 16px;
+  background-color: var(--color-surface);
   box-shadow: var(--shadow-card);
   transition: box-shadow var(--transition-medium), transform var(--transition-medium);
 }
 
 .pf-v5-c-card:hover {
   box-shadow: var(--shadow-card-hover);
+}
+
+.pf-v5-c-table td {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+/* EmptyState, modals, etc: match theme */
+.pf-v5-c-empty-state {
+  background-color: transparent;
 }
 
 .pf-v5-c-description-list__term {
@@ -532,11 +545,13 @@ body {
   padding: 24px 32px;
   min-width: 0;
   overflow-x: hidden;
+  background-color: var(--color-surface-raised);
 }
 
-/* Fix PageSection padding inside custom layout */
+/* PageSection inside custom layout: no extra padding/background */
 .app-content .pf-v5-c-page__main-section {
   padding: 0;
+  background-color: transparent !important;
 }
 
 /* ============================================================

@@ -564,7 +564,7 @@
    Responsive Layout
    ============================================================ */
 
-/* Sidebar overlay: dim main content when sidebar is open on mobile/tablet */
+/* Overlay dim when sidebar is expanded on tablet/mobile */
 .sidebar-overlay-active > .pf-v5-c-page__main {
   position: relative;
 }
@@ -578,10 +578,56 @@
   pointer-events: none;
 }
 
-/* Tablet / iPad: 768px - 1199px */
-@media (max-width: 1199px) {
-  /* Make sidebar position fixed so it overlays content, below masthead */
+/* ============================================================
+   Tablet / iPad: 768px - 1199px
+   - Default: icon-only sidebar always visible
+   - Expanded: full sidebar as overlay
+   ============================================================ */
+@media (max-width: 1199px) and (min-width: 768px) {
+  /* Sidebar always visible, icon-only by default */
   .pf-v5-c-page__sidebar {
+    --pf-v5-c-page__sidebar--Width: 52px;
+    width: 52px !important;
+    transition: width var(--transition-medium);
+  }
+
+  /* Icon-only: hide labels, center icons */
+  .screen-tablet .nav-item-label,
+  .screen-tablet.sidebar-collapsed .nav-item-label {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+  }
+
+  .screen-tablet .nav-item-content,
+  .screen-tablet.sidebar-collapsed .nav-item-content {
+    justify-content: center;
+    gap: 0;
+  }
+
+  .screen-tablet .pf-v5-c-nav__link,
+  .screen-tablet.sidebar-collapsed .pf-v5-c-nav__link {
+    padding: 12px 0 !important;
+    display: flex;
+    justify-content: center;
+  }
+
+  .screen-tablet .nav-item-icon,
+  .screen-tablet.sidebar-collapsed .nav-item-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .screen-tablet .nav-item-icon svg,
+  .screen-tablet.sidebar-collapsed .nav-item-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* When expanded on tablet: full overlay sidebar */
+  .screen-tablet.sidebar-overlay-active .pf-v5-c-page__sidebar {
+    --pf-v5-c-page__sidebar--Width: 220px;
+    width: 220px !important;
     position: fixed !important;
     top: 0 !important;
     padding-top: 60px;
@@ -590,31 +636,32 @@
     z-index: 301;
     height: 100vh;
     overflow-y: auto;
-    width: 220px !important;
   }
 
-  /* Reset collapsed mode on tablet/mobile */
-  .sidebar-collapsed .pf-v5-c-page__sidebar {
-    width: 220px !important;
-  }
-
-  .sidebar-collapsed .nav-item-label {
+  /* Expanded: show full nav items */
+  .screen-tablet.sidebar-overlay-active .nav-item-label {
     opacity: 1;
     width: auto;
   }
 
-  .sidebar-collapsed .nav-item-content {
+  .screen-tablet.sidebar-overlay-active .nav-item-content {
     justify-content: flex-start;
     gap: 10px;
   }
 
-  .sidebar-collapsed .pf-v5-c-nav__link {
+  .screen-tablet.sidebar-overlay-active .pf-v5-c-nav__link {
     padding: 8px 14px !important;
-    display: block;
-    justify-content: initial;
+    display: flex;
+    justify-content: flex-start;
   }
 
-  /* Slightly compact toolbar dropdowns */
+  .screen-tablet.sidebar-overlay-active .nav-item-icon,
+  .screen-tablet.sidebar-overlay-active .nav-item-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Compact toolbar dropdowns */
   .pf-v5-c-masthead .pf-v5-c-menu-toggle {
     max-width: 160px;
     overflow: hidden;
@@ -622,20 +669,24 @@
     white-space: nowrap;
   }
 
-  /* Reduce page section padding on tablet */
+  /* Reduce page section padding */
   .pf-v5-c-page__main-section {
     padding: 16px 20px;
   }
 }
 
-/* Mobile: < 768px */
+/* ============================================================
+   Mobile: < 768px
+   - Sidebar hidden by default
+   - Hamburger opens full overlay
+   ============================================================ */
 @media (max-width: 767px) {
   /* Hide brand text on mobile, show only icon */
   .masthead-brand-text {
     display: none;
   }
 
-  /* Sidebar full-width overlay on mobile, below masthead */
+  /* Sidebar overlay when expanded */
   .pf-v5-c-page__sidebar {
     position: fixed !important;
     top: 0 !important;

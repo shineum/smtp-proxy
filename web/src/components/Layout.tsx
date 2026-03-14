@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Page, Masthead, MastheadMain, MastheadBrand, MastheadContent, MastheadToggle,
@@ -13,13 +13,10 @@ import {
   EnvelopeIcon,
   HomeAltIcon,
   UsersIcon,
-  NetworkIcon,
   GlobeRouteIcon,
-  ListAltIcon,
   CogIcon,
   ServerAltIcon,
   ClipboardListIcon,
-  UserIcon,
 } from '@patternfly/react-icons';
 import { useAuth } from '../context/AuthContext';
 
@@ -29,59 +26,73 @@ interface NavItemDef {
   icon: React.ReactNode;
 }
 
+type ScreenSize = 'desktop' | 'tablet' | 'mobile';
+
+function getScreenSize(): ScreenSize {
+  const w = window.innerWidth;
+  if (w >= 1200) return 'desktop';
+  if (w >= 768) return 'tablet';
+  return 'mobile';
+}
+
 export default function Layout() {
-  const { me, logout, switchGroup, isSystemAdmin, isAdmin } = useAuth();
+  const { me, logout, switchGroup, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const isDesktop = () => window.innerWidth >= 1200;
-  const [isSidebarOpen, setIsSidebarOpen] = useState(() => isDesktop());
+  const [screenSize, setScreenSize] = useState<ScreenSize>(getScreenSize);
+  const [isExpanded, setIsExpanded] = useState(() => getScreenSize() === 'desktop');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isGroupMenuOpen, setIsGroupMenuOpen] = useState(false);
 
+  // Track screen size changes
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth >= 1200) {
-        // On desktop, reopen sidebar automatically
-        setIsSidebarOpen(true);
+      const newSize = getScreenSize();
+      setScreenSize(newSize);
+      // Auto-expand on desktop, auto-collapse on resize to smaller
+      if (newSize === 'desktop') {
+        setIsExpanded(true);
       } else {
-        // On tablet/mobile, close sidebar by default on resize
-        setIsSidebarOpen(false);
+        setIsExpanded(false);
       }
     };
-
-    // Set initial state based on current width
-    setIsSidebarOpen(isDesktop());
-
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const isMobileOrTablet = () => window.innerWidth < 1200;
-  const sidebarRef = useRef<HTMLDivElement>(null);
-
-  // Close sidebar when clicking outside on mobile/tablet
+  // Close expanded sidebar when clicking outside (tablet/mobile)
   useEffect(() => {
-    if (!isSidebarOpen || !isMobileOrTablet()) return;
+    if (!isExpanded || screenSize === 'desktop') return;
 
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      // Ignore clicks inside sidebar
       if (target.closest('.pf-v5-c-page__sidebar')) return;
-      // Ignore clicks on the toggle button
       if (target.closest('.pf-v5-c-masthead__toggle')) return;
-      setIsSidebarOpen(false);
+      setIsExpanded(false);
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isSidebarOpen]);
+  }, [isExpanded, screenSize]);
+
+  const handleToggle = useCallback(() => {
+    if (screenSize === 'mobile') {
+      // Mobile: toggle visibility (hidden <-> expanded overlay)
+      setIsExpanded(prev => !prev);
+    } else {
+      // Desktop & Tablet: toggle expanded <-> collapsed (icon-only)
+      setIsExpanded(prev => !prev);
+    }
+  }, [screenSize]);
 
   const handleNavItemClick = useCallback((path: string) => {
     navigate(path);
-    if (isMobileOrTablet()) {
-      setIsSidebarOpen(false);
+    // On tablet: collapse back to icon-only after nav
+    // On mobile: hide sidebar after nav
+    if (screenSize !== 'desktop') {
+      setIsExpanded(false);
     }
-  }, [navigate]);
+  }, [navigate, screenSize]);
 
   const navItems: NavItemDef[] = [
     { path: '/', label: 'Dashboard', icon: <HomeAltIcon /> },
@@ -104,14 +115,17 @@ export default function Layout() {
     navigate('/');
   };
 
+  // Sidebar is always visible on desktop/tablet, only hidden on mobile when not expanded
+  const isSidebarVisible = screenSize !== 'mobile' || isExpanded;
+
   const masthead = (
     <Masthead>
       <MastheadToggle>
         <PageToggleButton
           variant="plain"
           aria-label="Global navigation"
-          isSidebarOpen={isSidebarOpen}
-          onSidebarToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+          isSidebarOpen={isExpanded}
+          onSidebarToggle={handleToggle}
         >
           <BarsIcon />
         </PageToggleButton>
@@ -191,7 +205,7 @@ export default function Layout() {
   );
 
   const sidebar = (
-    <PageSidebar isSidebarOpen={isSidebarOpen}>
+    <PageSidebar isSidebarOpen={isSidebarVisible}>
       <PageSidebarBody>
         <Nav>
           <NavList>
@@ -217,10 +231,13 @@ export default function Layout() {
     </PageSidebar>
   );
 
-  const showOverlay = isSidebarOpen && isMobileOrTablet();
+  // Build page CSS classes
+  const isOverlay = isExpanded && screenSize !== 'desktop';
+  const isCollapsed = !isExpanded && screenSize !== 'mobile';
   const pageClasses = [
-    showOverlay ? 'sidebar-overlay-active' : '',
-    !isSidebarOpen && !isMobileOrTablet() ? 'sidebar-collapsed' : '',
+    isOverlay ? 'sidebar-overlay-active' : '',
+    isCollapsed ? 'sidebar-collapsed' : '',
+    `screen-${screenSize}`,
   ].filter(Boolean).join(' ');
 
   return (

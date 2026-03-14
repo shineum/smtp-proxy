@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Page, Masthead, MastheadMain, MastheadBrand, MastheadContent, MastheadToggle,
@@ -197,12 +198,13 @@ export default function Layout() {
 
   return (
     <>
-      {isSidebarOpen && isMobileOrTablet() && (
+      {isSidebarOpen && isMobileOrTablet() && createPortal(
         <div
           className="sidebar-backdrop"
           onClick={() => setIsSidebarOpen(false)}
           aria-hidden="true"
-        />
+        />,
+        document.body,
       )}
       <Page header={masthead} sidebar={sidebar}>
         <Outlet />

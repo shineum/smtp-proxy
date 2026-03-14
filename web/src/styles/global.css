@@ -249,6 +249,13 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
+.pf-v5-c-masthead__content,
+.pf-v5-c-masthead__main,
+.pf-v5-c-masthead__toggle,
+.pf-v5-c-masthead__brand {
+  background: transparent !important;
+}
+
 /* Toggle button */
 .pf-v5-c-masthead .pf-v5-c-masthead__toggle .pf-v5-c-button {
   color: rgba(255, 255, 255, 0.8) !important;

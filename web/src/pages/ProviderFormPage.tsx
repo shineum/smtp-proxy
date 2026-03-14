@@ -30,6 +30,7 @@ interface MsGraphConfig {
 
 interface ApiKeyConfig {
   api_key: string;
+  secret_key: string;
   region: string;
   domain: string;
 }
@@ -45,7 +46,7 @@ export default function ProviderFormPage() {
   const [visibility, setVisibility] = useState('private');
   const [smtp, setSmtp] = useState<SmtpConfig>({ host: '', port: '587', username: '', password: '', encryption: 'starttls' });
   const [msgraph, setMsgraph] = useState<MsGraphConfig>({ tenant_id: '', client_id: '', client_secret: '', user_id: '' });
-  const [apiKey, setApiKey] = useState<ApiKeyConfig>({ api_key: '', region: 'us-east-1', domain: '' });
+  const [apiKey, setApiKey] = useState<ApiKeyConfig>({ api_key: '', secret_key: '', region: 'us-east-1', domain: '' });
 
   const { data: existing, isLoading } = useQuery({
     queryKey: ['provider', id],
@@ -75,6 +76,7 @@ export default function ProviderFormPage() {
       });
       setApiKey({
         api_key: (cfg.api_key as string) || '',
+        secret_key: (cfg.secret_key as string) || '',
         region: (cfg.region as string) || 'us-east-1',
         domain: (cfg.domain as string) || '',
       });
@@ -102,7 +104,7 @@ export default function ProviderFormPage() {
         };
         break;
       case 'ses':
-        smtpConfig = { api_key: apiKey.api_key, region: apiKey.region };
+        smtpConfig = { api_key: apiKey.api_key, secret_key: apiKey.secret_key, region: apiKey.region };
         break;
       case 'sendgrid':
         smtpConfig = { api_key: apiKey.api_key };
@@ -119,7 +121,7 @@ export default function ProviderFormPage() {
     switch (providerType) {
       case 'smtp': return !!smtp.host;
       case 'msgraph': return !!msgraph.tenant_id && !!msgraph.client_id && !!msgraph.client_secret && !!msgraph.user_id;
-      case 'ses': return !!apiKey.api_key && !!apiKey.region;
+      case 'ses': return !!apiKey.api_key && !!apiKey.secret_key && !!apiKey.region;
       case 'sendgrid': return !!apiKey.api_key;
       case 'mailgun': return !!apiKey.api_key && !!apiKey.domain;
       default: return true;
@@ -346,13 +348,18 @@ export default function ProviderFormPage() {
                 <Title headingLevel="h3" size="md" className="section-title">
                   {providerType === 'ses' ? 'Amazon SES' : providerType === 'sendgrid' ? 'SendGrid' : 'Mailgun'} Configuration
                 </Title>
-                <FormGroup label="API Key" isRequired fieldId="api-key">
+                <FormGroup label={providerType === 'ses' ? 'Access Key ID' : 'API Key'} isRequired fieldId="api-key">
                   <TextInput id="api-key" type="password" value={apiKey.api_key} onChange={(_e, v) => setApiKey({ ...apiKey, api_key: v })} isRequired />
                 </FormGroup>
                 {providerType === 'ses' && (
-                  <FormGroup label="Region" isRequired fieldId="ses-region">
-                    <TextInput id="ses-region" value={apiKey.region} onChange={(_e, v) => setApiKey({ ...apiKey, region: v })} isRequired />
-                  </FormGroup>
+                  <>
+                    <FormGroup label="Secret Access Key" isRequired fieldId="ses-secret-key">
+                      <TextInput id="ses-secret-key" type="password" value={apiKey.secret_key} onChange={(_e, v) => setApiKey({ ...apiKey, secret_key: v })} isRequired />
+                    </FormGroup>
+                    <FormGroup label="Region" isRequired fieldId="ses-region">
+                      <TextInput id="ses-region" value={apiKey.region} onChange={(_e, v) => setApiKey({ ...apiKey, region: v })} isRequired />
+                    </FormGroup>
+                  </>
                 )}
                 {providerType === 'mailgun' && (
                   <FormGroup label="Sending Domain" isRequired fieldId="mg-domain">

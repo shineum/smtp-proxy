@@ -178,6 +178,7 @@ func (r *ProviderResolver) cacheProvider(id uuid.UUID, p Provider) {
 
 // smtpConfigExtra holds optional fields parsed from the esp_providers.smtp_config JSONB column.
 type smtpConfigExtra struct {
+	APIKey       string `json:"api_key,omitempty"`
 	Region       string `json:"region,omitempty"`
 	Domain       string `json:"domain,omitempty"`
 	SecretKey    string `json:"secret_key,omitempty"`
@@ -203,6 +204,11 @@ func espToConfig(esp *storage.EspProvider) (ProviderConfig, error) {
 		var extra smtpConfigExtra
 		if err := json.Unmarshal(esp.SmtpConfig, &extra); err != nil {
 			return cfg, fmt.Errorf("unmarshal smtp_config: %w", err)
+		}
+		// Fallback: if api_key column is empty, read from smtp_config JSONB.
+		// The admin UI stores api_key inside smtp_config for display on edit.
+		if cfg.APIKey == "" && extra.APIKey != "" {
+			cfg.APIKey = extra.APIKey
 		}
 		cfg.Region = extra.Region
 		cfg.Domain = extra.Domain

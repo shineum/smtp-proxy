@@ -418,7 +418,8 @@
   position: fixed;
   inset: 0;
   background-color: rgba(0, 0, 0, 0.5);
-  z-index: 299; /* just below PatternFly sidebar z-index (~300) */
+  z-index: 300;
+  pointer-events: auto;
 }
 
 /* Tablet / iPad: 768px - 1199px */
@@ -429,7 +430,7 @@
     top: 0;
     bottom: 0;
     left: 0;
-    z-index: 300;
+    z-index: 301;
     height: 100vh;
     overflow-y: auto;
   }
@@ -462,7 +463,7 @@
     bottom: 0;
     left: 0;
     width: 260px !important;
-    z-index: 300;
+    z-index: 301;
     height: 100vh;
     overflow-y: auto;
   }

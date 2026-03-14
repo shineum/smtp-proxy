@@ -33,18 +33,19 @@ export default function MessageListPage() {
     <PageSection>
       <div className="page-header">
         <Title headingLevel="h1" size="lg">Messages</Title>
-        <FormSelect
-          value={statusFilter}
-          onChange={(_e, v) => { setStatusFilter(v); setPage(1); }}
-          style={{ width: '200px', flex: '0 0 200px' }}
-          aria-label="Status filter"
-        >
-          <FormSelectOption value="" label="All Statuses" />
-          <FormSelectOption value="queued" label="Queued" />
-          <FormSelectOption value="processing" label="Processing" />
-          <FormSelectOption value="sent" label="Sent" />
-          <FormSelectOption value="failed" label="Failed" />
-        </FormSelect>
+        <div style={{ width: '200px', flexShrink: 0 }}>
+          <FormSelect
+            value={statusFilter}
+            onChange={(_e, v) => { setStatusFilter(v); setPage(1); }}
+            aria-label="Status filter"
+          >
+            <FormSelectOption value="" label="All Statuses" />
+            <FormSelectOption value="queued" label="Queued" />
+            <FormSelectOption value="processing" label="Processing" />
+            <FormSelectOption value="sent" label="Sent" />
+            <FormSelectOption value="failed" label="Failed" />
+          </FormSelect>
+        </div>
       </div>
 
       <Table aria-label="Messages table">

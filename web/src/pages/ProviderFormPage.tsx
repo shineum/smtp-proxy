@@ -62,6 +62,10 @@ export default function ProviderFormPage() {
     success: boolean; provider_message_id?: string; error?: string; duration_ms: number;
   } | null>(null);
 
+  const isEmail = (v: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  const hasSender = providerType === 'msgraph';
+  const isTestFormValid = (!hasSender ? isEmail(testFrom) : true) && isEmail(testTo) && !!testSubject;
+
   const testMutation = useMutation({
     mutationFn: () => sendTestEmail(id!, { from: testFrom, to: testTo, subject: testSubject, body: testBody }),
     onSuccess: (data) => setTestResult(data),
@@ -452,7 +456,7 @@ export default function ProviderFormPage() {
           <Button
             key="send"
             onClick={() => { setTestResult(null); testMutation.mutate(); }}
-            isDisabled={!testFrom || !testTo || !testSubject || testMutation.isPending}
+            isDisabled={!isTestFormValid || testMutation.isPending}
             isLoading={testMutation.isPending}
           >
             {testMutation.isPending ? 'Sending...' : 'Send'}
@@ -463,11 +467,15 @@ export default function ProviderFormPage() {
         ]}
       >
         <Form>
-          <FormGroup label="From" isRequired fieldId="test-from">
-            <TextInput id="test-from" value={testFrom} onChange={(_e, v) => setTestFrom(v)} placeholder="sender@example.com" isRequired />
-          </FormGroup>
+          {!hasSender && (
+            <FormGroup label="From" isRequired fieldId="test-from">
+              <TextInput id="test-from" value={testFrom} onChange={(_e, v) => setTestFrom(v)} placeholder="sender@example.com" isRequired
+                validated={testFrom && !isEmail(testFrom) ? 'error' : 'default'} />
+            </FormGroup>
+          )}
           <FormGroup label="To" isRequired fieldId="test-to">
-            <TextInput id="test-to" value={testTo} onChange={(_e, v) => setTestTo(v)} placeholder="recipient@example.com" isRequired />
+            <TextInput id="test-to" value={testTo} onChange={(_e, v) => setTestTo(v)} placeholder="recipient@example.com" isRequired
+              validated={testTo && !isEmail(testTo) ? 'error' : 'default'} />
           </FormGroup>
           <FormGroup label="Subject" isRequired fieldId="test-subject">
             <TextInput id="test-subject" value={testSubject} onChange={(_e, v) => setTestSubject(v)} isRequired />

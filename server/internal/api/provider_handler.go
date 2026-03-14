@@ -582,8 +582,14 @@ func TestProviderHandler(queries storage.Querier) http.HandlerFunc {
 			respondError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
-		if req.From == "" || req.To == "" || req.Subject == "" {
-			respondError(w, http.StatusBadRequest, "from, to, and subject are required")
+		if req.To == "" || req.Subject == "" {
+			respondError(w, http.StatusBadRequest, "to and subject are required")
+			return
+		}
+		// Providers with a built-in sender (e.g. msgraph) don't require from
+		hasSender := esp.ProviderType == storage.ProviderTypeMsgraph
+		if req.From == "" && !hasSender {
+			respondError(w, http.StatusBadRequest, "from is required for this provider type")
 			return
 		}
 

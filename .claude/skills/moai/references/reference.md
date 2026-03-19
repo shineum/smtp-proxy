@@ -30,10 +30,10 @@ triggers:
 
 Common patterns, flag reference, and legacy command mapping used across all MoAI workflows.
 
-For configuration file paths, see: @CLAUDE.md Section 9
-For error handling delegation, see: @CLAUDE.md Section 11
-For completion markers, see: @.claude/rules/moai/core/moai-constitution.md
-For development mode details, see: @.claude/rules/moai/workflow/workflow-modes.md
+For configuration file paths, see: CLAUDE.md Section 9
+For error handling delegation, see: CLAUDE.md Section 11
+For completion markers, see: .claude/rules/moai/core/moai-constitution.md
+For development mode details, see: .claude/rules/moai/workflow/workflow-modes.md
 
 ---
 
@@ -143,7 +143,7 @@ Propagation Method:
 
 - --resume [ID]: Resume workflow from last checkpoint (SPEC-ID or snapshot ID)
 - --seq: Force sequential execution instead of parallel where applicable
-- --ultrathink: Activate Sequential Thinking MCP for deep analysis before execution
+- --deepthink: Activate Sequential Thinking MCP for deep analysis before execution
 - --team: Force Agent Teams mode for parallel execution
 - --solo: Force sub-agent mode (single agent per phase)
 

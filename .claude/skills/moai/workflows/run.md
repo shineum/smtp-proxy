@@ -31,7 +31,7 @@ triggers:
 
 Implement SPEC requirements using the configured development methodology.
 
-For methodology details (DDD ANALYZE-PRESERVE-IMPROVE and TDD RED-GREEN-REFACTOR cycles, success criteria, brownfield enhancement), see: @.claude/rules/moai/workflow/workflow-modes.md
+For methodology details (DDD ANALYZE-PRESERVE-IMPROVE and TDD RED-GREEN-REFACTOR cycles, success criteria, brownfield enhancement), see: .claude/rules/moai/workflow/workflow-modes.md
 
 ## Scope
 
@@ -43,7 +43,7 @@ For methodology details (DDD ANALYZE-PRESERVE-IMPROVE and TDD RED-GREEN-REFACTOR
 
 - $ARGUMENTS: SPEC-ID to implement (e.g., SPEC-AUTH-001)
 - Resume: Re-running /moai run SPEC-XXX resumes from last successful phase checkpoint
-- --team: Enable team-based implementation (see team/run.md for parallel implementation team)
+- --team: Enable team-based implementation (see ${CLAUDE_SKILL_DIR}/team/run.md for parallel implementation team)
 
 ## Context Loading
 
@@ -200,7 +200,7 @@ Purpose: Scan files that will be modified during implementation to build an MX c
 
 **Skip Condition:** If target files do not exist (greenfield implementation), skip this phase.
 
-See @.claude/rules/moai/workflow/mx-tag-protocol.md for tag type definitions.
+See .claude/rules/moai/workflow/mx-tag-protocol.md for tag type definitions.
 
 ### Batch Mode Decision [MANDATORY EVALUATION]
 
@@ -345,7 +345,7 @@ If status is PASS or WARNING: Continue to Phase 2.8.
 
 ### Phase 2.7: Re-planning Gate Check
 
-Purpose: Detect stagnation and trigger re-assessment if implementation is stuck. See @.claude/rules/moai/workflow/spec-workflow.md for trigger conditions, communication path, and detection method.
+Purpose: Detect stagnation and trigger re-assessment if implementation is stuck. See .claude/rules/moai/workflow/spec-workflow.md for trigger conditions, communication path, and detection method.
 
 Check `.moai/specs/SPEC-{ID}/progress.md` for stagnation signals. If triggered, return structured stagnation report to MoAI for user escalation.
 
@@ -369,7 +369,7 @@ Output: review_findings per dimension, iterations_completed count, final review 
 
 ### Phase 2.9: MX Tag Update
 
-Purpose: Update @MX code annotations for modified files. See @.claude/rules/moai/workflow/mx-tag-protocol.md for tag rules.
+Purpose: Update @MX code annotations for modified files. See .claude/rules/moai/workflow/mx-tag-protocol.md for tag rules.
 
 **TDD Mode:**
 - Remove `@MX:TODO` tags for tests that now pass
@@ -426,9 +426,20 @@ Tasks for manager-git:
 - Create feature branch (if auto_branch enabled)
 - Stage all relevant implementation and test files
 - Create commits with conventional commit messages
+- If SPEC metadata contains `issue_number` (non-zero): Include `Fixes #{issue_number}` in commit message footer
 - Verify each commit was created successfully
 
-Output: branch_name, commits array (sha and message), files_staged count, status.
+Commit message format when issue_number exists:
+```
+feat(scope): description
+
+SPEC: SPEC-{ID}
+Fixes #{issue_number}
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+```
+
+Output: branch_name, commits array (sha and message), files_staged count, status, issue_number (from SPEC metadata).
 
 ### Phase 4: Completion and Guidance
 
@@ -476,7 +487,7 @@ Apply existing --team/--solo flag logic in Team Mode Routing below.
 When --team flag is provided or auto-selected, the run phase MUST switch to team orchestration:
 
 1. Verify prerequisites: workflow.team.enabled == true AND CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 env var is set
-2. If prerequisites met: Read team/run.md and execute the team workflow (TeamCreate with backend-dev + frontend-dev + tester + quality)
+2. If prerequisites met: Read ${CLAUDE_SKILL_DIR}/team/run.md and execute the team workflow (TeamCreate with backend-dev + frontend-dev + tester + quality)
 3. If prerequisites NOT met: Warn user then fallback to standard sub-agent mode
 
 Team composition: backend-dev (inherit) + frontend-dev (inherit) + tester (inherit) + quality (inherit, read-only)
@@ -487,9 +498,9 @@ Team composition: backend-dev (inherit) + frontend-dev (inherit) + tester (inher
 - [HARD] Read-only teammates (quality) MUST NOT use `isolation: "worktree"` — permissionMode: plan is sufficient
 - After team shutdown, run `git worktree prune` to clean up stale worktree references
 
-See @.claude/rules/moai/workflow/worktree-integration.md for the complete worktree decision tree.
+See .claude/rules/moai/workflow/worktree-integration.md for the complete worktree decision tree.
 
-For detailed team orchestration steps, see team/run.md.
+For detailed team orchestration steps, see ${CLAUDE_SKILL_DIR}/team/run.md.
 
 ---
 
@@ -520,5 +531,5 @@ All of the following must be verified:
 
 ---
 
-Version: 2.9.0
-Updated: 2026-03-02. Added Harness Engineering improvements: progress.md resume (P1), failing checklist Phase 1.6 (P2), file scaffolding Phase 1.7 (P5), onboarding context propagation to implementation agents (P3).
+Version: 2.10.0
+Updated: 2026-03-11. Added GitHub Issue linking: Phase 3 reads SPEC issue_number for Fixes #N in commits/PRs. Previous: Harness Engineering improvements (v2.9.0).

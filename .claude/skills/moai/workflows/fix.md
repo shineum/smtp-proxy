@@ -150,7 +150,7 @@ Before applying fixes, scan target files for existing @MX tags to understand con
 
 **Skip Condition:** If no @MX tags found in target files, proceed directly to Phase 3.
 
-See @.claude/rules/moai/workflow/mx-tag-protocol.md for tag type definitions.
+See .claude/rules/moai/workflow/mx-tag-protocol.md for tag type definitions.
 
 ## Phase 3: Auto-Fix
 
@@ -212,7 +212,7 @@ Generate MX_TAG_REPORT section in fix report:
 - Files with new @MX:WARN requiring review
 ```
 
-See @.claude/rules/moai/workflow/mx-tag-protocol.md for complete tag rules.
+See .claude/rules/moai/workflow/mx-tag-protocol.md for complete tag rules.
 
 ## Phase 4.6: Dead Code Cleanup (Optional)
 
@@ -259,7 +259,7 @@ When --team flag is provided, fix delegates to a team-based debugging workflow u
 
 Team composition: 3 hypothesis agents (haiku) exploring different root causes in parallel.
 
-For detailed team orchestration steps, see team/debug.md.
+For detailed team orchestration steps, see ${CLAUDE_SKILL_DIR}/team/debug.md.
 
 Fallback: If team mode is unavailable, standard single-agent fix workflow continues.
 

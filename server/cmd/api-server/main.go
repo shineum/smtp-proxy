@@ -16,6 +16,7 @@ import (
 	"github.com/sungwon/smtp-proxy/server/internal/bootstrap"
 	"github.com/sungwon/smtp-proxy/server/internal/config"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
+	"github.com/sungwon/smtp-proxy/server/internal/migrate"
 	"github.com/sungwon/smtp-proxy/server/internal/storage"
 	"github.com/sungwon/smtp-proxy/server/internal/web"
 )
@@ -47,6 +48,11 @@ func main() {
 	defer db.Close()
 
 	log.Info().Msg("database connection established")
+
+	// Run database migrations.
+	if err := migrate.Up(ctx, db.Pool, "migrations", log); err != nil {
+		log.Fatal().Err(err).Msg("failed to run database migrations")
+	}
 
 	// Create sqlc queries instance
 	queries := storage.New(db.Pool)

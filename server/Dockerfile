@@ -73,6 +73,7 @@ RUN apk add --no-cache ca-certificates curl
 
 COPY --from=builder /bin/api-server /usr/local/bin/
 COPY server/config/ /app/config/
+COPY server/migrations/ /app/migrations/
 
 WORKDIR /app
 

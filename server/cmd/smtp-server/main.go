@@ -37,7 +37,7 @@ func main() {
 
 	// Initialize database connection pool.
 	ctx := context.Background()
-	db, err := storage.NewDB(ctx, cfg.Database.URL, cfg.Database.PoolMin, cfg.Database.PoolMax, cfg.Database.ConnectTimeout)
+	db, err := storage.NewDB(ctx, cfg.Database.DSN(), cfg.Database.PoolMin, cfg.Database.PoolMax, cfg.Database.ConnectTimeout)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to database")
 	}

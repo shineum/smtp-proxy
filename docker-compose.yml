@@ -52,7 +52,7 @@ services:
     command:
       - "-path=/migrations"
       - "-database"
-      - "${SMTP_PROXY_DATABASE_URL:-postgres://smtp_proxy:smtp_proxy_dev@postgres:5432/smtp_proxy?sslmode=disable}"
+      - "postgres://${SMTP_PROXY_DATABASE_USER:-smtp_proxy}:${SMTP_PROXY_DATABASE_PASSWORD:-smtp_proxy_dev}@${SMTP_PROXY_DATABASE_HOST:-postgres}:${SMTP_PROXY_DATABASE_PORT:-5432}/${SMTP_PROXY_DATABASE_NAME:-smtp_proxy}?sslmode=${SMTP_PROXY_DATABASE_SSLMODE:-disable}"
       - "up"
     volumes:
       - ./server/migrations:/migrations:ro
@@ -74,7 +74,12 @@ services:
       - "587:587"
       - "465:465"
     environment:
-      SMTP_PROXY_DATABASE_URL: ${SMTP_PROXY_DATABASE_URL:-postgres://smtp_proxy:smtp_proxy_dev@postgres:5432/smtp_proxy?sslmode=disable}
+      SMTP_PROXY_DATABASE_HOST: ${SMTP_PROXY_DATABASE_HOST:-postgres}
+      SMTP_PROXY_DATABASE_PORT: ${SMTP_PROXY_DATABASE_PORT:-5432}
+      SMTP_PROXY_DATABASE_USER: ${SMTP_PROXY_DATABASE_USER:-smtp_proxy}
+      SMTP_PROXY_DATABASE_PASSWORD: ${SMTP_PROXY_DATABASE_PASSWORD:-smtp_proxy_dev}
+      SMTP_PROXY_DATABASE_NAME: ${SMTP_PROXY_DATABASE_NAME:-smtp_proxy}
+      SMTP_PROXY_DATABASE_SSLMODE: ${SMTP_PROXY_DATABASE_SSLMODE:-disable}
       SMTP_PROXY_QUEUE_REDIS_ADDR: ${SMTP_PROXY_QUEUE_REDIS_ADDR:-redis:6379}
       SMTP_PROXY_DELIVERY_MODE: ${SMTP_PROXY_DELIVERY_MODE:-sync}
       SMTP_PROXY_AUTH_SIGNING_KEY: ${SMTP_PROXY_AUTH_SIGNING_KEY:-dev-signing-key-change-in-production}
@@ -103,7 +108,12 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SMTP_PROXY_DATABASE_URL: ${SMTP_PROXY_DATABASE_URL:-postgres://smtp_proxy:smtp_proxy_dev@postgres:5432/smtp_proxy?sslmode=disable}
+      SMTP_PROXY_DATABASE_HOST: ${SMTP_PROXY_DATABASE_HOST:-postgres}
+      SMTP_PROXY_DATABASE_PORT: ${SMTP_PROXY_DATABASE_PORT:-5432}
+      SMTP_PROXY_DATABASE_USER: ${SMTP_PROXY_DATABASE_USER:-smtp_proxy}
+      SMTP_PROXY_DATABASE_PASSWORD: ${SMTP_PROXY_DATABASE_PASSWORD:-smtp_proxy_dev}
+      SMTP_PROXY_DATABASE_NAME: ${SMTP_PROXY_DATABASE_NAME:-smtp_proxy}
+      SMTP_PROXY_DATABASE_SSLMODE: ${SMTP_PROXY_DATABASE_SSLMODE:-disable}
       SMTP_PROXY_QUEUE_REDIS_ADDR: ${SMTP_PROXY_QUEUE_REDIS_ADDR:-redis:6379}
       SMTP_PROXY_DELIVERY_MODE: ${SMTP_PROXY_DELIVERY_MODE:-sync}
       SMTP_PROXY_AUTH_SIGNING_KEY: ${SMTP_PROXY_AUTH_SIGNING_KEY:-dev-signing-key-change-in-production}
@@ -198,7 +208,12 @@ services:
       dockerfile: server/Dockerfile
       target: queue-worker
     environment:
-      SMTP_PROXY_DATABASE_URL: ${SMTP_PROXY_DATABASE_URL:-postgres://smtp_proxy:smtp_proxy_dev@postgres:5432/smtp_proxy?sslmode=disable}
+      SMTP_PROXY_DATABASE_HOST: ${SMTP_PROXY_DATABASE_HOST:-postgres}
+      SMTP_PROXY_DATABASE_PORT: ${SMTP_PROXY_DATABASE_PORT:-5432}
+      SMTP_PROXY_DATABASE_USER: ${SMTP_PROXY_DATABASE_USER:-smtp_proxy}
+      SMTP_PROXY_DATABASE_PASSWORD: ${SMTP_PROXY_DATABASE_PASSWORD:-smtp_proxy_dev}
+      SMTP_PROXY_DATABASE_NAME: ${SMTP_PROXY_DATABASE_NAME:-smtp_proxy}
+      SMTP_PROXY_DATABASE_SSLMODE: ${SMTP_PROXY_DATABASE_SSLMODE:-disable}
       SMTP_PROXY_QUEUE_REDIS_ADDR: ${SMTP_PROXY_QUEUE_REDIS_ADDR:-redis:6379}
       SMTP_PROXY_DELIVERY_MODE: ${SMTP_PROXY_DELIVERY_MODE:-sync}
       SMTP_PROXY_AUTH_SIGNING_KEY: ${SMTP_PROXY_AUTH_SIGNING_KEY:-dev-signing-key-change-in-production}

@@ -48,8 +48,27 @@ func TestLoad_ValidConfigFile(t *testing.T) {
 	}
 
 	// Database defaults
-	if cfg.Database.URL != "postgres://smtp_proxy:smtp_proxy_dev@localhost:5432/smtp_proxy?sslmode=disable" {
-		t.Errorf("unexpected database URL: %s", cfg.Database.URL)
+	if cfg.Database.Host != "localhost" {
+		t.Errorf("expected database host localhost, got %s", cfg.Database.Host)
+	}
+	if cfg.Database.Port != 5432 {
+		t.Errorf("expected database port 5432, got %d", cfg.Database.Port)
+	}
+	if cfg.Database.User != "smtp_proxy" {
+		t.Errorf("expected database user smtp_proxy, got %s", cfg.Database.User)
+	}
+	if cfg.Database.Password != "smtp_proxy_dev" {
+		t.Errorf("expected database password smtp_proxy_dev, got %s", cfg.Database.Password)
+	}
+	if cfg.Database.Name != "smtp_proxy" {
+		t.Errorf("expected database name smtp_proxy, got %s", cfg.Database.Name)
+	}
+	if cfg.Database.SSLMode != "disable" {
+		t.Errorf("expected database sslmode disable, got %s", cfg.Database.SSLMode)
+	}
+	expectedDSN := "postgres://smtp_proxy:smtp_proxy_dev@localhost:5432/smtp_proxy?sslmode=disable"
+	if cfg.Database.DSN() != expectedDSN {
+		t.Errorf("expected DSN %s, got %s", expectedDSN, cfg.Database.DSN())
 	}
 	if cfg.Database.PoolMin != 5 {
 		t.Errorf("expected pool min 5, got %d", cfg.Database.PoolMin)
@@ -79,16 +98,20 @@ func TestLoad_ValidConfigFile(t *testing.T) {
 }
 
 func TestLoad_EnvironmentVariableOverride(t *testing.T) {
-	overrideURL := "postgres://override:override@remotehost:5432/override_db?sslmode=require"
-	t.Setenv("SMTP_PROXY_DATABASE_URL", overrideURL)
+	t.Setenv("SMTP_PROXY_DATABASE_HOST", "remotehost")
+	t.Setenv("SMTP_PROXY_DATABASE_USER", "override")
+	t.Setenv("SMTP_PROXY_DATABASE_PASSWORD", "override")
+	t.Setenv("SMTP_PROXY_DATABASE_NAME", "override_db")
+	t.Setenv("SMTP_PROXY_DATABASE_SSLMODE", "require")
 
 	cfg, err := Load("../../config")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if cfg.Database.URL != overrideURL {
-		t.Errorf("expected database URL override %s, got %s", overrideURL, cfg.Database.URL)
+	expectedDSN := "postgres://override:override@remotehost:5432/override_db?sslmode=require"
+	if cfg.Database.DSN() != expectedDSN {
+		t.Errorf("expected DSN %s, got %s", expectedDSN, cfg.Database.DSN())
 	}
 
 	// Other values should still be from config file

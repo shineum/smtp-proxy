@@ -66,10 +66,23 @@ type APIConfig struct {
 
 // DatabaseConfig holds PostgreSQL connection configuration.
 type DatabaseConfig struct {
-	URL            string        `mapstructure:"url"`
+	Host           string        `mapstructure:"host"`
+	Port           int           `mapstructure:"port"`
+	User           string        `mapstructure:"user"`
+	Password       string        `mapstructure:"password"`
+	Name           string        `mapstructure:"name"`
+	SSLMode        string        `mapstructure:"sslmode"`
 	PoolMin        int32         `mapstructure:"pool_min"`
 	PoolMax        int32         `mapstructure:"pool_max"`
 	ConnectTimeout time.Duration `mapstructure:"connect_timeout"`
+}
+
+// DSN returns the PostgreSQL connection string built from individual fields.
+func (d DatabaseConfig) DSN() string {
+	return fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		d.User, d.Password, d.Host, d.Port, d.Name, d.SSLMode,
+	)
 }
 
 // LoggingConfig holds logging configuration.
@@ -124,7 +137,7 @@ type StorageConfig struct {
 // Load reads configuration from the given config directory path.
 // It looks for a file named "config.yaml" in that directory.
 // Environment variables with prefix SMTP_PROXY_ override file values.
-// For example, SMTP_PROXY_DATABASE_URL overrides database.url.
+// For example, SMTP_PROXY_DATABASE_HOST overrides database.host.
 func Load(configPath string) (*Config, error) {
 	v := viper.New()
 

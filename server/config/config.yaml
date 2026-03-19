@@ -13,7 +13,12 @@ api:
   write_timeout: 10s
 
 database:
-  url: "postgres://smtp_proxy:smtp_proxy_dev@localhost:5432/smtp_proxy?sslmode=disable"
+  host: localhost
+  port: 5432
+  user: smtp_proxy
+  password: smtp_proxy_dev
+  name: smtp_proxy
+  sslmode: disable
   pool_min: 5
   pool_max: 20
   connect_timeout: 5s

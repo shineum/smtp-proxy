@@ -152,7 +152,12 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SMTP_PROXY_DATABASE_URL` | `postgres://...@postgres:5432/smtp_proxy` | PostgreSQL connection string |
+| `SMTP_PROXY_DATABASE_HOST` | `postgres` | PostgreSQL host |
+| `SMTP_PROXY_DATABASE_PORT` | `5432` | PostgreSQL port |
+| `SMTP_PROXY_DATABASE_USER` | `smtp_proxy` | PostgreSQL user |
+| `SMTP_PROXY_DATABASE_PASSWORD` | `smtp_proxy_dev` | PostgreSQL password |
+| `SMTP_PROXY_DATABASE_NAME` | `smtp_proxy` | PostgreSQL database name |
+| `SMTP_PROXY_DATABASE_SSLMODE` | `disable` | PostgreSQL SSL mode |
 | `SMTP_PROXY_QUEUE_REDIS_ADDR` | `redis:6379` | Redis address |
 | `SMTP_PROXY_AUTH_SIGNING_KEY` | `change-me-in-production...` | JWT HMAC signing key |
 | `SMTP_PROXY_STORAGE_TYPE` | `local` | Message body storage: `local` or `s3` |

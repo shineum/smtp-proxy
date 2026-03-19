@@ -36,7 +36,7 @@ func main() {
 	ctx := context.Background()
 	db, err := storage.NewDB(
 		ctx,
-		cfg.Database.URL,
+		cfg.Database.DSN(),
 		cfg.Database.PoolMin,
 		cfg.Database.PoolMax,
 		cfg.Database.ConnectTimeout,

@@ -18,8 +18,8 @@ type AsyncService struct {
 }
 
 // NewAsyncService creates an AsyncService backed by the given Enqueuer.
-// streamName must match the queue worker's configured stream name so both
-// sides use the same Redis stream key.
+// streamName identifies the queue stream (Redis stream key or SQS queue)
+// and must match the queue worker's configured stream name.
 func NewAsyncService(enqueuer queue.Enqueuer, streamName string, log zerolog.Logger) *AsyncService {
 	return &AsyncService{
 		enqueuer:   enqueuer,
@@ -28,7 +28,7 @@ func NewAsyncService(enqueuer queue.Enqueuer, streamName string, log zerolog.Log
 	}
 }
 
-// DeliverMessage enqueues an ID-only message reference to Redis Streams.
+// DeliverMessage enqueues an ID-only message reference to the queue backend.
 // The actual ESP delivery is handled asynchronously by the queue-worker process,
 // which fetches the full message body from the message store.
 func (a *AsyncService) DeliverMessage(ctx context.Context, req *Request) error {
@@ -38,8 +38,8 @@ func (a *AsyncService) DeliverMessage(ctx context.Context, req *Request) error {
 	if err != nil {
 		a.log.Error().Err(err).
 			Stringer("message_id", req.MessageID).
-			Msg("failed to enqueue message to Redis")
-		return fmt.Errorf("enqueue to redis: %w", err)
+			Msg("failed to enqueue message")
+		return fmt.Errorf("enqueue message: %w", err)
 	}
 
 	a.log.Info().

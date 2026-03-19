@@ -8,8 +8,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"github.com/sungwon/smtp-proxy/server/internal/config"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
 	"github.com/sungwon/smtp-proxy/server/internal/msgstore"
@@ -45,17 +43,6 @@ func main() {
 	stdoutFallback := os.Getenv("SMTP_PROXY_PROVIDER_STDOUT_FALLBACK") == "true"
 	resolver := provider.NewResolver(queries, httpClient, log, stdoutFallback)
 
-	// Connect to Redis.
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.Queue.RedisAddr,
-		Password: cfg.Queue.RedisPassword,
-		DB:       cfg.Queue.RedisDB,
-	})
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		log.Fatal().Err(err).Msg("failed to connect to Redis")
-	}
-	defer redisClient.Close()
-
 	// Initialize message body store (REQ-QW-004).
 	store, err := msgstore.New(msgstore.Config{
 		Type:       cfg.Storage.Type,
@@ -83,36 +70,32 @@ func main() {
 	}
 
 	queueCfg := queue.Config{
+		Type:            cfg.Queue.Type,
+		RedisAddr:       cfg.Queue.RedisAddr,
+		RedisPassword:   cfg.Queue.RedisPassword,
+		RedisDB:         cfg.Queue.RedisDB,
 		WorkerCount:     workerCount,
 		BlockTimeout:    blockTimeout,
 		ProcessTimeout:  30 * time.Second,
 		ShutdownTimeout: 30 * time.Second,
 		MaxRetries:      5,
+		SQSQueueURL:     cfg.Queue.SQSQueueURL,
+		SQSDLQueueURL:   cfg.Queue.SQSDLQueueURL,
+		SQSRegion:       cfg.Queue.SQSRegion,
 	}
 
-	// Create queue components using Redis implementations.
-	enqueuer := queue.NewRedisEnqueuer(redisClient)
-	retryStrategy := queue.NewRetryStrategy(queueCfg.MaxRetries)
-	dlq := queue.NewRedisDLQ(redisClient, enqueuer)
-	dequeuer := queue.NewRedisDequeuer(
-		redisClient,
-		enqueuer,
-		dlq,
-		handler,
-		retryStrategy,
-		queueCfg,
-		log,
-		cfg.Queue.StreamName,
-		cfg.Queue.GroupName,
-	)
+	// Create queue components using configured backend (redis or sqs).
+	_, dequeuer, _, err := queue.NewQueue(queueCfg, handler, log, cfg.Queue.StreamName, cfg.Queue.GroupName)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to create queue")
+	}
 
 	if err := dequeuer.Start(ctx); err != nil {
 		log.Fatal().Err(err).Msg("failed to start dequeuer")
 	}
 	log.Info().
 		Int("workers", workerCount).
-		Str("stream", cfg.Queue.StreamName).
-		Str("group", cfg.Queue.GroupName).
+		Str("type", cfg.Queue.Type).
 		Msg("queue worker pool started")
 
 	// Start daily cleanup job for soft-deleted users (>30 days).

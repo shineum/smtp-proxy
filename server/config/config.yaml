@@ -36,6 +36,7 @@ delivery:
   mode: "sync"  # "sync" (no Redis required) or "async" (requires Redis)
 
 queue:
+  type: "redis"  # "redis" (default) or "sqs"
   redis_addr: "localhost:6379"
   redis_password: ""
   redis_db: 0
@@ -44,6 +45,10 @@ queue:
   consumer_id: "worker-1"
   workers: 10
   block_timeout: "5s"
+  # SQS-specific (used when type=sqs)
+  # sqs_queue_url: ""
+  # sqs_dlq_url: ""
+  # sqs_region: "us-east-1"
 
 auth:
   # HMAC signing key for JWT tokens. Override via SMTP_PROXY_AUTH_SIGNING_KEY env var.

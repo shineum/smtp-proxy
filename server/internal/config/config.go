@@ -106,8 +106,10 @@ type TLSConfig struct {
 	KeyFile  string `mapstructure:"key_file"`
 }
 
-// QueueConfig holds Redis-based queue configuration for async delivery mode.
+// QueueConfig holds queue configuration for async delivery mode.
 type QueueConfig struct {
+	// Type selects the queue backend: "redis" (default) or "sqs".
+	Type          string        `mapstructure:"type"`
 	RedisAddr     string        `mapstructure:"redis_addr"`
 	RedisPassword string        `mapstructure:"redis_password"`
 	RedisDB       int           `mapstructure:"redis_db"`
@@ -116,6 +118,11 @@ type QueueConfig struct {
 	ConsumerID    string        `mapstructure:"consumer_id"`
 	Workers       int           `mapstructure:"workers"`
 	BlockTimeout  time.Duration `mapstructure:"block_timeout"`
+
+	// SQS-specific config
+	SQSQueueURL   string `mapstructure:"sqs_queue_url"`
+	SQSDLQueueURL string `mapstructure:"sqs_dlq_url"`
+	SQSRegion     string `mapstructure:"sqs_region"`
 }
 
 // StorageConfig holds message body storage configuration.
@@ -146,6 +153,7 @@ func Load(configPath string) (*Config, error) {
 	v.AddConfigPath(configPath)
 
 	// Set defaults for queue configuration.
+	v.SetDefault("queue.type", "redis")
 	v.SetDefault("queue.redis_addr", "localhost:6379")
 	v.SetDefault("queue.redis_db", 0)
 	v.SetDefault("queue.stream_name", "smtp-proxy")

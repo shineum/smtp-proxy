@@ -8,7 +8,7 @@ import (
 
 // Service delivers email messages after they have been persisted to the database.
 // The sole implementation is AsyncService, which enqueues ID-only references to
-// Redis Streams for background worker delivery.
+// the configured queue backend (Redis Streams or SQS) for background worker delivery.
 type Service interface {
 	DeliverMessage(ctx context.Context, req *Request) error
 }

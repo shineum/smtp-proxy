@@ -11,7 +11,6 @@ import (
 	"time"
 
 	gosmtp "github.com/emersion/go-smtp"
-	"github.com/redis/go-redis/v9"
 
 	"github.com/sungwon/smtp-proxy/server/internal/config"
 	"github.com/sungwon/smtp-proxy/server/internal/delivery"
@@ -45,20 +44,22 @@ func main() {
 
 	queries := storage.New(db.Pool)
 
-	// Create async delivery service (Redis is required).
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.Queue.RedisAddr,
-		Password: cfg.Queue.RedisPassword,
-		DB:       cfg.Queue.RedisDB,
-	})
-	if err := redisClient.Ping(ctx).Err(); err != nil {
-		log.Fatal().Err(err).Msg("failed to connect to Redis")
+	// Create async delivery service using configured queue backend.
+	queueCfg := queue.Config{
+		Type:          cfg.Queue.Type,
+		RedisAddr:     cfg.Queue.RedisAddr,
+		RedisPassword: cfg.Queue.RedisPassword,
+		RedisDB:       cfg.Queue.RedisDB,
+		SQSQueueURL:   cfg.Queue.SQSQueueURL,
+		SQSDLQueueURL: cfg.Queue.SQSDLQueueURL,
+		SQSRegion:     cfg.Queue.SQSRegion,
 	}
-	defer redisClient.Close()
-
-	enqueuer := queue.NewRedisEnqueuer(redisClient)
+	enqueuer, err := queue.NewEnqueuer(queueCfg, log)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to create queue enqueuer")
+	}
 	deliverySvc := delivery.NewAsyncService(enqueuer, cfg.Queue.StreamName, log)
-	log.Info().Msg("delivery mode: async (Redis Streams)")
+	log.Info().Str("type", cfg.Queue.Type).Msg("delivery mode: async")
 
 	// Initialize message body storage.
 	store, err := msgstore.New(msgstore.Config{

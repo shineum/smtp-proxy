@@ -58,7 +58,7 @@ RUN mkdir -p /data/messages && chown nobody:nobody /data/messages
 
 WORKDIR /app
 
-EXPOSE 587 465
+EXPOSE 2587 2465
 
 USER nobody:nobody
 

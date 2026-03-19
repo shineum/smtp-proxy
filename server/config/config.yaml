@@ -1,6 +1,6 @@
 smtp:
   host: 0.0.0.0
-  port: 587
+  port: 2587
   max_connections: 1000
   read_timeout: 30s
   write_timeout: 30s

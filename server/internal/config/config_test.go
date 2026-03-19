@@ -17,8 +17,8 @@ func TestLoad_ValidConfigFile(t *testing.T) {
 	if cfg.SMTP.Host != "0.0.0.0" {
 		t.Errorf("expected SMTP host 0.0.0.0, got %s", cfg.SMTP.Host)
 	}
-	if cfg.SMTP.Port != 587 {
-		t.Errorf("expected SMTP port 587, got %d", cfg.SMTP.Port)
+	if cfg.SMTP.Port != 2587 {
+		t.Errorf("expected SMTP port 2587, got %d", cfg.SMTP.Port)
 	}
 	if cfg.SMTP.MaxConnections != 1000 {
 		t.Errorf("expected max connections 1000, got %d", cfg.SMTP.MaxConnections)
@@ -115,8 +115,8 @@ func TestLoad_EnvironmentVariableOverride(t *testing.T) {
 	}
 
 	// Other values should still be from config file
-	if cfg.SMTP.Port != 587 {
-		t.Errorf("expected SMTP port 587, got %d", cfg.SMTP.Port)
+	if cfg.SMTP.Port != 2587 {
+		t.Errorf("expected SMTP port 2587, got %d", cfg.SMTP.Port)
 	}
 }
 

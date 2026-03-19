@@ -71,8 +71,8 @@ services:
       dockerfile: server/Dockerfile
       target: smtp-server
     ports:
-      - "587:587"
-      - "465:465"
+      - "587:2587"
+      - "465:2465"
     environment:
       SMTP_PROXY_DATABASE_HOST: ${SMTP_PROXY_DATABASE_HOST:-postgres}
       SMTP_PROXY_DATABASE_PORT: ${SMTP_PROXY_DATABASE_PORT:-5432}
@@ -261,7 +261,7 @@ services:
       target: test-client
     command:
       - "--host=smtp-server"
-      - "--port=587"
+      - "--port=2587"
       - "--tls=starttls"
       - "--insecure"
       - "--user=dev"

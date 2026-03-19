@@ -8,7 +8,7 @@ Multi-tenant SMTP proxy server that accepts email via SMTP and delivers asynchro
 # Start all services (zero prerequisites except Docker)
 docker compose up -d --build
 
-# First time: create dev group + SMTP account (dev/dev)
+# (Dev only) First time: create dev group + SMTP account (dev/dev)
 docker compose run --rm seed
 
 # Send a test email
@@ -22,7 +22,7 @@ docker compose down
 ```
 
 The API server auto-seeds a system admin on startup (`admin@localhost` / `admin`).
-Run `docker compose run --rm seed` once to create a dev company group with an SMTP account (`dev` / `dev`) for testing.
+Run `docker compose run --rm seed` once to create a dev company group with an SMTP account (`dev` / `dev`) for local testing only.
 
 ## Architecture
 
@@ -106,7 +106,7 @@ queued → processing → delivered
 | `postgres` | - | PostgreSQL 18 with Row-Level Security |
 | `redis` | - | Redis 7.4 (queue backend, optional if using SQS) |
 | `migrate` | - | Database migrations (standalone, optional — api-server runs migrations on startup) |
-| `seed` | - | Creates dev group + SMTP account (seed-init-dev-accounts profile, run manually) |
+| `seed` | - | **(Dev only)** Creates dev group + SMTP account (seed-init-dev-accounts profile, run manually) |
 | `test-client` | - | CLI tool for sending test emails |
 
 ## Project Structure

@@ -32,7 +32,7 @@ Run `docker compose run --rm seed` once to create a dev company group with an SM
                       ┌──────────────────────────────────────────────────┐
                       │                  smtp-proxy                      │
                       │                                                  │
-  SMTP :587/465 ────▶ │  ┌─────────────┐     ┌─────────────────────┐    │
+  SMTP :2587/2465 ──▶ │  ┌─────────────┐     ┌─────────────────────┐    │
                       │  │ smtp-server  │────▶│  Message Storage    │    │
                       │  │  (go-smtp)   │     │  (local / S3)       │    │
                       │  └──────┬───────┘     └─────────────────────┘    │
@@ -100,12 +100,12 @@ queued → processing → delivered
 
 | Service | Port | Description |
 |---------|------|-------------|
-| `smtp-server` | 587, 465 | SMTP listener with STARTTLS and implicit TLS |
+| `smtp-server` | 2587, 2465 | SMTP listener with STARTTLS and implicit TLS (NLB maps 587→2587) |
 | `api-server` | 8080 | REST API for groups, users, providers, routing, auth |
 | `queue-worker` | - | Async delivery worker (Redis Streams or SQS consumer) |
 | `postgres` | - | PostgreSQL 18 with Row-Level Security |
 | `redis` | - | Redis 7.4 (queue backend, optional if using SQS) |
-| `migrate` | - | Database migrations (runs once on startup) |
+| `migrate` | - | Database migrations (standalone, optional — api-server runs migrations on startup) |
 | `seed` | - | Creates dev group + SMTP account (seed-init-dev-accounts profile, run manually) |
 | `test-client` | - | CLI tool for sending test emails |
 
@@ -183,7 +183,7 @@ Full configuration in `server/config/config.yaml`:
 ```yaml
 smtp:
   host: 0.0.0.0
-  port: 587
+  port: 2587
   max_connections: 1000
   max_message_size: 26214400  # 25MB
 
@@ -465,7 +465,7 @@ Failed messages in the dead-letter queue can be reprocessed via `POST /api/v1/dl
 
 ## Database
 
-PostgreSQL 18 with 25 migrations applied automatically on startup.
+PostgreSQL 18 with 26 migrations applied automatically on api-server startup (with advisory lock for safe concurrent deployment).
 
 **Tables:** `groups`, `group_members`, `users`, `api_keys`, `esp_providers`, `provider_group_access`, `routing_rules`, `messages`, `delivery_logs`, `sessions`, `activity_logs`
 
@@ -528,7 +528,7 @@ When `mode=none`, the server skips all certificate loading and allows plaintext 
 ## Test Client
 
 ```bash
-# Default: sends one test email via STARTTLS on port 587
+# Default: sends one test email via STARTTLS on port 2587
 docker compose run --rm test-client
 
 # Plain text (no TLS) - for NLB-terminated deployments
@@ -554,7 +554,7 @@ docker compose run --rm test-client \
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--host` | `localhost` | SMTP server hostname |
-| `--port` | `587` | SMTP port |
+| `--port` | `2587` | SMTP port |
 | `--tls` | `starttls` | `starttls`, `implicit`, or `none` |
 | `--insecure` | `false` | Skip TLS certificate verification |
 | `--user` | *(empty)* | SMTP AUTH username |
@@ -606,7 +606,7 @@ Test case documentation: [`docs/e2e-test-cases.md`](docs/e2e-test-cases.md) (32 
 ```bash
 # Using the built-in test-client (after services are running)
 docker compose run --rm test-client \
-  --host=smtp-server --port=587 --tls=starttls --insecure \
+  --host=smtp-server --port=2587 --tls=starttls --insecure \
   --user="<username>@<group_id>" --password="<api_key>" \
   --from="sender@example.com" \
   --to="recipient@example.com" \

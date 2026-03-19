@@ -1,6 +1,6 @@
 # smtp-proxy
 
-Multi-tenant SMTP proxy server that accepts email via SMTP and delivers asynchronously through configurable ESP providers (SendGrid, SES, Mailgun, Microsoft Graph). Features pluggable message body storage, Redis Streams queue with retry and dead-letter support, unified JWT/API-key authentication with group-based access control, and a REST API for management.
+Multi-tenant SMTP proxy server that accepts email via SMTP and delivers asynchronously through configurable ESP providers (SendGrid, SES, Mailgun, Microsoft Graph). Features pluggable message body storage, pluggable queue backend (Redis Streams or AWS SQS) with retry and dead-letter support, unified JWT/API-key authentication with group-based access control, and a REST API for management.
 
 ## Quick Start
 
@@ -39,8 +39,8 @@ Run `docker compose run --rm seed` once to create a dev company group with an SM
                       │         │ enqueue ID                   ▲ fetch   │
                       │         ▼                              │         │
                       │  ┌─────────────┐     ┌────────────────┴────┐    │
-                      │  │    Redis     │────▶│   queue-worker      │───▶│──▶ ESP
-                      │  │   Streams    │     │ (10 concurrent)     │    │   (SendGrid,
+                      │  │ Redis/SQS   │────▶│   queue-worker      │───▶│──▶ ESP
+                      │  │   Queue     │     │ (10 concurrent)     │    │   (SendGrid,
                       │  └─────────────┘     └─────────────────────┘    │    SES, ...)
                       │                                                  │
                       │  ┌─────────────┐     ┌─────────────────────┐    │
@@ -58,7 +58,7 @@ Run `docker compose run --rm seed` once to create a dev company group with an SM
 Client → SMTP AUTH (SASL PLAIN) → domain validation → read message
        → store body in MessageStore (local file / S3)
        → persist metadata in PostgreSQL (sender, recipients, headers, storage_ref)
-       → enqueue ID-only reference to Redis Streams
+       → enqueue ID-only reference to queue (Redis Streams or SQS)
        → retry enqueue up to 3x (500ms, 1s, 2s backoff)
        → return SMTP 250 OK
 ```
@@ -66,7 +66,7 @@ Client → SMTP AUTH (SASL PLAIN) → domain validation → read message
 **Async Delivery** (queue-worker):
 
 ```
-Redis XREADGROUP → fetch message metadata from PostgreSQL
+Dequeue message → fetch message metadata from PostgreSQL
                  → fetch body from MessageStore (3x retry: 1s, 2s, 4s)
                  → resolve ESP provider for account (5-min cache)
                  → deliver via provider
@@ -80,7 +80,7 @@ Redis XREADGROUP → fetch message metadata from PostgreSQL
 ```
 queued → processing → delivered
                     → failed (ESP error)
-                    → enqueue_failed (Redis unreachable)
+                    → enqueue_failed (queue unreachable)
                     → storage_error (body not found)
 ```
 
@@ -88,10 +88,10 @@ queued → processing → delivered
 
 | Decision | Rationale |
 |----------|-----------|
-| ID-only queue messages | Keeps Redis payload small; body stored externally |
+| ID-only queue messages | Keeps queue payload small; body stored externally |
 | Pluggable MessageStore | Swap local filesystem for S3 without code changes |
 | Per-group provider resolution | Each group configures their own ESP independently |
-| Enqueue retry with backoff | Tolerates transient Redis failures without losing mail |
+| Enqueue retry with backoff | Tolerates transient queue failures without losing mail |
 | Row-Level Security | PostgreSQL RLS enforces group-level isolation at the database layer |
 | Unified auth (JWT + API key) | Single middleware accepts both human (JWT) and SMTP (API key) users |
 | Optional TLS with auto-generation | `tls.mode=none` for NLB termination; self-signed auto-generation for dev |
@@ -102,9 +102,9 @@ queued → processing → delivered
 |---------|------|-------------|
 | `smtp-server` | 587, 465 | SMTP listener with STARTTLS and implicit TLS |
 | `api-server` | 8080 | REST API for groups, users, providers, routing, auth |
-| `queue-worker` | - | Async delivery worker (Redis Streams consumer) |
+| `queue-worker` | - | Async delivery worker (Redis Streams or SQS consumer) |
 | `postgres` | - | PostgreSQL 18 with Row-Level Security |
-| `redis` | - | Redis 7.4 (queue + rate limiting) |
+| `redis` | - | Redis 7.4 (queue backend, optional if using SQS) |
 | `migrate` | - | Database migrations (runs once on startup) |
 | `seed` | - | Creates dev group + SMTP account (seed-init-dev-accounts profile, run manually) |
 | `test-client` | - | CLI tool for sending test emails |
@@ -128,7 +128,7 @@ server/
 │   ├── metrics/           # Prometheus metrics (SMTP, API, DB, queue)
 │   ├── msgstore/          # Message body storage (local filesystem, S3)
 │   ├── provider/          # ESP provider interface + implementations
-│   ├── queue/             # Redis Streams producer, consumer, DLQ, retry
+│   ├── queue/             # Queue backend (Redis Streams / SQS), DLQ, retry
 │   ├── routing/           # Routing engine (primary + fallback providers)
 │   ├── smtp/              # SMTP backend + session (go-smtp)
 │   ├── storage/           # sqlc-generated PostgreSQL queries
@@ -158,7 +158,11 @@ cp .env.example .env
 | `SMTP_PROXY_DATABASE_PASSWORD` | `smtp_proxy_dev` | PostgreSQL password |
 | `SMTP_PROXY_DATABASE_NAME` | `smtp_proxy` | PostgreSQL database name |
 | `SMTP_PROXY_DATABASE_SSLMODE` | `disable` | PostgreSQL SSL mode |
-| `SMTP_PROXY_QUEUE_REDIS_ADDR` | `redis:6379` | Redis address |
+| `SMTP_PROXY_QUEUE_TYPE` | `redis` | Queue backend: `redis` or `sqs` |
+| `SMTP_PROXY_QUEUE_REDIS_ADDR` | `redis:6379` | Redis address (when type=redis) |
+| `SMTP_PROXY_QUEUE_SQS_QUEUE_URL` | *(empty)* | SQS queue URL (when type=sqs) |
+| `SMTP_PROXY_QUEUE_SQS_DLQ_URL` | *(empty)* | SQS dead-letter queue URL (when type=sqs) |
+| `SMTP_PROXY_QUEUE_SQS_REGION` | *(empty)* | AWS region for SQS (when type=sqs) |
 | `SMTP_PROXY_AUTH_SIGNING_KEY` | `change-me-in-production...` | JWT HMAC signing key |
 | `SMTP_PROXY_STORAGE_TYPE` | `local` | Message body storage: `local` or `s3` |
 | `SMTP_PROXY_STORAGE_PATH` | `/data/messages` | Local storage directory |
@@ -184,10 +188,14 @@ smtp:
   max_message_size: 26214400  # 25MB
 
 queue:
-  redis_addr: "localhost:6379"
+  type: "redis"               # redis | sqs
+  redis_addr: "localhost:6379" # for redis
   stream_name: "smtp-proxy"
   workers: 10
   block_timeout: "5s"
+  # sqs_queue_url: ""         # for sqs
+  # sqs_dlq_url: ""           # for sqs
+  # sqs_region: "us-east-1"   # for sqs
 
 storage:
   type: "local"               # local | s3
@@ -202,7 +210,7 @@ tls:
   key_file: ""
 
 delivery:
-  mode: "sync"                  # sync | async (requires Redis)
+  mode: "sync"                  # sync | async (requires redis or sqs)
 
 auth:
   signing_key: "..."
@@ -449,7 +457,7 @@ If the MessageStore write fails during SMTP ingestion, the system falls back to 
 
 | Stage | Retries | Backoff Schedule | On Exhaustion |
 |-------|---------|------------------|---------------|
-| SMTP enqueue (session to Redis) | 3 | 500ms, 1s, 2s | Status: `enqueue_failed`, SMTP 451 |
+| SMTP enqueue (session to queue) | 3 | 500ms, 1s, 2s | Status: `enqueue_failed`, SMTP 451 |
 | Worker storage read | 3 | 1s, 2s, 4s | Status: `storage_error`, delivery log |
 | Worker ESP delivery | 5 | 30s, 1m, 2m, 5m, 15m (+jitter) | Move to DLQ |
 
@@ -625,7 +633,7 @@ docker compose up -d --build smtp-server
 | SMTP Server | go-smtp + go-sasl |
 | HTTP Router | chi v5 |
 | Database | PostgreSQL 18 (pgx v5, sqlc) |
-| Queue | Redis 7.4 Streams |
+| Queue | Redis 7.4 Streams / AWS SQS |
 | Auth | JWT (HS256) + API keys for SMTP (bcrypt-hashed, prefix-based lookup) |
 | Metrics | Prometheus client_golang |
 | Logging | zerolog |

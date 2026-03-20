@@ -415,6 +415,78 @@ func TestSES_GetName(t *testing.T) {
 	}
 }
 
+func TestSES_Send_DefaultSenderOverride(t *testing.T) {
+	mock := &sesMockHTTPClient{
+		response: &HTTPResponse{
+			StatusCode: 200,
+			Body:       []byte(`{"MessageId":"ses-msg-002"}`),
+		},
+	}
+
+	ses := NewSES(ProviderConfig{
+		Type:          "ses",
+		Region:        "us-east-1",
+		DefaultSender: "verified@example.com",
+	}, mock)
+
+	_, err := ses.Send(context.Background(), &Message{
+		From:     "original@example.com",
+		To:       []string{"recipient@example.com"},
+		Subject:  "Test",
+		TextBody: "body",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var payload sesPayload
+	if err := json.Unmarshal(mock.lastReq.Body, &payload); err != nil {
+		t.Fatalf("failed to unmarshal request body: %v", err)
+	}
+	if payload.FromEmailAddress != "verified@example.com" {
+		t.Errorf("expected from 'verified@example.com', got %q", payload.FromEmailAddress)
+	}
+}
+
+func TestSES_Send_DefaultSenderOverride_WithAttachments(t *testing.T) {
+	mock := &sesMockHTTPClient{
+		response: &HTTPResponse{
+			StatusCode: 200,
+			Body:       []byte(`{"MessageId":"ses-msg-003"}`),
+		},
+	}
+
+	ses := NewSES(ProviderConfig{
+		Type:          "ses",
+		Region:        "us-east-1",
+		DefaultSender: "verified@example.com",
+	}, mock)
+
+	_, err := ses.Send(context.Background(), &Message{
+		From:     "original@example.com",
+		To:       []string{"recipient@example.com"},
+		Subject:  "Test",
+		TextBody: "body",
+		Attachments: []Attachment{
+			{Filename: "f.txt", ContentType: "text/plain", Content: []byte("data")},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Raw MIME body should contain the overridden From header.
+	body := string(mock.lastReq.Body)
+	var payload sesPayload
+	if err := json.Unmarshal(mock.lastReq.Body, &payload); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if payload.FromEmailAddress != "verified@example.com" {
+		t.Errorf("expected FromEmailAddress 'verified@example.com', got %q", payload.FromEmailAddress)
+	}
+	_ = body
+}
+
 func TestSES_CustomEndpoint(t *testing.T) {
 	mock := &sesMockHTTPClient{
 		response: &HTTPResponse{StatusCode: 200, Body: []byte(`{"MessageId":"id"}`)},

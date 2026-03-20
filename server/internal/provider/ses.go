@@ -20,9 +20,10 @@ const (
 // SES implements the Provider interface for AWS SES v2 API.
 // Requests are signed with AWS Signature V4 via SigV4HTTPClient.
 type SES struct {
-	region   string
-	endpoint string
-	client   HTTPClient
+	region        string
+	endpoint      string
+	defaultSender string
+	client        HTTPClient
 }
 
 // NewSES creates an AWS SES provider from the given configuration.
@@ -42,9 +43,10 @@ func NewSES(cfg ProviderConfig, client HTTPClient) *SES {
 	}
 
 	return &SES{
-		region:   cfg.Region,
-		endpoint: endpoint,
-		client:   httpClient,
+		region:        cfg.Region,
+		endpoint:      endpoint,
+		defaultSender: cfg.DefaultSender,
+		client:        httpClient,
 	}
 }
 
@@ -158,14 +160,22 @@ func (s *SES) buildPayload(msg *Message) sesPayload {
 	if len(msg.BCC) > 0 {
 		dest.BccAddresses = msg.BCC
 	}
+
+	from := msg.From
+	if s.defaultSender != "" {
+		from = s.defaultSender
+	}
+
 	payload := sesPayload{
-		FromEmailAddress: msg.From,
+		FromEmailAddress: from,
 		Destination:      dest,
 	}
 
 	// Use Raw mode when attachments are present.
 	if len(msg.Attachments) > 0 {
-		rawData, err := buildRawMIME(msg)
+		rawMsg := *msg
+		rawMsg.From = from
+		rawData, err := buildRawMIME(&rawMsg)
 		if err == nil {
 			payload.Content = sesContent{
 				Raw: &sesRawContent{

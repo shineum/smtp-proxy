@@ -465,7 +465,7 @@ Failed messages in the dead-letter queue can be reprocessed via `POST /api/v1/dl
 
 ## Database
 
-PostgreSQL 18 with 26 migrations applied automatically on api-server startup (with advisory lock for safe concurrent deployment).
+PostgreSQL 18 with 25 migrations applied automatically on api-server startup (with advisory lock for safe concurrent deployment).
 
 **Tables:** `groups`, `group_members`, `users`, `api_keys`, `esp_providers`, `provider_group_access`, `routing_rules`, `messages`, `delivery_logs`, `sessions`, `activity_logs`
 

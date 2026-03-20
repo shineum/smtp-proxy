@@ -193,6 +193,61 @@ func Load(configPath string) (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
+	// Explicitly bind environment variables for keys containing underscores.
+	// Viper's AutomaticEnv + SetEnvKeyReplacer cannot distinguish between
+	// "." (hierarchy separator) and "_" (part of field name), so keys like
+	// "queue.sqs_queue_url" get misresolved as "queue.sqs.queue.url".
+	for _, bind := range []struct{ key, env string }{
+		// smtp
+		{"smtp.max_connections", "SMTP_PROXY_SMTP_MAX_CONNECTIONS"},
+		{"smtp.read_timeout", "SMTP_PROXY_SMTP_READ_TIMEOUT"},
+		{"smtp.write_timeout", "SMTP_PROXY_SMTP_WRITE_TIMEOUT"},
+		{"smtp.max_message_size", "SMTP_PROXY_SMTP_MAX_MESSAGE_SIZE"},
+		// api
+		{"api.read_timeout", "SMTP_PROXY_API_READ_TIMEOUT"},
+		{"api.write_timeout", "SMTP_PROXY_API_WRITE_TIMEOUT"},
+		// database
+		{"database.pool_min", "SMTP_PROXY_DATABASE_POOL_MIN"},
+		{"database.pool_max", "SMTP_PROXY_DATABASE_POOL_MAX"},
+		{"database.connect_timeout", "SMTP_PROXY_DATABASE_CONNECT_TIMEOUT"},
+		// logging
+		{"logging.file_path", "SMTP_PROXY_LOGGING_FILE_PATH"},
+		{"logging.max_size_mb", "SMTP_PROXY_LOGGING_MAX_SIZE_MB"},
+		{"logging.max_files", "SMTP_PROXY_LOGGING_MAX_FILES"},
+		{"logging.cw_group", "SMTP_PROXY_LOGGING_CW_GROUP"},
+		{"logging.cw_stream", "SMTP_PROXY_LOGGING_CW_STREAM"},
+		{"logging.cw_region", "SMTP_PROXY_LOGGING_CW_REGION"},
+		// tls
+		{"tls.cert_file", "SMTP_PROXY_TLS_CERT_FILE"},
+		{"tls.key_file", "SMTP_PROXY_TLS_KEY_FILE"},
+		// auth
+		{"auth.signing_key", "SMTP_PROXY_AUTH_SIGNING_KEY"},
+		{"auth.access_token_expiry", "SMTP_PROXY_AUTH_ACCESS_TOKEN_EXPIRY"},
+		{"auth.refresh_token_expiry", "SMTP_PROXY_AUTH_REFRESH_TOKEN_EXPIRY"},
+		// rate_limit
+		{"rate_limit.default_monthly_limit", "SMTP_PROXY_RATE_LIMIT_DEFAULT_MONTHLY_LIMIT"},
+		{"rate_limit.login_attempts_limit", "SMTP_PROXY_RATE_LIMIT_LOGIN_ATTEMPTS_LIMIT"},
+		{"rate_limit.login_lockout_duration", "SMTP_PROXY_RATE_LIMIT_LOGIN_LOCKOUT_DURATION"},
+		// queue
+		{"queue.redis_addr", "SMTP_PROXY_QUEUE_REDIS_ADDR"},
+		{"queue.redis_password", "SMTP_PROXY_QUEUE_REDIS_PASSWORD"},
+		{"queue.redis_db", "SMTP_PROXY_QUEUE_REDIS_DB"},
+		{"queue.stream_name", "SMTP_PROXY_QUEUE_STREAM_NAME"},
+		{"queue.group_name", "SMTP_PROXY_QUEUE_GROUP_NAME"},
+		{"queue.consumer_id", "SMTP_PROXY_QUEUE_CONSUMER_ID"},
+		{"queue.block_timeout", "SMTP_PROXY_QUEUE_BLOCK_TIMEOUT"},
+		{"queue.sqs_queue_url", "SMTP_PROXY_QUEUE_SQS_QUEUE_URL"},
+		{"queue.sqs_dlq_url", "SMTP_PROXY_QUEUE_SQS_DLQ_URL"},
+		{"queue.sqs_region", "SMTP_PROXY_QUEUE_SQS_REGION"},
+		// storage
+		{"storage.s3_bucket", "SMTP_PROXY_STORAGE_S3_BUCKET"},
+		{"storage.s3_prefix", "SMTP_PROXY_STORAGE_S3_PREFIX"},
+		{"storage.s3_endpoint", "SMTP_PROXY_STORAGE_S3_ENDPOINT"},
+		{"storage.s3_region", "SMTP_PROXY_STORAGE_S3_REGION"},
+	} {
+		_ = v.BindEnv(bind.key, bind.env)
+	}
+
 	if err := v.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("read config file: %w", err)
 	}

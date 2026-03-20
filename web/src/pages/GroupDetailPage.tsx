@@ -446,6 +446,16 @@ export default function GroupDetailPage() {
         isOpen={isCreateSAOpen}
         onClose={() => { setIsCreateSAOpen(false); setCreatedSAResult(null); }}
         actions={createdSAResult ? [
+          <Button key="download" variant="secondary" onClick={() => {
+            const csv = `SMTP Username,API Key\n${createdSAResult.smtpUser},${createdSAResult.apiKey}\n`;
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `smtp-credentials-${createdSAResult.smtpUser.split('@')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}>Download CSV</Button>,
           <Button key="close" onClick={() => { setIsCreateSAOpen(false); setCreatedSAResult(null); }}>Close</Button>,
         ] : [
           <Button key="create" onClick={() => createSAMutation.mutate()} isDisabled={!saUsername || createSAMutation.isPending}>
@@ -583,6 +593,18 @@ export default function GroupDetailPage() {
         isOpen={isCreateKeyOpen}
         onClose={() => { setIsCreateKeyOpen(false); setCreatedKeyResult(null); }}
         actions={createdKeyResult ? [
+          <Button key="download" variant="secondary" onClick={() => {
+            const sa = serviceAccounts.find(m => m.user_id === expandedSA);
+            const smtpUser = sa ? `${sa.username || sa.user_id}@${id}` : '';
+            const csv = `SMTP Username,API Key,Label,Expires\n${smtpUser},${createdKeyResult.api_key || ''},${createdKeyResult.label || ''},${createdKeyResult.expires_at || 'Never'}\n`;
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `api-key-${createdKeyResult.label || 'default'}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}>Download CSV</Button>,
           <Button key="close" onClick={() => { setIsCreateKeyOpen(false); setCreatedKeyResult(null); }}>Close</Button>,
         ] : [
           <Button key="create" onClick={() => createKeyMutation.mutate()} isDisabled={createKeyMutation.isPending}>

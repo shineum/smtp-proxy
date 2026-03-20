@@ -331,13 +331,13 @@ Each provider type requires different fields. The `api_key` and credentials are 
 | Provider | Required `smtp_config` Fields |
 |----------|-------------------------------|
 | SendGrid | `api_key` |
-| SES | `api_key` (Access Key ID), `secret_key` (Secret Access Key), `region` |
+| SES | `api_key` (Access Key ID), `secret_key` (Secret Access Key), `region`; optional: `default_sender` |
 | Mailgun | `api_key`, `domain` |
 | Microsoft Graph | `tenant_id`, `client_id`, `client_secret`, `user_id` |
 | SMTP | `host`, `port`, `username`, `password`, `encryption` |
 | Stdout | *(none)* |
 
-**SES** uses AWS Signature V4 to sign every HTTP request to the SES v2 API. The `api_key` field holds the AWS Access Key ID and `secret_key` holds the AWS Secret Access Key. Requests are signed using the `aws-sdk-go-v2` signer (no full AWS SDK dependency for the HTTP call itself). Both Simple (text/HTML) and Raw (MIME with attachments) send modes are supported.
+**SES** uses AWS Signature V4 to sign every HTTP request to the SES v2 API. The `api_key` field holds the AWS Access Key ID and `secret_key` holds the AWS Secret Access Key. Requests are signed using the `aws-sdk-go-v2` signer (no full AWS SDK dependency for the HTTP call itself). Both Simple (text/HTML) and Raw (MIME with attachments) send modes are supported. When `default_sender` is set, it overrides the SMTP session's `MAIL FROM` address, ensuring emails are always sent from the SES verified identity.
 
 #### Send Test Email
 

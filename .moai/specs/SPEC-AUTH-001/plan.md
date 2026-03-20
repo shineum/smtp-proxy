@@ -23,7 +23,7 @@ Hybrid mode (per quality.yaml `development_mode: hybrid`):
 docker build --target builder -f server/Dockerfile server/
 
 # Test
-docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go test ./..."
+docker run --rm -w /app -v $(pwd)/server:/app golang:1.26-alpine sh -c "go test ./..."
 
 # sqlc generate
 docker run --rm -w /app -v $(pwd)/server:/app sqlc/sqlc:latest generate
@@ -146,7 +146,7 @@ echo $?  # must be 0
 **Verification Gate:**
 
 ```bash
-docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go build ./internal/auth/..."
+docker run --rm -w /app -v $(pwd)/server:/app golang:1.26-alpine sh -c "go build ./internal/auth/..."
 ```
 
 ---
@@ -173,7 +173,7 @@ docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go build
 **Verification Gate:**
 
 ```bash
-docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go build ./internal/smtp/..."
+docker run --rm -w /app -v $(pwd)/server:/app golang:1.26-alpine sh -c "go build ./internal/smtp/..."
 ```
 
 ---
@@ -219,7 +219,7 @@ docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go build
 
 ```bash
 # Per-handler verification during development
-docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go build ./internal/api/..."
+docker run --rm -w /app -v $(pwd)/server:/app golang:1.26-alpine sh -c "go build ./internal/api/..."
 ```
 
 ---
@@ -249,7 +249,7 @@ docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go build
 **Verification Gate:**
 
 ```bash
-docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go build ./..."
+docker run --rm -w /app -v $(pwd)/server:/app golang:1.26-alpine sh -c "go build ./..."
 ```
 
 ---
@@ -275,7 +275,7 @@ docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go build
 **Verification Gate:**
 
 ```bash
-docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go build ./internal/delivery/... ./internal/worker/..."
+docker run --rm -w /app -v $(pwd)/server:/app golang:1.26-alpine sh -c "go build ./internal/delivery/... ./internal/worker/..."
 ```
 
 ---
@@ -350,7 +350,7 @@ curl -s -X POST http://localhost:8080/api/v1/auth/login \
 **Verification Gate:**
 
 ```bash
-docker run --rm -w /app -v $(pwd)/server:/app golang:1.24-alpine sh -c "go test ./..."
+docker run --rm -w /app -v $(pwd)/server:/app golang:1.26-alpine sh -c "go test ./..."
 # All tests must pass
 ```
 

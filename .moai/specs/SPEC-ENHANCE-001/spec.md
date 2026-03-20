@@ -57,7 +57,7 @@ The smtp-proxy currently has two limitations:
 
 ### 1.3 Infrastructure
 
-- Go 1.24
+- Go 1.26
 - Docker / Docker Compose for local dev
 - Redis 7.0+ (local queue backend)
 - AWS SQS (production queue backend)

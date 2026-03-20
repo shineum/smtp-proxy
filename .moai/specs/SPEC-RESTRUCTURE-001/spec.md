@@ -29,7 +29,7 @@ related_specs:
 
 ### 1.1 Current State
 
-The smtp-proxy project is a multi-tenant SMTP relay proxy with ESP provider routing, written in Go 1.24. It currently operates as a monorepo under `server/` with 3 entry points:
+The smtp-proxy project is a multi-tenant SMTP relay proxy with ESP provider routing, written in Go 1.26. It currently operates as a monorepo under `server/` with 3 entry points:
 
 - `cmd/smtp-server`: SMTP server accepting connections and enqueuing messages
 - `cmd/queue-worker`: Background worker consuming queue and delivering via ESP providers

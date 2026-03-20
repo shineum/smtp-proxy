@@ -30,6 +30,7 @@ export default function GroupDetailPage() {
   const [saUsername, setSaUsername] = useState('');
   const [saDomains, setSaDomains] = useState('');
   const [saProviderId, setSaProviderId] = useState('');
+  const [createdSAResult, setCreatedSAResult] = useState<{ smtpUser: string; apiKey: string } | null>(null);
 
   // Edit service account state
   const [isEditSAOpen, setIsEditSAOpen] = useState(false);
@@ -108,9 +109,12 @@ export default function GroupDetailPage() {
         provider_id: saProviderId || undefined,
       });
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['group-members', id] });
-      setIsCreateSAOpen(false);
+      setCreatedSAResult({
+        smtpUser: `${data.username || saUsername}@${id}`,
+        apiKey: data.api_key || '',
+      });
       setSaUsername('');
       setSaDomains('');
       setSaProviderId('');
@@ -438,35 +442,49 @@ export default function GroupDetailPage() {
       {/* Create Service Account Modal */}
       <Modal
         variant={ModalVariant.small}
-        title="Create Service Account"
+        title={createdSAResult ? 'Service Account Created' : 'Create Service Account'}
         isOpen={isCreateSAOpen}
-        onClose={() => setIsCreateSAOpen(false)}
-        actions={[
+        onClose={() => { setIsCreateSAOpen(false); setCreatedSAResult(null); }}
+        actions={createdSAResult ? [
+          <Button key="close" onClick={() => { setIsCreateSAOpen(false); setCreatedSAResult(null); }}>Close</Button>,
+        ] : [
           <Button key="create" onClick={() => createSAMutation.mutate()} isDisabled={!saUsername || createSAMutation.isPending}>
             {createSAMutation.isPending ? 'Creating...' : 'Create'}
           </Button>,
           <Button key="cancel" variant="link" onClick={() => setIsCreateSAOpen(false)}>Cancel</Button>,
         ]}
       >
-        <Form>
-          <FormGroup label="Username" isRequired fieldId="sa-username">
-            <TextInput id="sa-username" value={saUsername} onChange={(_e, v) => setSaUsername(v)} isRequired />
-          </FormGroup>
-          <FormGroup label="Provider (defaults to stdout)" fieldId="sa-provider">
-            <FormSelect id="sa-provider" value={saProviderId} onChange={(_e, v) => setSaProviderId(v)}>
-              <FormSelectOption value="" label="Select a provider" isPlaceholder />
-              {providers?.filter(p => p.enabled).map((p) => (
-                <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.provider_type})`} />
-              ))}
-            </FormSelect>
-          </FormGroup>
-          <FormGroup label="Allowed Domains (comma-separated, optional)" fieldId="sa-domains">
-            <TextInput id="sa-domains" value={saDomains} onChange={(_e, v) => setSaDomains(v)} placeholder="example.com, other.com" />
-          </FormGroup>
-          {createSAMutation.isError && (
-            <p className="feedback-message feedback-message--error">Failed to create service account. Username may already be in use.</p>
-          )}
-        </Form>
+        {createdSAResult ? (
+          <div>
+            <p style={{ marginBottom: '1rem' }}>Copy the credentials below. The API key will not be shown again.</p>
+            <FormGroup label="SMTP Username" fieldId="sa-smtp-user">
+              <ClipboardCopy isReadOnly className="mono">{createdSAResult.smtpUser}</ClipboardCopy>
+            </FormGroup>
+            <FormGroup label="API Key (Password)" fieldId="sa-api-key" style={{ marginTop: '0.5rem' }}>
+              <ClipboardCopy isReadOnly className="mono">{createdSAResult.apiKey}</ClipboardCopy>
+            </FormGroup>
+          </div>
+        ) : (
+          <Form>
+            <FormGroup label="Username" isRequired fieldId="sa-username">
+              <TextInput id="sa-username" value={saUsername} onChange={(_e, v) => setSaUsername(v)} isRequired />
+            </FormGroup>
+            <FormGroup label="Provider (defaults to stdout)" fieldId="sa-provider">
+              <FormSelect id="sa-provider" value={saProviderId} onChange={(_e, v) => setSaProviderId(v)}>
+                <FormSelectOption value="" label="Select a provider" isPlaceholder />
+                {providers?.filter(p => p.enabled).map((p) => (
+                  <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.provider_type})`} />
+                ))}
+              </FormSelect>
+            </FormGroup>
+            <FormGroup label="Allowed Domains (comma-separated, optional)" fieldId="sa-domains">
+              <TextInput id="sa-domains" value={saDomains} onChange={(_e, v) => setSaDomains(v)} placeholder="example.com, other.com" />
+            </FormGroup>
+            {createSAMutation.isError && (
+              <p className="feedback-message feedback-message--error">Failed to create service account. Username may already be in use.</p>
+            )}
+          </Form>
+        )}
       </Modal>
 
       {/* Add Member Modal */}

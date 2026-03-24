@@ -4,6 +4,7 @@ import type {
   RoutingRule, DashboardStats, TimeSeriesPoint,
   UsageByUser, UsageByGroup, UsageByProvider, PaginatedMessages,
   MessageDetail, ActivityLog, ApiKeyInfo,
+  ProviderFallback, DomainRateLimit,
 } from '../types/api';
 
 // Groups
@@ -132,6 +133,34 @@ export const fetchMessages = async (page = 1, pageSize = 20, status?: string): P
   (await api.get('/messages', { params: { page, page_size: pageSize, status } })).data;
 export const fetchMessage = async (id: string): Promise<MessageDetail> =>
   (await api.get(`/messages/${id}`)).data;
+
+// Provider Fallbacks
+export const fetchProviderFallbacks = async (userId: string): Promise<ProviderFallback[]> =>
+  (await api.get(`/users/${userId}/fallbacks`)).data;
+export const createProviderFallback = async (
+  userId: string, data: { provider_id: string; priority: number; enabled: boolean }
+): Promise<ProviderFallback> =>
+  (await api.post(`/users/${userId}/fallbacks`, data)).data;
+export const updateProviderFallback = async (
+  userId: string, fallbackId: string, data: { priority: number; enabled: boolean }
+): Promise<ProviderFallback> =>
+  (await api.put(`/users/${userId}/fallbacks/${fallbackId}`, data)).data;
+export const deleteProviderFallback = async (userId: string, fallbackId: string): Promise<void> =>
+  { await api.delete(`/users/${userId}/fallbacks/${fallbackId}`); };
+
+// Domain Rate Limits
+export const fetchDomainRateLimits = async (): Promise<DomainRateLimit[]> =>
+  (await api.get('/domain-rate-limits')).data;
+export const createDomainRateLimit = async (
+  data: { domain: string; max_per_minute: number; max_per_hour: number; enabled: boolean }
+): Promise<DomainRateLimit> =>
+  (await api.post('/domain-rate-limits', data)).data;
+export const updateDomainRateLimit = async (
+  id: string, data: { max_per_minute: number; max_per_hour: number; enabled: boolean }
+): Promise<DomainRateLimit> =>
+  (await api.put(`/domain-rate-limits/${id}`, data)).data;
+export const deleteDomainRateLimit = async (id: string): Promise<void> =>
+  { await api.delete(`/domain-rate-limits/${id}`); };
 
 // DLQ
 export const reprocessDLQ = async (messageIds: string[]): Promise<{ reprocessed: number; total: number }> =>

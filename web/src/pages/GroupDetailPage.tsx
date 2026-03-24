@@ -15,6 +15,7 @@ import {
   createServiceAccount, updateServiceAccount, fetchUser,
   fetchProviders, updateGroup,
   fetchApiKeys, createApiKey, updateApiKeyStatus, deleteApiKey,
+  fetchProviderFallbacks, createProviderFallback, deleteProviderFallback,
 } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
 import type { ApiKeyInfo } from '../types/api';
@@ -89,6 +90,36 @@ export default function GroupDetailPage() {
     queryKey: ['api-keys', id, expandedSA],
     queryFn: () => fetchApiKeys(id!, expandedSA!),
     enabled: !!id && !!expandedSA,
+  });
+
+  // Provider fallbacks for expanded service account
+  const [fbProviderId, setFbProviderId] = useState('');
+  const [fbPriority, setFbPriority] = useState('10');
+
+  const { data: fallbacks } = useQuery({
+    queryKey: ['fallbacks', expandedSA],
+    queryFn: () => fetchProviderFallbacks(expandedSA!),
+    enabled: !!expandedSA,
+  });
+
+  const addFallbackMutation = useMutation({
+    mutationFn: () => createProviderFallback(expandedSA!, {
+      provider_id: fbProviderId,
+      priority: parseInt(fbPriority, 10) || 10,
+      enabled: true,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fallbacks', expandedSA] });
+      setFbProviderId('');
+      setFbPriority('10');
+    },
+  });
+
+  const removeFallbackMutation = useMutation({
+    mutationFn: (fallbackId: string) => deleteProviderFallback(expandedSA!, fallbackId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fallbacks', expandedSA] });
+    },
   });
 
   // Auto-select stdout provider as default when providers load
@@ -412,6 +443,62 @@ export default function GroupDetailPage() {
                         )}
                       </Tbody>
                     </Table>
+
+                    <div style={{ marginTop: '1.5rem' }}>
+                      <div className="card-section-header">
+                        <Title headingLevel="h4" size="md">
+                          Fallback Providers
+                        </Title>
+                      </div>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '0.75rem' }}>
+                        When the primary provider fails, these providers are tried in priority order.
+                      </p>
+                      <Table aria-label="Fallback providers" variant="compact">
+                        <Thead><Tr><Th>Provider</Th><Th>Type</Th><Th>Priority</Th><Th>Status</Th>{isOwnerOrAdmin && <Th>Actions</Th>}</Tr></Thead>
+                        <Tbody>
+                          {fallbacks?.map((fb) => (
+                            <Tr key={fb.id}>
+                              <Td>{fb.provider_name}</Td>
+                              <Td><Label color="blue">{fb.provider_type}</Label></Td>
+                              <Td>{fb.priority}</Td>
+                              <Td><Label color={fb.enabled ? 'green' : 'grey'}>{fb.enabled ? 'Enabled' : 'Disabled'}</Label></Td>
+                              {isOwnerOrAdmin && (
+                                <Td>
+                                  <Button variant="danger" size="sm"
+                                    onClick={() => { if (confirm('Remove this fallback?')) removeFallbackMutation.mutate(fb.id); }}
+                                    isDisabled={removeFallbackMutation.isPending}>
+                                    Remove
+                                  </Button>
+                                </Td>
+                              )}
+                            </Tr>
+                          ))}
+                          {(!fallbacks || fallbacks.length === 0) && (
+                            <Tr><Td colSpan={isOwnerOrAdmin ? 5 : 4}>No fallback providers configured.</Td></Tr>
+                          )}
+                        </Tbody>
+                      </Table>
+                      {isOwnerOrAdmin && providers && (
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', alignItems: 'flex-end' }}>
+                          <FormGroup label="Provider" fieldId="fb-provider" style={{ flex: 1 }}>
+                            <FormSelect id="fb-provider" value={fbProviderId} onChange={(_e, v) => setFbProviderId(v)}>
+                              <FormSelectOption value="" label="Select provider..." />
+                              {providers.filter(p => p.enabled).map(p => (
+                                <FormSelectOption key={p.id} value={p.id} label={`${p.name} (${p.provider_type})`} />
+                              ))}
+                            </FormSelect>
+                          </FormGroup>
+                          <FormGroup label="Priority" fieldId="fb-priority" style={{ width: '100px' }}>
+                            <TextInput id="fb-priority" type="number" value={fbPriority} onChange={(_e, v) => setFbPriority(v)} />
+                          </FormGroup>
+                          <Button size="sm"
+                            onClick={() => addFallbackMutation.mutate()}
+                            isDisabled={!fbProviderId || addFallbackMutation.isPending}>
+                            Add Fallback
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </CardBody>
                 </Card>
               )}

@@ -219,6 +219,28 @@ export interface ApiKeyInfo {
   api_key?: string; // only present on creation response
 }
 
+export interface ProviderFallback {
+  id: string;
+  user_id: string;
+  provider_id: string;
+  priority: number;
+  enabled: boolean;
+  created_at: string;
+  provider_name: string;
+  provider_type: string;
+}
+
+export interface DomainRateLimit {
+  id: string;
+  group_id: string;
+  domain: string;
+  max_per_minute: number;
+  max_per_hour: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ApiError {
   error: string;
   details?: string[];

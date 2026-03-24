@@ -16,6 +16,7 @@ import MessageListPage from './pages/MessageListPage';
 import MessageDetailPage from './pages/MessageDetailPage';
 import ActivityLogPage from './pages/ActivityLogPage';
 import SettingsPage from './pages/SettingsPage';
+import DomainRateLimitPage from './pages/DomainRateLimitPage';
 import type { ReactNode } from 'react';
 import { Spinner, PageSection } from '@patternfly/react-core';
 
@@ -70,6 +71,7 @@ export default function App() {
               <Route path="/routing-rules/:id" element={<RoutingRuleFormPage />} />
               <Route path="/messages" element={<MessageListPage />} />
               <Route path="/messages/:id" element={<MessageDetailPage />} />
+              <Route path="/domain-rate-limits" element={<DomainRateLimitPage />} />
               <Route path="/activity" element={<ActivityLogPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />

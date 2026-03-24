@@ -16,6 +16,7 @@ import {
   ServerAltIcon,
   ClipboardListIcon,
   SignOutAltIcon,
+  OutlinedClockIcon,
 } from '@patternfly/react-icons';
 import { useAuth } from '../context/AuthContext';
 
@@ -144,6 +145,7 @@ export default function Layout() {
     ...(isAdmin ? [{ path: '/users', label: 'Users', icon: <UsersIcon /> }] : []),
     { path: '/providers', label: 'Providers', icon: <ServerAltIcon /> },
     { path: '/routing-rules', label: 'Routing Rules', icon: <GlobeRouteIcon /> },
+    { path: '/domain-rate-limits', label: 'Rate Limits', icon: <OutlinedClockIcon /> },
     { path: '/messages', label: 'Messages', icon: <EnvelopeIcon /> },
     { path: '/activity', label: 'Activity Log', icon: <ClipboardListIcon /> },
     { path: '/settings', label: 'Settings', icon: <CogIcon /> },

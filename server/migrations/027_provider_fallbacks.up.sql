@@ -11,4 +11,4 @@ CREATE TABLE IF NOT EXISTS provider_fallbacks (
     UNIQUE (user_id, provider_id)
 );
 
-CREATE INDEX idx_provider_fallbacks_user_id ON provider_fallbacks (user_id, priority);
+CREATE INDEX IF NOT EXISTS idx_provider_fallbacks_user_id ON provider_fallbacks (user_id, priority);

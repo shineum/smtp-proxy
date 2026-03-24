@@ -12,4 +12,4 @@ CREATE TABLE IF NOT EXISTS domain_rate_limits (
     UNIQUE (group_id, domain)
 );
 
-CREATE INDEX idx_domain_rate_limits_group_id ON domain_rate_limits (group_id);
+CREATE INDEX IF NOT EXISTS idx_domain_rate_limits_group_id ON domain_rate_limits (group_id);

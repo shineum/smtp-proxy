@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
+	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/mimeparse"
 	"github.com/sungwon/smtp-proxy/server/internal/msgstore"
 	"github.com/sungwon/smtp-proxy/server/internal/provider"
@@ -33,31 +35,35 @@ var storageRetryBackoff = []time.Duration{
 type providerResolver interface {
 	Resolve(ctx context.Context, groupID uuid.UUID) (provider.Provider, error)
 	ResolveByUserID(ctx context.Context, userID uuid.UUID) (provider.Provider, error)
+	ResolveWithFallbacks(ctx context.Context, userID uuid.UUID) ([]provider.Provider, error)
 }
 
 // Handler implements queue.MessageHandler. It delivers messages via ESP
 // providers and records delivery results in the database.
 type Handler struct {
-	resolver providerResolver
-	queries  storage.Querier
-	store    msgstore.MessageStore
-	log      zerolog.Logger
+	resolver           providerResolver
+	queries            storage.Querier
+	store              msgstore.MessageStore
+	domainRateLimiter  *auth.DomainRateLimiter
+	log                zerolog.Logger
 }
 
 // NewHandler creates a Handler that delivers queue messages via ESP providers.
 // The store parameter may be nil for backward compatibility with inline-body
-// queue messages.
+// queue messages. The domainRateLimiter may be nil to disable domain throttling.
 func NewHandler(
 	resolver providerResolver,
 	queries storage.Querier,
 	store msgstore.MessageStore,
+	domainRateLimiter *auth.DomainRateLimiter,
 	log zerolog.Logger,
 ) *Handler {
 	return &Handler{
-		resolver: resolver,
-		queries:  queries,
-		store:    store,
-		log:      log,
+		resolver:          resolver,
+		queries:           queries,
+		store:             store,
+		domainRateLimiter: domainRateLimiter,
+		log:               log,
 	}
 }
 
@@ -120,12 +126,16 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		}
 	}
 
-	// Resolve provider: prefer user's direct provider mapping, fall back to group-level.
-	var p provider.Provider
+	// Resolve providers: prefer user's direct provider with fallbacks, fall back to group-level.
+	var providers []provider.Provider
 	if dbMsg.UserID.Valid {
-		p, err = h.resolver.ResolveByUserID(ctx, userID)
+		providers, err = h.resolver.ResolveWithFallbacks(ctx, userID)
 	} else {
+		var p provider.Provider
 		p, err = h.resolver.Resolve(ctx, groupID)
+		if err == nil {
+			providers = []provider.Provider{p}
+		}
 	}
 	if err != nil {
 		h.log.Error().Err(err).
@@ -137,6 +147,7 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		return fmt.Errorf("resolve provider: %w", err)
 	}
 
+	p := providers[0]
 	providerName := p.GetName()
 
 	// Build provider message from DB metadata + body.
@@ -196,49 +207,113 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 		h.log.Debug().Err(parseErr).Str("message_id", msg.ID).Msg("MIME parse failed, using raw body as text")
 	}
 
-	// Send via ESP provider.
-	sendStart := time.Now()
-	result, sendErr := p.Send(ctx, providerMsg)
-	sendDuration := time.Since(sendStart)
-	if sendErr != nil {
-		h.log.Error().Err(sendErr).
+	// Check destination domain rate limits before sending.
+	if h.domainRateLimiter != nil && dbMsg.GroupID.Valid {
+		domains := uniqueRecipientDomains(providerMsg.To, providerMsg.CC, providerMsg.BCC)
+		for _, domain := range domains {
+			limit, limErr := h.queries.GetDomainRateLimit(ctx, storage.GetDomainRateLimitParams{
+				GroupID: groupID,
+				Domain:  domain,
+			})
+			if limErr != nil {
+				// No limit configured for this domain -- skip.
+				continue
+			}
+			if !limit.Enabled {
+				continue
+			}
+			result := h.domainRateLimiter.CheckDomainRateLimit(ctx, groupID, domain, limit.MaxPerMinute, limit.MaxPerHour)
+			if !result.Allowed {
+				h.log.Info().
+					Str("message_id", msg.ID).
+					Str("domain", domain).
+					Str("reason", result.Reason).
+					Msg("domain rate limit hit, deferring delivery")
+				return &queue.RateLimitedError{
+					RetryAfter: result.RetryAfter,
+					Reason:     result.Reason,
+				}
+			}
+		}
+	}
+
+	// Send via ESP provider with failover on transient errors.
+	var lastSendErr error
+	for i, p := range providers {
+		providerName = p.GetName()
+		sendStart := time.Now()
+		result, sendErr := p.Send(ctx, providerMsg)
+		sendDuration := time.Since(sendStart)
+
+		if sendErr != nil {
+			lastSendErr = sendErr
+			h.log.Warn().Err(sendErr).
+				Str("provider", providerName).
+				Str("message_id", msg.ID).
+				Int("attempt", i+1).
+				Int("total_providers", len(providers)).
+				Msg("provider send failed")
+
+			// If permanent error or last provider, stop trying.
+			if provider.IsPermanent(sendErr) || i == len(providers)-1 {
+				h.recordFailure(ctx, messageID, dbMsg.GroupID, dbMsg.UserID, providerName, sendErr)
+				return fmt.Errorf("provider send: %w", sendErr)
+			}
+
+			// Transient error with more fallbacks available -- try next.
+			h.log.Info().
+				Str("failed_provider", providerName).
+				Str("next_provider", providers[i+1].GetName()).
+				Str("message_id", msg.ID).
+				Msg("transient error, trying fallback provider")
+			continue
+		}
+
+		// Record success.
+		h.log.Info().
 			Str("provider", providerName).
 			Str("message_id", msg.ID).
-			Msg("provider send failed")
-		h.recordFailure(ctx, messageID, dbMsg.GroupID, dbMsg.UserID, providerName, sendErr)
-		return fmt.Errorf("provider send: %w", sendErr)
+			Str("provider_message_id", result.ProviderMessageID).
+			Int64("duration_ms", sendDuration.Milliseconds()).
+			Bool("is_fallback", i > 0).
+			Msg("message delivered by worker")
+
+		if err := h.queries.UpdateMessageStatus(ctx, storage.UpdateMessageStatusParams{
+			ID:     messageID,
+			Status: storage.MessageStatusDelivered,
+		}); err != nil {
+			h.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to update delivered status")
+		}
+
+		if _, err := h.queries.CreateDeliveryLog(ctx, storage.CreateDeliveryLogParams{
+			MessageID:         messageID,
+			ProviderID:        pgtype.UUID{},
+			Status:            string(storage.MessageStatusDelivered),
+			Provider:          sql.NullString{String: providerName, Valid: true},
+			ProviderMessageID: sql.NullString{String: result.ProviderMessageID, Valid: result.ProviderMessageID != ""},
+			GroupID:           dbMsg.GroupID,
+			UserID:            dbMsg.UserID,
+			DurationMs:        pgtype.Int4{Int32: int32(sendDuration.Milliseconds()), Valid: true},
+			AttemptNumber:     int32(i + 1),
+		}); err != nil {
+			h.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to create delivery log")
+		}
+
+		// Increment domain send counters for rate limiting.
+		if h.domainRateLimiter != nil {
+			for _, domain := range uniqueRecipientDomains(providerMsg.To, providerMsg.CC, providerMsg.BCC) {
+				if incErr := h.domainRateLimiter.IncrementDomainCount(ctx, groupID, domain); incErr != nil {
+					h.log.Warn().Err(incErr).Str("domain", domain).Msg("failed to increment domain rate counter")
+				}
+			}
+		}
+
+		return nil
 	}
 
-	// Record success.
-	h.log.Info().
-		Str("provider", providerName).
-		Str("message_id", msg.ID).
-		Str("provider_message_id", result.ProviderMessageID).
-		Int64("duration_ms", sendDuration.Milliseconds()).
-		Msg("message delivered by worker")
-
-	if err := h.queries.UpdateMessageStatus(ctx, storage.UpdateMessageStatusParams{
-		ID:     messageID,
-		Status: storage.MessageStatusDelivered,
-	}); err != nil {
-		h.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to update delivered status")
-	}
-
-	if _, err := h.queries.CreateDeliveryLog(ctx, storage.CreateDeliveryLogParams{
-		MessageID:         messageID,
-		ProviderID:        pgtype.UUID{},
-		Status:            string(storage.MessageStatusDelivered),
-		Provider:          sql.NullString{String: providerName, Valid: true},
-		ProviderMessageID: sql.NullString{String: result.ProviderMessageID, Valid: result.ProviderMessageID != ""},
-		GroupID:           dbMsg.GroupID,
-		UserID:            dbMsg.UserID,
-		DurationMs:        pgtype.Int4{Int32: int32(sendDuration.Milliseconds()), Valid: true},
-		AttemptNumber:     1,
-	}); err != nil {
-		h.log.Error().Err(err).Str("message_id", msg.ID).Msg("failed to create delivery log")
-	}
-
-	return nil
+	// Should not reach here, but handle gracefully.
+	h.recordFailure(ctx, messageID, dbMsg.GroupID, dbMsg.UserID, providerName, lastSendErr)
+	return fmt.Errorf("all providers failed: %w", lastSendErr)
 }
 
 // fetchBodyWithRetry retrieves the message body from the MessageStore with
@@ -345,4 +420,23 @@ func nullStringValue(ns sql.NullString) string {
 		return ns.String
 	}
 	return ""
+}
+
+// uniqueRecipientDomains extracts unique domain parts from all recipient
+// email addresses (To, CC, BCC).
+func uniqueRecipientDomains(lists ...[]string) []string {
+	seen := make(map[string]struct{})
+	for _, list := range lists {
+		for _, addr := range list {
+			if idx := strings.LastIndex(addr, "@"); idx >= 0 {
+				domain := strings.ToLower(addr[idx+1:])
+				seen[domain] = struct{}{}
+			}
+		}
+	}
+	domains := make([]string, 0, len(seen))
+	for d := range seen {
+		domains = append(domains, d)
+	}
+	return domains
 }

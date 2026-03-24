@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/config"
 	"github.com/sungwon/smtp-proxy/server/internal/logger"
 	"github.com/sungwon/smtp-proxy/server/internal/msgstore"
@@ -56,8 +58,19 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to initialize message store")
 	}
 
+	// Initialize domain rate limiter (reuses queue Redis if configured).
+	var domainRateLimiter *auth.DomainRateLimiter
+	if cfg.Queue.RedisAddr != "" {
+		rlClient := redis.NewClient(&redis.Options{
+			Addr:     cfg.Queue.RedisAddr,
+			Password: cfg.Queue.RedisPassword,
+			DB:       cfg.Queue.RedisDB,
+		})
+		domainRateLimiter = auth.NewDomainRateLimiter(rlClient)
+	}
+
 	// Create message handler with delivery logic.
-	handler := worker.NewHandler(resolver, queries, store, log)
+	handler := worker.NewHandler(resolver, queries, store, domainRateLimiter, log)
 
 	// Build worker pool configuration.
 	workerCount := cfg.Queue.Workers

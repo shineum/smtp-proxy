@@ -80,31 +80,31 @@ func (m *mockQuerier) UpdateDeliveryLogStatus(_ context.Context, _ storage.Updat
 func (m *mockQuerier) AverageDeliveryDuration(_ context.Context, _ storage.AverageDeliveryDurationParams) ([]storage.AverageDeliveryDurationRow, error) {
 	return nil, nil
 }
-func (m *mockQuerier) CountAllDeliveryLogsByDateRange(_ context.Context, _ storage.DateRangeParams) ([]storage.CountDeliveryLogsByGroupDateRangeRow, error) {
+func (m *mockQuerier) CountAllDeliveryLogsByDateRange(_ context.Context, _ storage.CountAllDeliveryLogsByDateRangeParams) ([]storage.CountAllDeliveryLogsByDateRangeRow, error) {
 	return nil, nil
 }
-func (m *mockQuerier) CountDeliveryLogsByGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.CountDeliveryLogsByGroupDateRangeRow, error) {
+func (m *mockQuerier) CountDeliveryLogsByGroupIDs(_ context.Context, _ storage.CountDeliveryLogsByGroupIDsParams) ([]storage.CountDeliveryLogsByGroupIDsRow, error) {
 	return nil, nil
 }
-func (m *mockQuerier) DailyDeliveryCountsByGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DailyDeliveryCountsByGroupRow, error) {
+func (m *mockQuerier) DailyDeliveryCountsByGroupIDs(_ context.Context, _ storage.DailyDeliveryCountsByGroupIDsParams) ([]storage.DailyDeliveryCountsByGroupIDsRow, error) {
 	return nil, nil
 }
-func (m *mockQuerier) DailyDeliveryCountsAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DailyDeliveryCountsByGroupRow, error) {
+func (m *mockQuerier) DailyDeliveryCountsAll(_ context.Context, _ storage.DailyDeliveryCountsAllParams) ([]storage.DailyDeliveryCountsAllRow, error) {
 	return nil, nil
 }
-func (m *mockQuerier) DeliveryCountsByGroupAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DeliveryCountsByGroupAllRow, error) {
+func (m *mockQuerier) DeliveryCountsByGroupAll(_ context.Context, _ storage.DeliveryCountsByGroupAllParams) ([]storage.DeliveryCountsByGroupAllRow, error) {
 	return nil, nil
 }
-func (m *mockQuerier) DeliveryCountsByProviderAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DeliveryCountsByGroupAndProviderRow, error) {
+func (m *mockQuerier) DeliveryCountsByProviderAll(_ context.Context, _ storage.DeliveryCountsByProviderAllParams) ([]storage.DeliveryCountsByProviderAllRow, error) {
 	return nil, nil
 }
-func (m *mockQuerier) DeliveryCountsByProviderAndGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DeliveryCountsByGroupAndProviderRow, error) {
+func (m *mockQuerier) DeliveryCountsByProviderAndGroupIDs(_ context.Context, _ storage.DeliveryCountsByProviderAndGroupIDsParams) ([]storage.DeliveryCountsByProviderAndGroupIDsRow, error) {
 	return nil, nil
 }
-func (m *mockQuerier) DeliveryCountsByUserAll(_ context.Context, _ storage.DateRangeParams) ([]storage.DeliveryCountsByGroupAndUserRow, error) {
+func (m *mockQuerier) DeliveryCountsByUserAll(_ context.Context, _ storage.DeliveryCountsByUserAllParams) ([]storage.DeliveryCountsByUserAllRow, error) {
 	return nil, nil
 }
-func (m *mockQuerier) DeliveryCountsByUserAndGroupIDs(_ context.Context, _ storage.MultiGroupDateRangeParams) ([]storage.DeliveryCountsByGroupAndUserRow, error) {
+func (m *mockQuerier) DeliveryCountsByUserAndGroupIDs(_ context.Context, _ storage.DeliveryCountsByUserAndGroupIDsParams) ([]storage.DeliveryCountsByUserAndGroupIDsRow, error) {
 	return nil, nil
 }
 func (m *mockQuerier) CountDeliveryLogsByGroup(_ context.Context, _ storage.CountDeliveryLogsByGroupParams) ([]storage.CountDeliveryLogsByGroupRow, error) {
@@ -387,6 +387,39 @@ func (m *mockQuerier) PurgeDeletedUsers(_ context.Context) error {
 	return nil
 }
 
+// ProviderFallback methods.
+func (m *mockQuerier) CreateProviderFallback(_ context.Context, _ storage.CreateProviderFallbackParams) (storage.ProviderFallback, error) {
+	return storage.ProviderFallback{}, nil
+}
+func (m *mockQuerier) DeleteProviderFallback(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockQuerier) DeleteProviderFallbacksByUserID(_ context.Context, _ uuid.UUID) error {
+	return nil
+}
+func (m *mockQuerier) ListProviderFallbacksByUserID(_ context.Context, _ uuid.UUID) ([]storage.ListProviderFallbacksByUserIDRow, error) {
+	return nil, nil
+}
+func (m *mockQuerier) ListAllProviderFallbacksByUserID(_ context.Context, _ uuid.UUID) ([]storage.ListAllProviderFallbacksByUserIDRow, error) {
+	return nil, nil
+}
+func (m *mockQuerier) UpdateProviderFallback(_ context.Context, _ storage.UpdateProviderFallbackParams) (storage.ProviderFallback, error) {
+	return storage.ProviderFallback{}, nil
+}
+
+// DomainRateLimit methods.
+func (m *mockQuerier) CreateDomainRateLimit(_ context.Context, _ storage.CreateDomainRateLimitParams) (storage.DomainRateLimit, error) {
+	return storage.DomainRateLimit{}, nil
+}
+func (m *mockQuerier) DeleteDomainRateLimit(_ context.Context, _ uuid.UUID) error { return nil }
+func (m *mockQuerier) GetDomainRateLimit(_ context.Context, _ storage.GetDomainRateLimitParams) (storage.DomainRateLimit, error) {
+	return storage.DomainRateLimit{}, pgx.ErrNoRows
+}
+func (m *mockQuerier) ListDomainRateLimitsByGroupID(_ context.Context, _ uuid.UUID) ([]storage.DomainRateLimit, error) {
+	return nil, nil
+}
+func (m *mockQuerier) UpdateDomainRateLimit(_ context.Context, _ storage.UpdateDomainRateLimitParams) (storage.DomainRateLimit, error) {
+	return storage.DomainRateLimit{}, nil
+}
+
 // Ensure mockQuerier satisfies the Querier interface at compile time.
 var _ storage.Querier = (*mockQuerier)(nil)
 
@@ -451,7 +484,7 @@ func newHandler(t *testing.T, mq *mockQuerier, store msgstore.MessageStore) *Han
 	log := zerolog.Nop()
 	httpClient := provider.NewHTTPClient(0)
 	resolver := provider.NewResolver(mq, httpClient, log, true)
-	return NewHandler(resolver, mq, store, log)
+	return NewHandler(resolver, mq, store, nil, log)
 }
 
 // ---------------------------------------------------------------------------
@@ -937,6 +970,10 @@ func (r *mockCaptureResolver) Resolve(_ context.Context, _ uuid.UUID) (provider.
 
 func (r *mockCaptureResolver) ResolveByUserID(_ context.Context, _ uuid.UUID) (provider.Provider, error) {
 	return r.provider, nil
+}
+
+func (r *mockCaptureResolver) ResolveWithFallbacks(_ context.Context, _ uuid.UUID) ([]provider.Provider, error) {
+	return []provider.Provider{r.provider}, nil
 }
 
 func TestHandler_HandleMessage_MIMEParsing(t *testing.T) {

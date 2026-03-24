@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -171,34 +172,46 @@ func (d *RedisDequeuer) processMessage(ctx context.Context, consumerName string,
 	MessageProcessingDuration.Observe(duration)
 
 	if err != nil {
-		d.log.Error().
-			Err(err).
-			Str("message_id", msg.ID).
-			Int("retry_count", msg.RetryCount).
-			Msg("message processing failed")
-
-		msg.RetryCount++
-
-		if d.retry.ShouldRetry(msg.RetryCount) {
-			backoff := d.retry.NextBackoff(msg.RetryCount - 1)
+		// Check for domain rate limiting -- re-enqueue without counting as retry.
+		var rlErr *RateLimitedError
+		if errors.As(err, &rlErr) {
 			d.log.Info().
 				Str("message_id", msg.ID).
-				Int("retry_count", msg.RetryCount).
-				Dur("backoff", backoff).
-				Msg("scheduling retry")
+				Dur("retry_after", rlErr.RetryAfter).
+				Str("reason", rlErr.Reason).
+				Msg("message rate-limited, re-enqueuing with delay")
 
-			// Re-enqueue after backoff by sleeping then re-adding.
-			go d.retryAfterBackoff(context.WithoutCancel(ctx), &msg, backoff)
-
-			MessagesProcessedTotal.WithLabelValues("failed").Inc()
+			go d.retryAfterBackoff(context.WithoutCancel(ctx), &msg, rlErr.RetryAfter)
+			MessagesProcessedTotal.WithLabelValues("rate_limited").Inc()
 		} else {
-			d.log.Warn().
+			d.log.Error().
+				Err(err).
 				Str("message_id", msg.ID).
 				Int("retry_count", msg.RetryCount).
-				Msg("max retries exhausted, moving to DLQ")
+				Msg("message processing failed")
 
-			if dlqErr := d.dlq.MoveToDLQ(ctx, &msg, err.Error()); dlqErr != nil {
-				d.log.Error().Err(dlqErr).Str("message_id", msg.ID).Msg("failed to move to DLQ")
+			msg.RetryCount++
+
+			if d.retry.ShouldRetry(msg.RetryCount) {
+				backoff := d.retry.NextBackoff(msg.RetryCount - 1)
+				d.log.Info().
+					Str("message_id", msg.ID).
+					Int("retry_count", msg.RetryCount).
+					Dur("backoff", backoff).
+					Msg("scheduling retry")
+
+				go d.retryAfterBackoff(context.WithoutCancel(ctx), &msg, backoff)
+
+				MessagesProcessedTotal.WithLabelValues("failed").Inc()
+			} else {
+				d.log.Warn().
+					Str("message_id", msg.ID).
+					Int("retry_count", msg.RetryCount).
+					Msg("max retries exhausted, moving to DLQ")
+
+				if dlqErr := d.dlq.MoveToDLQ(ctx, &msg, err.Error()); dlqErr != nil {
+					d.log.Error().Err(dlqErr).Str("message_id", msg.ID).Msg("failed to move to DLQ")
+				}
 			}
 		}
 	} else {

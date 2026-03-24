@@ -108,6 +108,12 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			r.Patch("/{id}/password-disabled", UpdatePasswordDisabledHandler(cfg.Queries, cfg.AuditLogger))
 			r.Get("/{id}/memberships", ListUserMembershipsHandler(cfg.Queries))
 			r.Post("/{id}/reset-api-key", ResetAPIKeyHandler(cfg.Queries, cfg.AuditLogger))
+
+			// Provider fallbacks (per-user ESP failover chain)
+			r.Get("/{id}/fallbacks", ListProviderFallbacksHandler(cfg.Queries))
+			r.Post("/{id}/fallbacks", CreateProviderFallbackHandler(cfg.Queries))
+			r.Put("/{id}/fallbacks/{fid}", UpdateProviderFallbackHandler(cfg.Queries))
+			r.Delete("/{id}/fallbacks/{fid}", DeleteProviderFallbackHandler(cfg.Queries))
 		})
 
 		// Providers
@@ -123,6 +129,14 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			r.Post("/{id}/access", GrantProviderAccessHandler(cfg.Queries))
 			r.Delete("/{id}/access/{groupId}", RevokeProviderAccessHandler(cfg.Queries))
 			r.Post("/{id}/send", TestProviderHandler(cfg.Queries))
+		})
+
+		// Domain Rate Limits (per-destination throttling)
+		r.Route("/api/v1/domain-rate-limits", func(r chi.Router) {
+			r.Get("/", ListDomainRateLimitsHandler(cfg.Queries))
+			r.Post("/", CreateDomainRateLimitHandler(cfg.Queries))
+			r.Put("/{id}", UpdateDomainRateLimitHandler(cfg.Queries))
+			r.Delete("/{id}", DeleteDomainRateLimitHandler(cfg.Queries))
 		})
 
 		// Routing Rules

@@ -1,6 +1,22 @@
 package queue
 
-import "context"
+import (
+	"context"
+	"time"
+)
+
+// RateLimitedError is returned by handlers when a message should be re-enqueued
+// after a delay without counting as a retry failure. This is used for
+// destination domain rate limiting where the message itself is valid but
+// delivery must be throttled.
+type RateLimitedError struct {
+	RetryAfter time.Duration
+	Reason     string
+}
+
+func (e *RateLimitedError) Error() string {
+	return "rate limited: " + e.Reason
+}
 
 // Enqueuer publishes messages to the queue.
 type Enqueuer interface {

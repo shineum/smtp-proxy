@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"net/http"
 	"strings"
 	"time"
@@ -89,7 +90,13 @@ func DashboardHandler(queries storage.Querier) http.HandlerFunc {
 
 		fromTS, toTS := parseDateRange(r)
 
-		var rows []storage.CountDeliveryLogsByGroupDateRangeRow
+		// statusCount is a common row type for dashboard aggregation.
+		type statusCount struct {
+			Status string
+			Count  int32
+		}
+
+		var rows []statusCount
 		var err error
 		respGroupID := ""
 		respGroupName := ""
@@ -98,38 +105,48 @@ func DashboardHandler(queries storage.Querier) http.HandlerFunc {
 		filterIDs, hasFilter := filterGroupIDs(r)
 
 		if sysAdmin && !hasFilter {
-			// System admin with no filter: query across all groups.
-			rows, err = queries.CountAllDeliveryLogsByDateRange(r.Context(), storage.DateRangeParams{
+			allRows, qErr := queries.CountAllDeliveryLogsByDateRange(r.Context(), storage.CountAllDeliveryLogsByDateRangeParams{
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range allRows {
+				rows = append(rows, statusCount{Status: r.Status, Count: r.Count})
+			}
 			respGroupName = "All Groups"
 		} else if sysAdmin && hasFilter && len(filterIDs) == 1 {
-			// System admin with a single group filter.
-			rows, err = queries.CountDeliveryLogsByGroupDateRange(r.Context(), storage.CountDeliveryLogsByGroupDateRangeParams{
+			grpRows, qErr := queries.CountDeliveryLogsByGroupDateRange(r.Context(), storage.CountDeliveryLogsByGroupDateRangeParams{
 				GroupID:     uuidToPgtype(filterIDs[0]),
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range grpRows {
+				rows = append(rows, statusCount{Status: r.Status, Count: r.Count})
+			}
 			respGroupID = filterIDs[0].String()
 		} else if sysAdmin && hasFilter {
-			// System admin with multiple group filter.
-			pgIDs := make([]pgtype.UUID, len(filterIDs))
-			for i, id := range filterIDs {
-				pgIDs[i] = uuidToPgtype(id)
-			}
-			rows, err = queries.CountDeliveryLogsByGroupIDs(r.Context(), storage.MultiGroupDateRangeParams{
-				GroupIDs:    pgIDs,
+			ids := make([]uuid.UUID, len(filterIDs))
+			copy(ids, filterIDs)
+			mRows, qErr := queries.CountDeliveryLogsByGroupIDs(r.Context(), storage.CountDeliveryLogsByGroupIDsParams{
+				Column1:     ids,
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range mRows {
+				rows = append(rows, statusCount{Status: r.Status, Count: r.Count})
+			}
 		} else {
-			// Non-admin: own group only.
-			rows, err = queries.CountDeliveryLogsByGroupDateRange(r.Context(), storage.CountDeliveryLogsByGroupDateRangeParams{
+			grpRows, qErr := queries.CountDeliveryLogsByGroupDateRange(r.Context(), storage.CountDeliveryLogsByGroupDateRangeParams{
 				GroupID:     uuidToPgtype(groupID),
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range grpRows {
+				rows = append(rows, statusCount{Status: r.Status, Count: r.Count})
+			}
 			respGroupID = groupID.String()
 		}
 
@@ -183,39 +200,58 @@ func TimeSeriesHandler(queries storage.Querier) http.HandlerFunc {
 
 		fromTS, toTS := parseDateRange(r)
 
-		var rows []storage.DailyDeliveryCountsByGroupRow
+		type dailyPoint struct {
+			Day    pgtype.Date
+			Status string
+			Count  int32
+		}
+		var rows []dailyPoint
 		var err error
 
 		sysAdmin := isSystemAdmin(r)
 		filterIDs, hasFilter := filterGroupIDs(r)
 
 		if sysAdmin && !hasFilter {
-			rows, err = queries.DailyDeliveryCountsAll(r.Context(), storage.DateRangeParams{
+			allRows, qErr := queries.DailyDeliveryCountsAll(r.Context(), storage.DailyDeliveryCountsAllParams{
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range allRows {
+				rows = append(rows, dailyPoint{Day: r.Day, Status: r.Status, Count: r.Count})
+			}
 		} else if sysAdmin && hasFilter && len(filterIDs) == 1 {
-			rows, err = queries.DailyDeliveryCountsByGroup(r.Context(), storage.DailyDeliveryCountsByGroupParams{
+			grpRows, qErr := queries.DailyDeliveryCountsByGroup(r.Context(), storage.DailyDeliveryCountsByGroupParams{
 				GroupID:     uuidToPgtype(filterIDs[0]),
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
-		} else if sysAdmin && hasFilter {
-			pgIDs := make([]pgtype.UUID, len(filterIDs))
-			for i, id := range filterIDs {
-				pgIDs[i] = uuidToPgtype(id)
+			err = qErr
+			for _, r := range grpRows {
+				rows = append(rows, dailyPoint{Day: r.Day, Status: r.Status, Count: r.Count})
 			}
-			rows, err = queries.DailyDeliveryCountsByGroupIDs(r.Context(), storage.MultiGroupDateRangeParams{
-				GroupIDs:    pgIDs,
+		} else if sysAdmin && hasFilter {
+			ids := make([]uuid.UUID, len(filterIDs))
+			copy(ids, filterIDs)
+			mRows, qErr := queries.DailyDeliveryCountsByGroupIDs(r.Context(), storage.DailyDeliveryCountsByGroupIDsParams{
+				Column1:     ids,
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range mRows {
+				rows = append(rows, dailyPoint{Day: r.Day, Status: r.Status, Count: r.Count})
+			}
 		} else {
-			rows, err = queries.DailyDeliveryCountsByGroup(r.Context(), storage.DailyDeliveryCountsByGroupParams{
+			grpRows, qErr := queries.DailyDeliveryCountsByGroup(r.Context(), storage.DailyDeliveryCountsByGroupParams{
 				GroupID:     uuidToPgtype(groupID),
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range grpRows {
+				rows = append(rows, dailyPoint{Day: r.Day, Status: r.Status, Count: r.Count})
+			}
 		}
 
 		if err != nil {
@@ -260,39 +296,58 @@ func UsageByUserHandler(queries storage.Querier) http.HandlerFunc {
 
 		fromTS, toTS := parseDateRange(r)
 
-		var rows []storage.DeliveryCountsByGroupAndUserRow
+		type userCount struct {
+			UserID pgtype.UUID
+			Status string
+			Count  int32
+		}
+		var rows []userCount
 		var err error
 
 		sysAdmin := isSystemAdmin(r)
 		filterIDs, hasFilter := filterGroupIDs(r)
 
 		if sysAdmin && !hasFilter {
-			rows, err = queries.DeliveryCountsByUserAll(r.Context(), storage.DateRangeParams{
+			allRows, qErr := queries.DeliveryCountsByUserAll(r.Context(), storage.DeliveryCountsByUserAllParams{
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range allRows {
+				rows = append(rows, userCount{UserID: r.UserID, Status: r.Status, Count: r.Count})
+			}
 		} else if sysAdmin && hasFilter && len(filterIDs) == 1 {
-			rows, err = queries.DeliveryCountsByGroupAndUser(r.Context(), storage.DeliveryCountsByGroupAndUserParams{
+			grpRows, qErr := queries.DeliveryCountsByGroupAndUser(r.Context(), storage.DeliveryCountsByGroupAndUserParams{
 				GroupID:     uuidToPgtype(filterIDs[0]),
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
-		} else if sysAdmin && hasFilter {
-			pgIDs := make([]pgtype.UUID, len(filterIDs))
-			for i, id := range filterIDs {
-				pgIDs[i] = uuidToPgtype(id)
+			err = qErr
+			for _, r := range grpRows {
+				rows = append(rows, userCount{UserID: r.UserID, Status: r.Status, Count: r.Count})
 			}
-			rows, err = queries.DeliveryCountsByUserAndGroupIDs(r.Context(), storage.MultiGroupDateRangeParams{
-				GroupIDs:    pgIDs,
+		} else if sysAdmin && hasFilter {
+			ids := make([]uuid.UUID, len(filterIDs))
+			copy(ids, filterIDs)
+			mRows, qErr := queries.DeliveryCountsByUserAndGroupIDs(r.Context(), storage.DeliveryCountsByUserAndGroupIDsParams{
+				Column1:     ids,
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range mRows {
+				rows = append(rows, userCount{UserID: r.UserID, Status: r.Status, Count: r.Count})
+			}
 		} else {
-			rows, err = queries.DeliveryCountsByGroupAndUser(r.Context(), storage.DeliveryCountsByGroupAndUserParams{
+			grpRows, qErr := queries.DeliveryCountsByGroupAndUser(r.Context(), storage.DeliveryCountsByGroupAndUserParams{
 				GroupID:     uuidToPgtype(groupID),
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range grpRows {
+				rows = append(rows, userCount{UserID: r.UserID, Status: r.Status, Count: r.Count})
+			}
 		}
 
 		if err != nil {
@@ -337,39 +392,58 @@ func UsageByProviderHandler(queries storage.Querier) http.HandlerFunc {
 
 		fromTS, toTS := parseDateRange(r)
 
-		var rows []storage.DeliveryCountsByGroupAndProviderRow
+		type provCount struct {
+			Provider sql.NullString
+			Status   string
+			Count    int32
+		}
+		var rows []provCount
 		var err error
 
 		sysAdmin := isSystemAdmin(r)
 		filterIDs, hasFilter := filterGroupIDs(r)
 
 		if sysAdmin && !hasFilter {
-			rows, err = queries.DeliveryCountsByProviderAll(r.Context(), storage.DateRangeParams{
+			allRows, qErr := queries.DeliveryCountsByProviderAll(r.Context(), storage.DeliveryCountsByProviderAllParams{
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range allRows {
+				rows = append(rows, provCount{Provider: r.Provider, Status: r.Status, Count: r.Count})
+			}
 		} else if sysAdmin && hasFilter && len(filterIDs) == 1 {
-			rows, err = queries.DeliveryCountsByGroupAndProvider(r.Context(), storage.DeliveryCountsByGroupAndProviderParams{
+			grpRows, qErr := queries.DeliveryCountsByGroupAndProvider(r.Context(), storage.DeliveryCountsByGroupAndProviderParams{
 				GroupID:     uuidToPgtype(filterIDs[0]),
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
-		} else if sysAdmin && hasFilter {
-			pgIDs := make([]pgtype.UUID, len(filterIDs))
-			for i, id := range filterIDs {
-				pgIDs[i] = uuidToPgtype(id)
+			err = qErr
+			for _, r := range grpRows {
+				rows = append(rows, provCount{Provider: r.Provider, Status: r.Status, Count: r.Count})
 			}
-			rows, err = queries.DeliveryCountsByProviderAndGroupIDs(r.Context(), storage.MultiGroupDateRangeParams{
-				GroupIDs:    pgIDs,
+		} else if sysAdmin && hasFilter {
+			ids := make([]uuid.UUID, len(filterIDs))
+			copy(ids, filterIDs)
+			mRows, qErr := queries.DeliveryCountsByProviderAndGroupIDs(r.Context(), storage.DeliveryCountsByProviderAndGroupIDsParams{
+				Column1:     ids,
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range mRows {
+				rows = append(rows, provCount{Provider: r.Provider, Status: r.Status, Count: r.Count})
+			}
 		} else {
-			rows, err = queries.DeliveryCountsByGroupAndProvider(r.Context(), storage.DeliveryCountsByGroupAndProviderParams{
+			grpRows, qErr := queries.DeliveryCountsByGroupAndProvider(r.Context(), storage.DeliveryCountsByGroupAndProviderParams{
 				GroupID:     uuidToPgtype(groupID),
 				CreatedAt:   fromTS,
 				CreatedAt_2: toTS,
 			})
+			err = qErr
+			for _, r := range grpRows {
+				rows = append(rows, provCount{Provider: r.Provider, Status: r.Status, Count: r.Count})
+			}
 		}
 
 		if err != nil {
@@ -419,7 +493,7 @@ func UsageByGroupHandler(queries storage.Querier) http.HandlerFunc {
 
 		fromTS, toTS := parseDateRange(r)
 
-		rows, err := queries.DeliveryCountsByGroupAll(r.Context(), storage.DateRangeParams{
+		rows, err := queries.DeliveryCountsByGroupAll(r.Context(), storage.DeliveryCountsByGroupAllParams{
 			CreatedAt:   fromTS,
 			CreatedAt_2: toTS,
 		})
@@ -430,12 +504,8 @@ func UsageByGroupHandler(queries storage.Querier) http.HandlerFunc {
 
 		result := make([]usageByGroupRow, len(rows))
 		for i, row := range rows {
-			gid := ""
-			if row.GroupID.Valid {
-				gid = uuid.UUID(row.GroupID.Bytes).String()
-			}
 			result[i] = usageByGroupRow{
-				GroupID:   gid,
+				GroupID:   row.GroupID.String(),
 				GroupName: row.GroupName,
 				Status:   row.Status,
 				Count:    row.Count,

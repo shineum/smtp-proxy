@@ -209,6 +209,18 @@ type ActivityLog struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
+type ApiKey struct {
+	ID         uuid.UUID          `json:"id"`
+	UserID     uuid.UUID          `json:"user_id"`
+	KeyPrefix  string             `json:"key_prefix"`
+	KeyHash    string             `json:"key_hash"`
+	Label      string             `json:"label"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	IsActive   bool               `json:"is_active"`
+}
+
 type DeliveryLog struct {
 	ID                uuid.UUID          `json:"id"`
 	MessageID         uuid.UUID          `json:"message_id"`
@@ -228,6 +240,17 @@ type DeliveryLog struct {
 	AttemptNumber     int32              `json:"attempt_number"`
 	UserID            pgtype.UUID        `json:"user_id"`
 	GroupID           pgtype.UUID        `json:"group_id"`
+}
+
+type DomainRateLimit struct {
+	ID           uuid.UUID          `json:"id"`
+	GroupID      uuid.UUID          `json:"group_id"`
+	Domain       string             `json:"domain"`
+	MaxPerMinute int32              `json:"max_per_minute"`
+	MaxPerHour   int32              `json:"max_per_hour"`
+	Enabled      bool               `json:"enabled"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type EspProvider struct {
@@ -281,6 +304,15 @@ type Message struct {
 	UserID      pgtype.UUID        `json:"user_id"`
 }
 
+type ProviderFallback struct {
+	ID         uuid.UUID          `json:"id"`
+	UserID     uuid.UUID          `json:"user_id"`
+	ProviderID uuid.UUID          `json:"provider_id"`
+	Priority   int32              `json:"priority"`
+	Enabled    bool               `json:"enabled"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
 type ProviderGroupAccess struct {
 	ProviderID uuid.UUID          `json:"provider_id"`
 	GroupID    uuid.UUID          `json:"group_id"`
@@ -306,18 +338,6 @@ type Session struct {
 	RefreshTokenHash string             `json:"refresh_token_hash"`
 	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-}
-
-type ApiKey struct {
-	ID         uuid.UUID          `json:"id"`
-	UserID     uuid.UUID          `json:"user_id"`
-	KeyPrefix  string             `json:"key_prefix"`
-	KeyHash    string             `json:"key_hash"`
-	Label      string             `json:"label"`
-	IsActive   bool               `json:"is_active"`
-	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
-	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
 type User struct {

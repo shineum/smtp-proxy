@@ -227,6 +227,46 @@ func EspToConfig(esp *storage.EspProvider) (ProviderConfig, error) {
 	return cfg, nil
 }
 
+// ResolveWithFallbacks returns the primary provider and an ordered list of
+// fallback providers for the given user ID. The primary provider is the user's
+// configured provider_id; fallbacks come from the provider_fallbacks table
+// ordered by priority. Returns at least one provider (the primary) on success.
+func (r *ProviderResolver) ResolveWithFallbacks(ctx context.Context, userID uuid.UUID) ([]Provider, error) {
+	// Resolve the primary provider first.
+	primary, err := r.ResolveByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Load fallback provider IDs from DB.
+	fallbacks, err := r.queries.ListProviderFallbacksByUserID(ctx, userID)
+	if err != nil {
+		r.log.Warn().Err(err).Stringer("user_id", userID).Msg("failed to load fallback providers, using primary only")
+		return []Provider{primary}, nil
+	}
+
+	if len(fallbacks) == 0 {
+		return []Provider{primary}, nil
+	}
+
+	providers := make([]Provider, 1, 1+len(fallbacks))
+	providers[0] = primary
+
+	for _, fb := range fallbacks {
+		p, err := r.resolveProviderByID(ctx, fb.ProviderID, fb.ProviderID)
+		if err != nil {
+			r.log.Warn().Err(err).
+				Stringer("provider_id", fb.ProviderID).
+				Str("provider_name", fb.ProviderName).
+				Msg("skipping unavailable fallback provider")
+			continue
+		}
+		providers = append(providers, p)
+	}
+
+	return providers, nil
+}
+
 // pgUUIDToUUID converts a pgtype.UUID to a google/uuid.UUID.
 // Returns uuid.Nil if the pgtype.UUID is not valid.
 func pgUUIDToUUID(p pgtype.UUID) uuid.UUID {

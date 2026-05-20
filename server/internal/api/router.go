@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"github.com/sungwon/smtp-proxy/server/internal/auth"
 	"github.com/sungwon/smtp-proxy/server/internal/queue"
@@ -34,6 +35,9 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 	// Health endpoints (no auth required)
 	r.Get("/healthz", HealthzHandler())
 	r.Get("/readyz", ReadyzHandler(cfg.DB))
+
+	// Prometheus metrics endpoint (no auth required; restrict at network layer).
+	r.Handle("/metrics", promhttp.Handler())
 
 	// Webhook endpoints (no auth required - called by ESP providers)
 	r.Post("/api/v1/webhooks/sendgrid", SendGridWebhookHandler(cfg.Queries))

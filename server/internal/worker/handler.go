@@ -241,6 +241,36 @@ func (h *Handler) HandleMessage(ctx context.Context, msg *queue.Message) error {
 	var lastSendErr error
 	for i, p := range providers {
 		providerName = p.GetName()
+
+		// REQ-MIME-006: pre-flight check that the rendered message fits the
+		// provider's documented size cap. This avoids a wasted round-trip and
+		// gives a clearer error than the ESP's generic "request too large".
+		// If a fallback provider has a larger limit we'll try it; otherwise
+		// the error is permanent for the message.
+		if limit := provider.MaxMessageBytes(providerName); limit > 0 {
+			size := provider.EstimateMessageBytes(providerMsg)
+			if size > limit {
+				sizeErr := &provider.ProviderError{
+					Provider:  providerName,
+					Message:   fmt.Sprintf("message size %d bytes exceeds %s limit of %d bytes", size, providerName, limit),
+					Permanent: true,
+				}
+				lastSendErr = sizeErr
+				h.log.Warn().
+					Str("provider", providerName).
+					Str("message_id", msg.ID).
+					Int64("size_bytes", size).
+					Int64("limit_bytes", limit).
+					Msg("message exceeds provider size limit, skipping")
+				if i == len(providers)-1 {
+					h.recordFailure(ctx, messageID, dbMsg.GroupID, dbMsg.UserID, providerName, sizeErr)
+					return fmt.Errorf("provider send: %w", sizeErr)
+				}
+				// A fallback with a larger limit may still succeed.
+				continue
+			}
+		}
+
 		sendStart := time.Now()
 		result, sendErr := p.Send(ctx, providerMsg)
 		sendDuration := time.Since(sendStart)

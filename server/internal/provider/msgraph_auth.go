@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -81,7 +82,11 @@ func (tm *TokenManager) refreshToken() (string, error) {
 	}
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("msgraph auth: token request returned status %d: %s", resp.StatusCode, string(resp.Body))
+		// REQ-QUEUE-N006: defense-in-depth — strip any client_secret value
+		// from the response body before it lands in error chains / logs.
+		// Azure AD does not currently echo the request body back, but a
+		// misconfigured proxy or future Azure change could.
+		return "", fmt.Errorf("msgraph auth: token request returned status %d: %s", resp.StatusCode, redactClientSecret(string(resp.Body)))
 	}
 
 	var tokenResp tokenResponse
@@ -111,4 +116,27 @@ type tokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int    `json:"expires_in"`
+}
+
+// secretRedactionPattern matches common secret-bearing form/JSON fields and
+// replaces the value with "[REDACTED]". Patterns covered:
+//   - form-encoded:   client_secret=...&  or  client_secret=...$
+//   - JSON:           "client_secret":"..." (with optional whitespace)
+//   - URL query:      ?client_secret=...   (handled by form-encoded rule)
+//
+// The middle group allows an optional closing quote after the key name
+// (JSON style) and an optional opening quote before the value, so a single
+// pattern handles both form and JSON encodings.
+var secretRedactionPattern = regexp.MustCompile(
+	`(?i)(client_secret|password|access_token|refresh_token|api[_-]?key)` +
+		`("?\s*[:=]\s*"?)([^"&\s,}]*)`,
+)
+
+// redactClientSecret returns s with values of known secret-bearing fields
+// replaced by "[REDACTED]". It is safe to use in error messages, structured
+// log fields, and stack traces. Intended for defensive use where the input
+// is *not expected* to contain secrets but might if upstream behaviour
+// changes; do not rely on it as the primary line of defence.
+func redactClientSecret(s string) string {
+	return secretRedactionPattern.ReplaceAllString(s, "$1$2[REDACTED]")
 }

@@ -89,6 +89,18 @@ func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLog
 			return
 		}
 
+		// REQ-AUTH-016: SMTP service accounts authenticate via SMTP AUTH only;
+		// they must not be able to obtain a JWT via the web login endpoint.
+		// Return the generic invalid-credentials error to avoid leaking the
+		// account type to an attacker.
+		if user.AccountType == "smtp" {
+			if auditLogger != nil {
+				auditLogger.LogAuthFailure(r.Context(), r, auth.AuditActionLoginFailed, "smtp account web login blocked")
+			}
+			respondError(w, http.StatusUnauthorized, "invalid email or password")
+			return
+		}
+
 		// Block login for password-disabled users (SSO-only)
 		if user.PasswordDisabled {
 			if auditLogger != nil {
@@ -111,7 +123,9 @@ func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLog
 			return
 		}
 
-		// Resolve group membership
+		// Resolve group membership.
+		// REQ-AUTH-020: the resolved group must be in the "active" status; logins
+		// targeting a suspended group are rejected with 403 in both branches.
 		var groupID uuid.UUID
 		var role string
 		var groupType string
@@ -141,6 +155,14 @@ func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLog
 				return
 			}
 
+			if group.Status != "active" {
+				if auditLogger != nil {
+					auditLogger.LogAuthFailure(r.Context(), r, auth.AuditActionLoginFailed, "group not active: "+group.Status)
+				}
+				respondError(w, http.StatusForbidden, "group is not active")
+				return
+			}
+
 			groupID = gid
 			role = member.Role
 			groupType = group.GroupType
@@ -153,6 +175,13 @@ func LoginHandler(queries storage.Querier, jwtService *auth.JWTService, auditLog
 			}
 
 			// Use the first group
+			if groups[0].Status != "active" {
+				if auditLogger != nil {
+					auditLogger.LogAuthFailure(r.Context(), r, auth.AuditActionLoginFailed, "default group not active: "+groups[0].Status)
+				}
+				respondError(w, http.StatusForbidden, "group is not active")
+				return
+			}
 			groupID = groups[0].ID
 			groupType = groups[0].GroupType
 

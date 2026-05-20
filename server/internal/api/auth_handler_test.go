@@ -285,6 +285,174 @@ func TestLoginHandler_NoGroupMembership(t *testing.T) {
 	}
 }
 
+// TestLoginHandler_RejectsSMTPAccount verifies REQ-AUTH-016: SMTP service
+// accounts must not be able to obtain a JWT via /api/v1/auth/login. SMTP
+// accounts authenticate via SMTP AUTH only. The mock here is wired so that
+// login would otherwise succeed (active user, valid group membership) — only
+// the AccountType="smtp" check should reject it.
+func TestLoginHandler_RejectsSMTPAccount(t *testing.T) {
+	userID := uuid.New()
+	groupID := uuid.New()
+
+	hash, _ := auth.HashPassword("password123")
+	user := storage.User{
+		ID:           userID,
+		Email:        "bot@example.com",
+		PasswordHash: hash,
+		Status:       "active",
+		AccountType:  "smtp",
+	}
+
+	grp := storage.Group{
+		ID:        groupID,
+		Name:      "test-group",
+		GroupType: "organization",
+		Status:    "active",
+	}
+
+	mock := &mockQuerier{
+		getUserByEmailFn: func(ctx context.Context, email string) (storage.User, error) {
+			return user, nil
+		},
+		listGroupsByUserIDFn: func(ctx context.Context, uid uuid.UUID) ([]storage.Group, error) {
+			return []storage.Group{grp}, nil
+		},
+		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
+			return storage.GroupMember{ID: uuid.New(), GroupID: groupID, UserID: userID, Role: "member"}, nil
+		},
+		createSessionFn: func(ctx context.Context, arg storage.CreateSessionParams) (storage.Session, error) {
+			return storage.Session{ID: uuid.New()}, nil
+		},
+	}
+
+	jwtSvc := auth.NewJWTService(auth.JWTConfig{
+		SigningKey:         "test-secret-key-that-is-long-enough-32",
+		AccessTokenExpiry:  15 * time.Minute,
+		RefreshTokenExpiry: 7 * 24 * time.Hour,
+	})
+
+	body := `{"email":"bot@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	LoginHandler(mock, jwtSvc, nil, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 for smtp account login, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+	// Response must not leak that the account is SMTP-typed.
+	if strings.Contains(rec.Body.String(), "smtp") {
+		t.Errorf("response body should not reveal account_type=smtp: %s", rec.Body.String())
+	}
+}
+
+// TestLoginHandler_RejectsSuspendedGroup_NoGroupID verifies REQ-AUTH-020:
+// when a user logs in without an explicit group_id and the first-membership
+// group is suspended, login is rejected.
+func TestLoginHandler_RejectsSuspendedGroup_NoGroupID(t *testing.T) {
+	userID := uuid.New()
+	groupID := uuid.New()
+
+	hash, _ := auth.HashPassword("password123")
+	user := storage.User{
+		ID:           userID,
+		Email:        "user@example.com",
+		PasswordHash: hash,
+		Status:       "active",
+		AccountType:  "user",
+	}
+
+	suspendedGroup := storage.Group{
+		ID:        groupID,
+		Name:      "suspended-group",
+		GroupType: "organization",
+		Status:    "suspended",
+	}
+
+	mock := &mockQuerier{
+		getUserByEmailFn: func(ctx context.Context, email string) (storage.User, error) {
+			return user, nil
+		},
+		listGroupsByUserIDFn: func(ctx context.Context, uid uuid.UUID) ([]storage.Group, error) {
+			return []storage.Group{suspendedGroup}, nil
+		},
+		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
+			return storage.GroupMember{ID: uuid.New(), GroupID: groupID, UserID: userID, Role: "member"}, nil
+		},
+	}
+
+	jwtSvc := auth.NewJWTService(auth.JWTConfig{
+		SigningKey:         "test-secret-key-that-is-long-enough-32",
+		AccessTokenExpiry:  15 * time.Minute,
+		RefreshTokenExpiry: 7 * 24 * time.Hour,
+	})
+
+	body := `{"email":"user@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	LoginHandler(mock, jwtSvc, nil, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403 for login into suspended group, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestLoginHandler_RejectsSuspendedGroup_WithGroupID verifies REQ-AUTH-020
+// for the explicit-group code path: a login request that names a suspended
+// group must be rejected with 403.
+func TestLoginHandler_RejectsSuspendedGroup_WithGroupID(t *testing.T) {
+	userID := uuid.New()
+	groupID := uuid.New()
+
+	hash, _ := auth.HashPassword("password123")
+	user := storage.User{
+		ID:           userID,
+		Email:        "user@example.com",
+		PasswordHash: hash,
+		Status:       "active",
+		AccountType:  "user",
+	}
+
+	suspendedGroup := storage.Group{
+		ID:        groupID,
+		Name:      "suspended-group",
+		GroupType: "organization",
+		Status:    "suspended",
+	}
+
+	mock := &mockQuerier{
+		getUserByEmailFn: func(ctx context.Context, email string) (storage.User, error) {
+			return user, nil
+		},
+		getGroupMemberByUserAndGroupFn: func(ctx context.Context, arg storage.GetGroupMemberByUserAndGroupParams) (storage.GroupMember, error) {
+			return storage.GroupMember{ID: uuid.New(), GroupID: groupID, UserID: userID, Role: "member"}, nil
+		},
+		getGroupByIDFn: func(ctx context.Context, id uuid.UUID) (storage.Group, error) {
+			return suspendedGroup, nil
+		},
+	}
+
+	jwtSvc := auth.NewJWTService(auth.JWTConfig{
+		SigningKey:         "test-secret-key-that-is-long-enough-32",
+		AccessTokenExpiry:  15 * time.Minute,
+		RefreshTokenExpiry: 7 * 24 * time.Hour,
+	})
+
+	body := `{"email":"user@example.com","password":"password123","group_id":"` + groupID.String() + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	LoginHandler(mock, jwtSvc, nil, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status 403 for explicit suspended group login, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestLoginHandler_MissingFields(t *testing.T) {
 	mock := &mockQuerier{}
 	jwtSvc := auth.NewJWTService(auth.JWTConfig{

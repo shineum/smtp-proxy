@@ -145,6 +145,51 @@ func TestProviderConfig_Validate(t *testing.T) {
 			wantErr: "",
 		},
 		{
+			name: "smtp without host returns error",
+			config: ProviderConfig{
+				Type: "smtp",
+			},
+			wantErr: "smtp: host is required",
+		},
+		{
+			name: "smtp with only host succeeds (defaults applied)",
+			config: ProviderConfig{
+				Type: "smtp",
+				Host: "smtp.example.com",
+			},
+			wantErr: "",
+		},
+		{
+			name: "smtp with invalid port returns error",
+			config: ProviderConfig{
+				Type: "smtp",
+				Host: "smtp.example.com",
+				Port: 70000,
+			},
+			wantErr: "smtp: port must be between 1 and 65535",
+		},
+		{
+			name: "smtp with invalid encryption returns error",
+			config: ProviderConfig{
+				Type:       "smtp",
+				Host:       "smtp.example.com",
+				Encryption: "wireguard",
+			},
+			wantErr: "smtp: encryption must be one of none, starttls, tls",
+		},
+		{
+			name: "smtp with all fields succeeds",
+			config: ProviderConfig{
+				Type:       "smtp",
+				Host:       "smtp.example.com",
+				Port:       465,
+				Username:   "user",
+				Password:   "pass",
+				Encryption: "tls",
+			},
+			wantErr: "",
+		},
+		{
 			name: "unknown type returns error",
 			config: ProviderConfig{
 				Type: "postmark",

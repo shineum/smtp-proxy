@@ -187,6 +187,26 @@ func TestNewProvider_ValidMSGraph(t *testing.T) {
 	}
 }
 
+func TestNewProvider_ValidSMTP(t *testing.T) {
+	cfg := ProviderConfig{
+		Type:       "smtp",
+		Host:       "smtp.example.com",
+		Port:       587,
+		Username:   "user",
+		Password:   "pass",
+		Encryption: "starttls",
+	}
+	client := &mockHTTPClient{}
+
+	p, err := NewProvider(cfg, client)
+	if err != nil {
+		t.Fatalf("NewProvider() error = %v", err)
+	}
+	if p.GetName() != "smtp" {
+		t.Errorf("GetName() = %q, want %q", p.GetName(), "smtp")
+	}
+}
+
 func TestNewProvider_InvalidConfig(t *testing.T) {
 	cfg := ProviderConfig{
 		Type: "sendgrid",

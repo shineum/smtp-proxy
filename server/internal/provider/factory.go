@@ -73,6 +73,8 @@ func NewProvider(cfg ProviderConfig, client HTTPClient) (Provider, error) {
 		return NewMailgun(cfg, client), nil
 	case "msgraph":
 		return NewMSGraph(cfg, client), nil
+	case "smtp":
+		return NewSMTP(cfg), nil
 	case "stdout":
 		return NewStdout(cfg), nil
 	case "file":

@@ -35,9 +35,28 @@ type ProviderConfig struct {
 	ClientSecret string // Azure AD application client secret
 	UserID       string // Microsoft 365 user ID or UPN for sendMail
 
+	// SMTP-specific fields.
+	Host       string // SMTP server hostname (e.g. smtp.gmail.com)
+	Port       int    // SMTP server port (defaults to 587)
+	Username   string // SMTP AUTH username (optional, enables PLAIN auth when set with Password)
+	Password   string // SMTP AUTH password
+	Encryption string // "none" | "starttls" | "tls" (defaults to "starttls")
+
 	// DefaultSender is the default sender email address for this provider.
 	DefaultSender string
 }
+
+// SMTP encryption modes.
+const (
+	SMTPEncryptionNone     = "none"
+	SMTPEncryptionStartTLS = "starttls"
+	SMTPEncryptionTLS      = "tls"
+)
+
+const (
+	defaultSMTPPort       = 587
+	defaultSMTPEncryption = SMTPEncryptionStartTLS
+)
 
 const defaultTimeout = 30 * time.Second
 
@@ -86,6 +105,25 @@ func (c *ProviderConfig) Validate() error {
 		if c.UserID == "" {
 			return errors.New("msgraph: user_id is required")
 		}
+	case "smtp":
+		if c.Host == "" {
+			return errors.New("smtp: host is required")
+		}
+		if c.Port == 0 {
+			c.Port = defaultSMTPPort
+		}
+		if c.Port < 1 || c.Port > 65535 {
+			return errors.New("smtp: port must be between 1 and 65535")
+		}
+		if c.Encryption == "" {
+			c.Encryption = defaultSMTPEncryption
+		}
+		switch c.Encryption {
+		case SMTPEncryptionNone, SMTPEncryptionStartTLS, SMTPEncryptionTLS:
+		default:
+			return errors.New("smtp: encryption must be one of none, starttls, tls")
+		}
+		// Username/Password are optional (some SMTP relays accept anonymous on trusted networks).
 	case "stdout":
 		// No configuration required.
 	case "file":

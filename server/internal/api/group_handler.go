@@ -839,23 +839,8 @@ func CreateServiceAccountHandler(queries storage.Querier, auditLogger *auth.Audi
 			return
 		}
 
-		newKey, err := auth.GenerateAPIKey()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-
-		keyPrefix := auth.APIKeyPrefix(newKey)
-		keyHash, err := auth.HashAPIKey(newKey)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-
-		_, err = queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
+		newKey, _, err := createUniqueAPIKey(r.Context(), queries, storage.CreateAPIKeyParams{
 			UserID:    user.ID,
-			KeyPrefix: keyPrefix,
-			KeyHash:   keyHash,
 			Label:     "default",
 			ExpiresAt: apiKeyExpiresAt,
 			IsActive:  true,
@@ -933,28 +918,15 @@ func ResetServiceAccountAPIKeyHandler(queries storage.Querier, auditLogger *auth
 			return
 		}
 
-		newKey, err := auth.GenerateAPIKey()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-
-		// Delete all existing API keys, then create a new one
+		// Delete all existing API keys, then create a new one with
+		// collision-retry on the key_prefix unique index. (REQ-AUTH-026)
 		if err := queries.DeleteAllAPIKeysByUserID(r.Context(), userID); err != nil {
 			respondError(w, http.StatusInternalServerError, "failed to reset API key")
 			return
 		}
 
-		keyPrefix := auth.APIKeyPrefix(newKey)
-		keyHash, err := auth.HashAPIKey(newKey)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-		newApiKeyRecord, err := queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
+		newKey, newApiKeyRecord, err := createUniqueAPIKey(r.Context(), queries, storage.CreateAPIKeyParams{
 			UserID:    userID,
-			KeyPrefix: keyPrefix,
-			KeyHash:   keyHash,
 			Label:     "default",
 			ExpiresAt: apiKeyExpiresAt,
 			IsActive:  true,
@@ -1078,23 +1050,8 @@ func CreateAPIKeyHandler(queries storage.Querier, auditLogger *auth.AuditLogger)
 			return
 		}
 
-		newKey, err := auth.GenerateAPIKey()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-
-		keyPrefix := auth.APIKeyPrefix(newKey)
-		keyHash, err := auth.HashAPIKey(newKey)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "internal server error")
-			return
-		}
-
-		apiKeyRecord, err := queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
+		newKey, apiKeyRecord, err := createUniqueAPIKey(r.Context(), queries, storage.CreateAPIKeyParams{
 			UserID:    userID,
-			KeyPrefix: keyPrefix,
-			KeyHash:   keyHash,
 			Label:     label,
 			ExpiresAt: apiKeyExpiresAt,
 			IsActive:  true,

@@ -193,16 +193,10 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			passwordHash = hash
 		}
 
-		// Auto-generate API key for SMTP accounts
-		var apiKey sql.NullString
-		if req.AccountType == "smtp" {
-			key, err := auth.GenerateAPIKey()
-			if err != nil {
-				respondError(w, http.StatusInternalServerError, "internal server error")
-				return
-			}
-			apiKey = sql.NullString{String: key, Valid: true}
-		}
+		// Auto-generate API key for SMTP accounts.
+		// The key value is generated inside the api_keys insert (after CreateUser
+		// succeeds) so that key_prefix collisions can be transparently retried.
+		needsAPIKey := req.AccountType == "smtp"
 
 		// Build username
 		var username sql.NullString
@@ -334,18 +328,11 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			})
 		}
 
-		// For SMTP accounts, create the API key in api_keys table
-		if req.AccountType == "smtp" && apiKey.Valid {
-			keyPrefix := auth.APIKeyPrefix(apiKey.String)
-			keyHash, hashErr := auth.HashAPIKey(apiKey.String)
-			if hashErr != nil {
-				respondError(w, http.StatusInternalServerError, "internal server error")
-				return
-			}
-			apiKeyRecord, createErr := queries.CreateAPIKey(r.Context(), storage.CreateAPIKeyParams{
+		// For SMTP accounts, create the API key in api_keys table with
+		// collision-retry on the key_prefix unique index. (REQ-AUTH-026)
+		if needsAPIKey {
+			rawKey, apiKeyRecord, createErr := createUniqueAPIKey(r.Context(), queries, storage.CreateAPIKeyParams{
 				UserID:    user.ID,
-				KeyPrefix: keyPrefix,
-				KeyHash:   keyHash,
 				Label:     "default",
 				ExpiresAt: apiKeyExpiresAt,
 				IsActive:  true,
@@ -355,7 +342,7 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 				return
 			}
 			resp := toUserResponse(user)
-			resp.ApiKey = &apiKey.String
+			resp.ApiKey = &rawKey
 			if apiKeyRecord.ExpiresAt.Valid {
 				t := apiKeyRecord.ExpiresAt.Time
 				resp.ApiKeyExpiresAt = &t

@@ -101,3 +101,30 @@ SELECT * FROM users WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC;
 -- name: PurgeDeletedUsers :exec
 DELETE FROM users WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - INTERVAL '30 days';
 
+-- name: ResolveAnonymousSMTPByIP :many
+-- Returns active SMTP service accounts whose anonymous_allowed_cidrs contain
+-- the given source IP. Used when an unauthenticated client submits MAIL FROM.
+-- Multiple matches indicate operator misconfiguration (overlapping CIDRs);
+-- callers should reject the session rather than picking arbitrarily.
+SELECT u.*
+FROM users u
+JOIN groups g ON u.home_group_id = g.id
+WHERE u.account_type = 'smtp'
+  AND u.status = 'active'
+  AND u.anonymous_allowed = true
+  AND u.deleted_at IS NULL
+  AND g.status = 'active'
+  AND EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements_text(u.anonymous_allowed_cidrs) AS c(cidr)
+      WHERE $1::inet <<= c.cidr::inet
+  );
+
+-- name: UpdateUserAnonymous :one
+UPDATE users
+SET anonymous_allowed = $2,
+    anonymous_allowed_cidrs = $3,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING *;
+

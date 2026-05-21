@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -38,10 +39,11 @@ var errNotFound = errors.New("no rows")
 // mockQuerier implements storage.Querier with controllable responses.
 type mockQuerier struct {
 	// Auth-related behavior
-	getUserByUsernameFn  func(ctx context.Context, username sql.NullString) (storage.User, error)
-	getAPIKeyByPrefixFn  func(ctx context.Context, keyPrefix string) (storage.ApiKey, error)
-	listGroupsByUserIDFn func(ctx context.Context, userID uuid.UUID) ([]storage.Group, error)
-	getGroupByIDFn       func(ctx context.Context, id uuid.UUID) (storage.Group, error)
+	getUserByUsernameFn        func(ctx context.Context, username sql.NullString) (storage.User, error)
+	getAPIKeyByPrefixFn        func(ctx context.Context, keyPrefix string) (storage.ApiKey, error)
+	listGroupsByUserIDFn       func(ctx context.Context, userID uuid.UUID) ([]storage.Group, error)
+	getGroupByIDFn             func(ctx context.Context, id uuid.UUID) (storage.Group, error)
+	resolveAnonymousSMTPByIPFn func(ctx context.Context, addr netip.Addr) ([]storage.User, error)
 
 	// EnqueueMessage behavior
 	enqueueMessageFn func(ctx context.Context, arg storage.EnqueueMessageParams) (storage.Message, error)
@@ -518,6 +520,17 @@ func (m *mockQuerier) ListDeletedUsers(_ context.Context) ([]storage.User, error
 
 func (m *mockQuerier) PurgeDeletedUsers(_ context.Context) error {
 	return nil
+}
+
+func (m *mockQuerier) ResolveAnonymousSMTPByIP(ctx context.Context, addr netip.Addr) ([]storage.User, error) {
+	if m.resolveAnonymousSMTPByIPFn != nil {
+		return m.resolveAnonymousSMTPByIPFn(ctx, addr)
+	}
+	return nil, nil
+}
+
+func (m *mockQuerier) UpdateUserAnonymous(_ context.Context, _ storage.UpdateUserAnonymousParams) (storage.User, error) {
+	return storage.User{}, nil
 }
 
 // ProviderFallback methods.
@@ -1497,5 +1510,152 @@ func TestSession_Data_EnqueueRetryExhausted(t *testing.T) {
 
 	if capturedStatus != storage.MessageStatusEnqueueFailed {
 		t.Errorf("expected status enqueue_failed, got %s", capturedStatus)
+	}
+}
+
+// --- Anonymous SMTP submission (per-account CIDR allowlist) ---
+
+// newAnonymousMockQuerier wires a mockQuerier so that ResolveAnonymousSMTPByIP
+// returns the configured user list, and GetGroupByID returns an active group.
+func newAnonymousMockQuerier(matchedUsers []storage.User, groupID uuid.UUID) *mockQuerier {
+	return &mockQuerier{
+		resolveAnonymousSMTPByIPFn: func(_ context.Context, _ netip.Addr) ([]storage.User, error) {
+			return matchedUsers, nil
+		},
+		getGroupByIDFn: func(_ context.Context, id uuid.UUID) (storage.Group, error) {
+			return storage.Group{ID: id, Status: "active"}, nil
+		},
+	}
+}
+
+func TestSession_Mail_AnonymousCIDRMatch(t *testing.T) {
+	userID := uuid.New()
+	groupID := uuid.New()
+	domainsJSON, _ := json.Marshal([]string{"example.com"})
+
+	mock := newAnonymousMockQuerier([]storage.User{{
+		ID:                    userID,
+		Username:              sql.NullString{String: "bot", Valid: true},
+		AccountType:           "smtp",
+		Status:                "active",
+		AllowedDomains:        domainsJSON,
+		HomeGroupID:           pgtype.UUID{Bytes: groupID, Valid: true},
+		AnonymousAllowed:      true,
+		AnonymousAllowedCidrs: []byte(`["10.1.1.0/24"]`),
+	}}, groupID)
+
+	s := newTestSession(mock)
+	s.remoteIP = netip.MustParseAddr("10.1.1.10")
+
+	if err := s.Mail("alerts@example.com", nil); err != nil {
+		t.Fatalf("Mail() = %v, want nil for matched CIDR", err)
+	}
+	if !s.authenticated || !s.anonymous {
+		t.Errorf("session state: authenticated=%v anonymous=%v, want both true", s.authenticated, s.anonymous)
+	}
+	if s.userID != userID || s.groupID != groupID {
+		t.Errorf("identity = (%v,%v), want (%v,%v)", s.userID, s.groupID, userID, groupID)
+	}
+	if s.sender != "alerts@example.com" {
+		t.Errorf("sender = %q, want alerts@example.com", s.sender)
+	}
+}
+
+func TestSession_Mail_AnonymousDomainStillEnforced(t *testing.T) {
+	userID := uuid.New()
+	groupID := uuid.New()
+	domainsJSON, _ := json.Marshal([]string{"allowed.com"})
+
+	mock := newAnonymousMockQuerier([]storage.User{{
+		ID:                    userID,
+		AccountType:           "smtp",
+		Status:                "active",
+		AllowedDomains:        domainsJSON,
+		HomeGroupID:           pgtype.UUID{Bytes: groupID, Valid: true},
+		AnonymousAllowed:      true,
+		AnonymousAllowedCidrs: []byte(`["10.1.1.0/24"]`),
+	}}, groupID)
+
+	s := newTestSession(mock)
+	s.remoteIP = netip.MustParseAddr("10.1.1.10")
+
+	err := s.Mail("attacker@evil.com", nil)
+	if err == nil {
+		t.Fatal("expected Mail to reject sender outside allowed_domains even in anonymous mode")
+	}
+	var smtpErr *gosmtp.SMTPError
+	if !errors.As(err, &smtpErr) || smtpErr.Code != 550 {
+		t.Errorf("expected 550 sender-domain rejection, got %v", err)
+	}
+}
+
+func TestSession_Mail_AnonymousNoMatch(t *testing.T) {
+	mock := &mockQuerier{
+		resolveAnonymousSMTPByIPFn: func(_ context.Context, _ netip.Addr) ([]storage.User, error) {
+			return nil, nil // no rows
+		},
+	}
+
+	s := newTestSession(mock)
+	s.remoteIP = netip.MustParseAddr("203.0.113.5") // public IP — not in any allowlist
+
+	err := s.Mail("alerts@example.com", nil)
+	if err == nil {
+		t.Fatal("expected 530 when no anonymous account matches source IP")
+	}
+	var smtpErr *gosmtp.SMTPError
+	if !errors.As(err, &smtpErr) || smtpErr.Code != 530 {
+		t.Errorf("expected 530 Authentication required, got %v", err)
+	}
+	if s.authenticated {
+		t.Error("session should remain unauthenticated when no CIDR matched")
+	}
+}
+
+func TestSession_Mail_AnonymousAmbiguousMatchRefused(t *testing.T) {
+	// Two accounts whose CIDR lists both contain 10.1.1.10 — operator
+	// misconfiguration. Session must be refused rather than guessing.
+	mock := &mockQuerier{
+		resolveAnonymousSMTPByIPFn: func(_ context.Context, _ netip.Addr) ([]storage.User, error) {
+			return []storage.User{
+				{ID: uuid.New(), AccountType: "smtp"},
+				{ID: uuid.New(), AccountType: "smtp"},
+			}, nil
+		},
+	}
+
+	s := newTestSession(mock)
+	s.remoteIP = netip.MustParseAddr("10.1.1.10")
+
+	err := s.Mail("alerts@example.com", nil)
+	if err == nil {
+		t.Fatal("expected 530 when CIDR allowlists overlap across accounts")
+	}
+	var smtpErr *gosmtp.SMTPError
+	if !errors.As(err, &smtpErr) || smtpErr.Code != 530 {
+		t.Errorf("expected 530 Authentication required on ambiguous match, got %v", err)
+	}
+}
+
+func TestSession_Mail_AnonymousNoRemoteIP(t *testing.T) {
+	// Non-TCP transport leaves remoteIP zero-valued. Anonymous resolution
+	// must short-circuit to 530 without invoking the storage layer.
+	called := false
+	mock := &mockQuerier{
+		resolveAnonymousSMTPByIPFn: func(_ context.Context, _ netip.Addr) ([]storage.User, error) {
+			called = true
+			return nil, nil
+		},
+	}
+
+	s := newTestSession(mock)
+	// s.remoteIP is intentionally left zero (invalid).
+
+	err := s.Mail("alerts@example.com", nil)
+	if err == nil {
+		t.Fatal("expected 530 when source IP is unavailable")
+	}
+	if called {
+		t.Error("ResolveAnonymousSMTPByIP must not be invoked with an invalid IP")
 	}
 }

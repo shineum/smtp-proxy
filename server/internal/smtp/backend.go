@@ -2,6 +2,8 @@ package smtp
 
 import (
 	"context"
+	"net"
+	"net/netip"
 	"sync/atomic"
 
 	gosmtp "github.com/emersion/go-smtp"
@@ -57,19 +59,46 @@ func (b *Backend) NewSession(conn *gosmtp.Conn) (gosmtp.Session, error) {
 	ctx := context.Background()
 	ctx = logger.WithCorrelationID(ctx, correlationID)
 
+	remoteIP := extractRemoteIP(conn)
+
 	sessionLog := b.log.With().
 		Str("correlation_id", correlationID).
 		Str("remote_addr", conn.Hostname()).
+		Str("remote_ip", remoteIP.String()).
 		Logger()
 
 	sessionLog.Info().Msg("new SMTP session")
 
 	return &Session{
-		ctx:     ctx,
-		queries: b.queries,
-		log:     sessionLog,
-		backend: b,
+		ctx:      ctx,
+		queries:  b.queries,
+		log:      sessionLog,
+		backend:  b,
+		remoteIP: remoteIP,
 	}, nil
+}
+
+// extractRemoteIP pulls the client IP from the underlying TCP connection.
+// It strips any zone identifier and returns an invalid netip.Addr when the
+// remote side is non-IP (e.g., Unix socket) — anonymous resolution then
+// short-circuits to "no match" without erroring.
+func extractRemoteIP(conn *gosmtp.Conn) netip.Addr {
+	if conn == nil {
+		return netip.Addr{}
+	}
+	c := conn.Conn()
+	if c == nil {
+		return netip.Addr{}
+	}
+	tcp, ok := c.RemoteAddr().(*net.TCPAddr)
+	if !ok {
+		return netip.Addr{}
+	}
+	addr, ok := netip.AddrFromSlice(tcp.IP)
+	if !ok {
+		return netip.Addr{}
+	}
+	return addr.Unmap()
 }
 
 // ActiveSessions returns the current number of active SMTP sessions.

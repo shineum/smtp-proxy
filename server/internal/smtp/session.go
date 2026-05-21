@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/mail"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -40,6 +41,8 @@ type Session struct {
 	userID         uuid.UUID
 	groupID        uuid.UUID
 	authenticated  bool
+	anonymous      bool       // true when session was authorized via per-account anonymous CIDR allowlist
+	remoteIP       netip.Addr // client source IP captured at connection time; zero value when non-TCP
 	allowedDomains []string
 	sender         string
 	recipients     []string
@@ -199,15 +202,96 @@ func (s *Session) Auth(mech string) (sasl.Server, error) {
 	}), nil
 }
 
+// tryAnonymousAuth attempts to authorize the session via per-account
+// anonymous CIDR allowlist when the client did not issue AUTH.
+//
+// Returns nil on success (session is marked authenticated+anonymous, with
+// userID/groupID/allowedDomains populated). Returns a 530 SMTPError when
+// the source IP matches no account, when remoteIP is unavailable, or when
+// the IP matches more than one account (operator misconfiguration).
+func (s *Session) tryAnonymousAuth() error {
+	authRequired := &gosmtp.SMTPError{
+		Code:         530,
+		EnhancedCode: gosmtp.EnhancedCode{5, 7, 0},
+		Message:      "Authentication required",
+	}
+
+	if !s.remoteIP.IsValid() {
+		// Non-TCP transport (Unix socket etc.) — anonymous mode is IP-bound.
+		return authRequired
+	}
+
+	users, err := s.queries.ResolveAnonymousSMTPByIP(s.ctx, s.remoteIP)
+	if err != nil {
+		s.log.Error().Err(err).Str("remote_ip", s.remoteIP.String()).
+			Msg("anonymous resolve query failed")
+		return authRequired
+	}
+
+	switch len(users) {
+	case 0:
+		s.log.Debug().Str("remote_ip", s.remoteIP.String()).
+			Msg("anonymous: no matching account for source IP")
+		return authRequired
+	case 1:
+		// Single match — proceed.
+	default:
+		// Multiple matches indicate overlapping anonymous_allowed_cidrs
+		// across accounts. Refuse rather than choosing arbitrarily; the
+		// operator must make CIDR lists disjoint.
+		s.log.Error().Str("remote_ip", s.remoteIP.String()).
+			Int("match_count", len(users)).
+			Msg("anonymous: ambiguous CIDR match — refusing session (operator config error)")
+		return authRequired
+	}
+
+	user := users[0]
+
+	// Resolve home group (must exist and be active to send mail).
+	groupUUID := uuid.UUID(user.HomeGroupID.Bytes)
+	group, err := s.queries.GetGroupByID(s.ctx, groupUUID)
+	if err != nil || group.Status != "active" {
+		s.log.Warn().
+			Str("remote_ip", s.remoteIP.String()).
+			Str("user_id", user.ID.String()).
+			Str("group_id", groupUUID.String()).
+			Msg("anonymous: matched account's home group is not active")
+		return authRequired
+	}
+
+	var domains []string
+	if len(user.AllowedDomains) > 0 {
+		if err := json.Unmarshal(user.AllowedDomains, &domains); err != nil {
+			s.log.Error().Err(err).Msg("anonymous: failed to parse allowed domains")
+			domains = nil
+		}
+	}
+
+	s.userID = user.ID
+	s.groupID = group.ID
+	s.allowedDomains = domains
+	s.authenticated = true
+	s.anonymous = true
+
+	s.log.Info().
+		Str("remote_ip", s.remoteIP.String()).
+		Str("user_id", user.ID.String()).
+		Str("group_id", group.ID.String()).
+		Str("username", user.Username.String).
+		Msg("anonymous SMTP session authorized by CIDR allowlist")
+
+	return nil
+}
+
 // Mail handles the MAIL FROM command. It validates that the session is
 // authenticated and that the sender domain is in the user's allowed
-// domains list.
+// domains list. When the client did not perform AUTH, it falls back to
+// per-account anonymous resolution by source IP against each SMTP
+// account's anonymous_allowed_cidrs allowlist.
 func (s *Session) Mail(from string, opts *gosmtp.MailOptions) error {
 	if !s.authenticated {
-		return &gosmtp.SMTPError{
-			Code:         530,
-			EnhancedCode: gosmtp.EnhancedCode{5, 7, 0},
-			Message:      "Authentication required",
+		if err := s.tryAnonymousAuth(); err != nil {
+			return err
 		}
 	}
 

@@ -109,7 +109,10 @@ func (s *SMTP) Send(ctx context.Context, msg *Message) (*DeliveryResult, error) 
 	defer client.Close()
 
 	if s.username != "" && s.password != "" {
-		auth := smtp.PlainAuth("", s.username, s.password, s.host)
+		auth, err := s.pickAuth(client)
+		if err != nil {
+			return nil, fmt.Errorf("smtp: auth: %w", err)
+		}
 		if err := client.Auth(auth); err != nil {
 			return nil, fmt.Errorf("smtp: auth: %w", classifySMTPError(err))
 		}
@@ -279,6 +282,104 @@ func classifySMTPError(err error) error {
 		Provider:  "smtp",
 		Message:   err.Error(),
 		Permanent: false,
+	}
+}
+
+// @MX:NOTE: SASL mechanism selection — PLAIN preferred, LOGIN fallback.
+// Some legacy Exchange/O365 tenants and Korean ISP / on-prem relays advertise
+// only AUTH=LOGIN. CRAM-MD5 and XOAUTH2 are intentionally unsupported here
+// because they require shared-secret challenge or token plumbing that this
+// provider does not own. Passwords containing shell-special characters
+// (e.g. ! @ # $ % ^ & * " ' ?) are transported safely because net/smtp
+// base64-encodes both PLAIN and LOGIN payloads before sending.
+func (s *SMTP) pickAuth(client *smtp.Client) (smtp.Auth, error) {
+	ok, mechsRaw := client.Extension("AUTH")
+	if !ok {
+		return nil, &ProviderError{
+			Provider:  "smtp",
+			Message:   "server does not advertise AUTH (credentials configured but no AUTH extension)",
+			Permanent: true,
+		}
+	}
+	mechs := parseAuthMechs(mechsRaw)
+	if _, ok := mechs["PLAIN"]; ok {
+		return smtp.PlainAuth("", s.username, s.password, s.host), nil
+	}
+	if _, ok := mechs["LOGIN"]; ok {
+		return &loginAuth{username: s.username, password: s.password, host: s.host}, nil
+	}
+	return nil, &ProviderError{
+		Provider:  "smtp",
+		Message:   fmt.Sprintf("no supported AUTH mechanism advertised (got %q, want PLAIN or LOGIN)", mechsRaw),
+		Permanent: true,
+	}
+}
+
+// parseAuthMechs tokenizes a space-separated AUTH mechanism list (as returned
+// by smtp.Client.Extension("AUTH")) into an uppercase set for membership tests.
+func parseAuthMechs(s string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, tok := range strings.Fields(s) {
+		if tok == "" {
+			continue
+		}
+		out[strings.ToUpper(tok)] = struct{}{}
+	}
+	return out
+}
+
+// isLocalhostName mirrors net/smtp's internal isLocalhost check so that
+// loginAuth can permit cleartext credentials on loopback connections only.
+func isLocalhostName(name string) bool {
+	return name == "localhost" || name == "127.0.0.1" || name == "::1"
+}
+
+// loginAuth implements the obsolete LOGIN SASL mechanism for net/smtp.Client.
+// It is used only when the server advertises LOGIN but not PLAIN.
+//
+// Protocol exchange (after AUTH LOGIN):
+//
+//	server -> 334 base64("Username:")  (or vendor variant)
+//	client -> base64(username)
+//	server -> 334 base64("Password:")
+//	client -> base64(password)
+//
+// Because real servers vary the challenge string ("Username:", "User Name",
+// "username", etc.), we ignore the challenge text and emit credentials by
+// step counter. Any challenge after step 1 is treated as a protocol error.
+type loginAuth struct {
+	username string
+	password string
+	host     string
+	step     int
+}
+
+// Start refuses to send credentials over an unencrypted, non-loopback link.
+// This mirrors net/smtp.PlainAuth's safety check; we deliberately skip the
+// server-name-vs-host comparison because pickAuth runs after STARTTLS /
+// implicit-TLS negotiation and the user has configured the host explicitly.
+func (a *loginAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	if !server.TLS && !isLocalhostName(server.Name) {
+		return "", nil, errors.New("smtp: refusing LOGIN auth over unencrypted, non-loopback connection")
+	}
+	return "LOGIN", nil, nil
+}
+
+// Next emits username on the first server challenge and password on the second.
+// fromServer is the base64-decoded challenge (already decoded by net/smtp).
+func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if !more {
+		return nil, nil
+	}
+	switch a.step {
+	case 0:
+		a.step++
+		return []byte(a.username), nil
+	case 1:
+		a.step++
+		return []byte(a.password), nil
+	default:
+		return nil, fmt.Errorf("smtp: unexpected server challenge after LOGIN credentials: %q", fromServer)
 	}
 }
 

@@ -20,6 +20,10 @@ type captureBackend struct {
 	mu        sync.Mutex
 	sessions  []*captureSession
 	authPlain func(username, password string) error
+	authLogin func(username, password string) error
+	// authMechs advertises the SASL mechanisms via EHLO AUTH=...; empty means
+	// the default of PLAIN only (preserves existing tests).
+	authMechs []string
 	mailErr   *gosmtp.SMTPError // returned from Mail when non-nil
 	rcptErr   *gosmtp.SMTPError // returned from Rcpt when non-nil
 	dataErr   *gosmtp.SMTPError // returned from Data when non-nil
@@ -50,25 +54,83 @@ type captureSession struct {
 	authed  bool
 }
 
-// AuthMechanisms advertises PLAIN to support SASL PLAIN clients.
+// AuthMechanisms advertises the configured SASL mechanisms (PLAIN by default).
 func (s *captureSession) AuthMechanisms() []string {
+	if len(s.backend.authMechs) > 0 {
+		return s.backend.authMechs
+	}
 	return []string{sasl.Plain}
 }
 
-// Auth wires SASL PLAIN to the backend's authPlain hook (when set).
+// Auth dispatches to the matching SASL server (PLAIN or LOGIN).
 func (s *captureSession) Auth(mech string) (sasl.Server, error) {
-	if mech != sasl.Plain {
+	switch mech {
+	case sasl.Plain:
+		return sasl.NewPlainServer(func(_, username, password string) error {
+			if s.backend.authPlain != nil {
+				if err := s.backend.authPlain(username, password); err != nil {
+					return err
+				}
+			}
+			s.authed = true
+			return nil
+		}), nil
+	case sasl.Login:
+		return &loginServerStub{
+			onAuth: func(username, password string) error {
+				if s.backend.authLogin != nil {
+					if err := s.backend.authLogin(username, password); err != nil {
+						return err
+					}
+				}
+				s.authed = true
+				return nil
+			},
+		}, nil
+	default:
 		return nil, errors.New("unsupported mechanism: " + mech)
 	}
-	return sasl.NewPlainServer(func(_, username, password string) error {
-		if s.backend.authPlain != nil {
-			if err := s.backend.authPlain(username, password); err != nil {
-				return err
+}
+
+// loginServerStub implements the SASL LOGIN server flow. emersion/go-sasl ships
+// only the LOGIN client; we provide the server side here for tests.
+//
+// State machine (handles both with-IR and no-IR clients):
+//
+//	step 0, resp == nil  -> challenge "Username:"  (advance to step 1)
+//	step 0, resp != nil  -> treat as username      (advance to step 2 — IR shortcut)
+//	step 1, resp = user  -> challenge "Password:"  (advance to step 2)
+//	step 2, resp = pass  -> done, invoke onAuth
+type loginServerStub struct {
+	onAuth func(username, password string) error
+	step   int
+	user   string
+}
+
+func (l *loginServerStub) Next(resp []byte) (challenge []byte, done bool, err error) {
+	switch l.step {
+	case 0:
+		if len(resp) > 0 {
+			l.user = string(resp)
+			l.step = 2
+			return []byte("Password:"), false, nil
+		}
+		l.step = 1
+		return []byte("Username:"), false, nil
+	case 1:
+		l.user = string(resp)
+		l.step = 2
+		return []byte("Password:"), false, nil
+	case 2:
+		if l.onAuth != nil {
+			if err := l.onAuth(l.user, string(resp)); err != nil {
+				return nil, true, err
 			}
 		}
-		s.authed = true
-		return nil
-	}), nil
+		return nil, true, nil
+	default:
+		return nil, true, errors.New("loginServerStub: unexpected state")
+	}
 }
 
 func (s *captureSession) Mail(from string, _ *gosmtp.MailOptions) error {
@@ -530,6 +592,120 @@ func TestParseSMTPReplyCode(t *testing.T) {
 			t.Errorf("parseSMTPReplyCode(%q) = (%d,%q,%v), want (%d,%q,%v)",
 				tt.in, code, msg, ok, tt.wantCode, tt.wantMsg, tt.wantOK)
 		}
+	}
+}
+
+// TestSMTP_Send_PasswordWithSpecialChars verifies that passwords containing
+// shell-special and SMTP-meaningful characters traverse the AUTH PLAIN exchange
+// byte-for-byte intact — net/smtp base64-encodes the payload, so server-side
+// reception must equal what the provider was configured with.
+func TestSMTP_Send_PasswordWithSpecialChars(t *testing.T) {
+	const trickyPass = `p@ss w0rd!#$%^&*()"'?<>|\` + "`\t "
+	var seenUser, seenPass string
+	backend := &captureBackend{
+		authPlain: func(u, p string) error {
+			seenUser, seenPass = u, p
+			return nil
+		},
+	}
+	port, stop := startTestSMTPServer(t, backend)
+	defer stop()
+
+	p := NewSMTP(ProviderConfig{
+		Type:       "smtp",
+		Host:       "127.0.0.1",
+		Port:       port,
+		Username:   "user-special",
+		Password:   trickyPass,
+		Encryption: SMTPEncryptionNone,
+		Timeout:    3 * time.Second,
+	})
+	if _, err := p.Send(context.Background(), &Message{
+		ID:       "msg-special",
+		From:     "f@example.com",
+		To:       []string{"t@example.com"},
+		TextBody: "body",
+	}); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	if seenUser != "user-special" || seenPass != trickyPass {
+		t.Errorf("AUTH credentials = (%q,%q), want (%q,%q)", seenUser, seenPass, "user-special", trickyPass)
+	}
+}
+
+// TestSMTP_Send_LoginAuth verifies LOGIN fallback when the server advertises
+// AUTH LOGIN but not PLAIN — the case that motivated this code path (legacy
+// Exchange/O365 tenants, Korean ISP relays).
+func TestSMTP_Send_LoginAuth(t *testing.T) {
+	var seenUser, seenPass string
+	backend := &captureBackend{
+		authMechs: []string{sasl.Login}, // LOGIN only, no PLAIN
+		authLogin: func(u, p string) error {
+			seenUser, seenPass = u, p
+			return nil
+		},
+	}
+	port, stop := startTestSMTPServer(t, backend)
+	defer stop()
+
+	p := NewSMTP(ProviderConfig{
+		Type:       "smtp",
+		Host:       "127.0.0.1",
+		Port:       port,
+		Username:   "login-user",
+		Password:   "login-pass",
+		Encryption: SMTPEncryptionNone,
+		Timeout:    3 * time.Second,
+	})
+	if _, err := p.Send(context.Background(), &Message{
+		ID:       "msg-login",
+		From:     "f@example.com",
+		To:       []string{"t@example.com"},
+		TextBody: "body",
+	}); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+	if seenUser != "login-user" || seenPass != "login-pass" {
+		t.Errorf("LOGIN credentials = (%q,%q), want (login-user,login-pass)", seenUser, seenPass)
+	}
+	if !backend.lastSession().authed {
+		t.Error("session reports unauthenticated despite AUTH LOGIN call")
+	}
+}
+
+// TestSMTP_Send_NoSupportedAuthMech verifies that a server advertising only
+// mechanisms we don't support (CRAM-MD5, XOAUTH2, ...) yields a permanent
+// error rather than silently skipping auth or hanging.
+func TestSMTP_Send_NoSupportedAuthMech(t *testing.T) {
+	backend := &captureBackend{
+		authMechs: []string{"CRAM-MD5"}, // unsupported by our provider
+	}
+	port, stop := startTestSMTPServer(t, backend)
+	defer stop()
+
+	p := NewSMTP(ProviderConfig{
+		Type:       "smtp",
+		Host:       "127.0.0.1",
+		Port:       port,
+		Username:   "u",
+		Password:   "p",
+		Encryption: SMTPEncryptionNone,
+		Timeout:    3 * time.Second,
+	})
+	_, err := p.Send(context.Background(), &Message{
+		ID:       "msg-no-mech",
+		From:     "f@example.com",
+		To:       []string{"t@example.com"},
+		TextBody: "body",
+	})
+	if err == nil {
+		t.Fatal("expected error when no supported AUTH mechanism is advertised, got nil")
+	}
+	if !IsPermanent(err) {
+		t.Errorf("expected permanent error for unsupported mech, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "no supported AUTH mechanism") {
+		t.Errorf("error message = %q, want substring 'no supported AUTH mechanism'", err.Error())
 	}
 }
 

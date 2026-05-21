@@ -3,7 +3,9 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -16,39 +18,43 @@ import (
 
 // createUserRequest is the JSON body for POST /api/v1/users.
 type createUserRequest struct {
-	Email            string   `json:"email"`
-	Password         string   `json:"password,omitempty"`
-	AccountType      string   `json:"account_type"`
-	Username         string   `json:"username,omitempty"`
-	GroupID          string   `json:"group_id,omitempty"`
-	ProviderID       string   `json:"provider_id,omitempty"`
-	Role             string   `json:"role,omitempty"`
-	AllowedDomains   []string `json:"allowed_domains,omitempty"`
-	PasswordDisabled bool     `json:"password_disabled,omitempty"`
-	DisplayName      string   `json:"display_name,omitempty"`
-	Description      string   `json:"description,omitempty"`
-	ApiKeyExpiresIn  string   `json:"api_key_expires_in,omitempty"`
+	Email                string   `json:"email"`
+	Password             string   `json:"password,omitempty"`
+	AccountType          string   `json:"account_type"`
+	Username             string   `json:"username,omitempty"`
+	GroupID              string   `json:"group_id,omitempty"`
+	ProviderID           string   `json:"provider_id,omitempty"`
+	Role                 string   `json:"role,omitempty"`
+	AllowedDomains       []string `json:"allowed_domains,omitempty"`
+	PasswordDisabled     bool     `json:"password_disabled,omitempty"`
+	DisplayName          string   `json:"display_name,omitempty"`
+	Description          string   `json:"description,omitempty"`
+	ApiKeyExpiresIn      string   `json:"api_key_expires_in,omitempty"`
+	AnonymousAllowed     bool     `json:"anonymous_allowed,omitempty"`
+	AnonymousAllowedCidrs []string `json:"anonymous_allowed_cidrs,omitempty"`
 }
 
 // userResponse is the JSON response for a user, excluding sensitive fields.
 type userResponse struct {
-	ID               uuid.UUID  `json:"id"`
-	Email            string     `json:"email"`
-	Username         *string    `json:"username,omitempty"`
-	AccountType      string     `json:"account_type"`
-	Status           string     `json:"status"`
-	AllowedDomains   []string   `json:"allowed_domains,omitempty"`
-	ApiKey           *string    `json:"api_key,omitempty"`
-	ProviderID       *uuid.UUID `json:"provider_id,omitempty"`
-	HomeGroupID      *uuid.UUID `json:"home_group_id,omitempty"`
-	DisplayName      *string    `json:"display_name,omitempty"`
-	Description      *string    `json:"description,omitempty"`
-	PasswordDisabled bool       `json:"password_disabled"`
-	LastLogin        *time.Time `json:"last_login,omitempty"`
-	ApiKeyExpiresAt  *time.Time `json:"api_key_expires_at,omitempty"`
-	DeletedAt        *time.Time `json:"deleted_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID                    uuid.UUID  `json:"id"`
+	Email                 string     `json:"email"`
+	Username              *string    `json:"username,omitempty"`
+	AccountType           string     `json:"account_type"`
+	Status                string     `json:"status"`
+	AllowedDomains        []string   `json:"allowed_domains,omitempty"`
+	ApiKey                *string    `json:"api_key,omitempty"`
+	ProviderID            *uuid.UUID `json:"provider_id,omitempty"`
+	HomeGroupID           *uuid.UUID `json:"home_group_id,omitempty"`
+	DisplayName           *string    `json:"display_name,omitempty"`
+	Description           *string    `json:"description,omitempty"`
+	PasswordDisabled      bool       `json:"password_disabled"`
+	AnonymousAllowed      bool       `json:"anonymous_allowed,omitempty"`
+	AnonymousAllowedCidrs []string   `json:"anonymous_allowed_cidrs,omitempty"`
+	LastLogin             *time.Time `json:"last_login,omitempty"`
+	ApiKeyExpiresAt       *time.Time `json:"api_key_expires_at,omitempty"`
+	DeletedAt             *time.Time `json:"deleted_at,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
 // toUserResponse converts a storage.User to a userResponse.
@@ -91,6 +97,10 @@ func toUserResponse(u storage.User) userResponse {
 	if u.DeletedAt.Valid {
 		t := u.DeletedAt.Time
 		resp.DeletedAt = &t
+	}
+	resp.AnonymousAllowed = u.AnonymousAllowed
+	if len(u.AnonymousAllowedCidrs) > 0 {
+		resp.AnonymousAllowedCidrs = decodeDomains(u.AnonymousAllowedCidrs)
 	}
 	return resp
 }
@@ -281,6 +291,14 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 			homeGroupPgID = pgtype.UUID{Bytes: groupID, Valid: true}
 		}
 
+		// Validate anonymous SMTP fields; only applies to smtp accounts.
+		if req.AccountType == "smtp" {
+			if err := validateAnonymousCIDRs(req.AnonymousAllowed, req.AnonymousAllowedCidrs); err != nil {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+
 		apiKeyExpiresAt, err := parseAPIKeyExpiration(req.ApiKeyExpiresIn)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, err.Error())
@@ -306,6 +324,28 @@ func CreateUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) h
 				respondError(w, http.StatusConflict, "email already in use")
 			}
 			return
+		}
+
+		// For smtp accounts, persist anonymous SMTP settings via a follow-up
+		// UpdateUserAnonymous call. This is done after CreateUser (which does not
+		// accept these columns) so that the CIDR validation logic lives in one
+		// place and the DB CHECK constraint is never violated.
+		if req.AccountType == "smtp" && req.AnonymousAllowed {
+			cidrsJSON, marshalErr := json.Marshal(req.AnonymousAllowedCidrs)
+			if marshalErr != nil {
+				respondError(w, http.StatusInternalServerError, "internal server error")
+				return
+			}
+			updated, updateErr := queries.UpdateUserAnonymous(r.Context(), storage.UpdateUserAnonymousParams{
+				ID:                    user.ID,
+				AnonymousAllowed:      req.AnonymousAllowed,
+				AnonymousAllowedCidrs: cidrsJSON,
+			})
+			if updateErr != nil {
+				respondError(w, http.StatusInternalServerError, "failed to set anonymous settings")
+				return
+			}
+			user = updated
 		}
 
 		// Create group membership if group_id is provided
@@ -589,6 +629,111 @@ func RestoreUserHandler(queries storage.Querier, auditLogger *auth.AuditLogger) 
 
 		if auditLogger != nil {
 			auditLogger.LogAdminAction(r.Context(), r, "admin.restore_user", "user", id.String(), nil)
+		}
+
+		respondJSON(w, http.StatusOK, toUserResponse(user))
+	}
+}
+
+// validateAnonymousCIDRs enforces the CIDR list constraints for anonymous SMTP
+// submission. Rules:
+//   - When allowed is true the list must be non-empty (mirrors DB CHECK constraint).
+//   - When allowed is false the list must be empty/nil (force clean reset).
+//   - Each entry must parse as a valid IP prefix via netip.ParsePrefix.
+//   - Duplicates (normalised via Prefix.String()) are rejected.
+//   - The list is capped at 64 entries to bound the JSONB column size.
+//   - The catch-all prefixes 0.0.0.0/0 and ::/0 are rejected: allowing any IP
+//     defeats the open-relay guard that this feature is meant to provide.
+func validateAnonymousCIDRs(allowed bool, cidrs []string) error {
+	if allowed && len(cidrs) == 0 {
+		return fmt.Errorf("anonymous_allowed_cidrs must not be empty when anonymous_allowed is true")
+	}
+	if !allowed && len(cidrs) > 0 {
+		return fmt.Errorf("anonymous_allowed_cidrs must be empty when anonymous_allowed is false")
+	}
+	if len(cidrs) > 64 {
+		return fmt.Errorf("anonymous_allowed_cidrs must not exceed 64 entries")
+	}
+	seen := make(map[string]struct{}, len(cidrs))
+	for _, raw := range cidrs {
+		pfx, err := netip.ParsePrefix(raw)
+		if err != nil {
+			return fmt.Errorf("invalid CIDR %q: %w", raw, err)
+		}
+		norm := pfx.String()
+		if norm == "0.0.0.0/0" || norm == "::/0" {
+			return fmt.Errorf("CIDR %q is not allowed: catch-all prefixes defeat the open-relay guard", raw)
+		}
+		if _, dup := seen[norm]; dup {
+			return fmt.Errorf("duplicate CIDR %q", raw)
+		}
+		seen[norm] = struct{}{}
+	}
+	return nil
+}
+
+// updateUserAnonymousRequest is the JSON body for PATCH /api/v1/users/{id}/anonymous.
+type updateUserAnonymousRequest struct {
+	AnonymousAllowed      bool     `json:"anonymous_allowed"`
+	AnonymousAllowedCidrs []string `json:"anonymous_allowed_cidrs"`
+}
+
+// UpdateUserAnonymousHandler handles PATCH /api/v1/users/{id}/anonymous.
+// Updates the anonymous SMTP submission settings for an smtp account.
+// Only works for account_type == "smtp"; returns 400 otherwise.
+// Requires owner or admin role (same auth enforcement as UpdateUserStatusHandler).
+func UpdateUserAnonymousHandler(queries storage.Querier, auditLogger *auth.AuditLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid user ID format")
+			return
+		}
+
+		var req updateUserAnonymousRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		if err := validateAnonymousCIDRs(req.AnonymousAllowed, req.AnonymousAllowedCidrs); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		// Fetch the user to confirm account_type before updating.
+		existing, err := queries.GetUserByID(r.Context(), id)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		if existing.AccountType != "smtp" {
+			respondError(w, http.StatusBadRequest, "anonymous settings can only be configured for smtp accounts")
+			return
+		}
+
+		cidrsJSON, err := json.Marshal(req.AnonymousAllowedCidrs)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "internal server error")
+			return
+		}
+
+		user, err := queries.UpdateUserAnonymous(r.Context(), storage.UpdateUserAnonymousParams{
+			ID:                    id,
+			AnonymousAllowed:      req.AnonymousAllowed,
+			AnonymousAllowedCidrs: cidrsJSON,
+		})
+		if err != nil {
+			respondError(w, http.StatusNotFound, "user not found")
+			return
+		}
+
+		if auditLogger != nil {
+			auditLogger.LogAdminAction(r.Context(), r, "admin.update_anonymous_smtp", "user", id.String(), map[string]interface{}{
+				"anonymous_allowed":       req.AnonymousAllowed,
+				"anonymous_allowed_cidrs": req.AnonymousAllowedCidrs,
+			})
 		}
 
 		respondJSON(w, http.StatusOK, toUserResponse(user))

@@ -110,6 +110,7 @@ func NewRouterWithConfig(cfg RouterConfig) *chi.Mux {
 			r.Post("/{id}/restore", RestoreUserHandler(cfg.Queries, cfg.AuditLogger))
 			r.Post("/{id}/reset-password", ResetPasswordHandler(cfg.Queries, cfg.AuditLogger))
 			r.Patch("/{id}/password-disabled", UpdatePasswordDisabledHandler(cfg.Queries, cfg.AuditLogger))
+			r.Patch("/{id}/anonymous", UpdateUserAnonymousHandler(cfg.Queries, cfg.AuditLogger))
 			r.Get("/{id}/memberships", ListUserMembershipsHandler(cfg.Queries))
 			r.Post("/{id}/reset-api-key", ResetAPIKeyHandler(cfg.Queries, cfg.AuditLogger))
 

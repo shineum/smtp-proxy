@@ -492,3 +492,194 @@ func TestDeleteUserHandler_Success(t *testing.T) {
 		t.Error("expected SoftDeleteUser to be called")
 	}
 }
+
+// --- Anonymous SMTP handler tests ---
+
+// makeAnonymousRequest builds a PATCH /{id}/anonymous request with a chi route context.
+func makeAnonymousRequest(t *testing.T, userID uuid.UUID, body string, ctx context.Context) (*httptest.ResponseRecorder, *http.Request) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+userID.String()+"/anonymous", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", userID.String())
+	req = req.WithContext(context.WithValue(ctx, chi.RouteCtxKey, rctx))
+
+	return httptest.NewRecorder(), req
+}
+
+func smtpTestUser() storage.User {
+	u := testUser()
+	u.AccountType = "smtp"
+	return u
+}
+
+func TestUpdateUserAnonymousHandler_Success(t *testing.T) {
+	usr := smtpTestUser()
+	groupID := testGroup().ID
+
+	var capturedArg storage.UpdateUserAnonymousParams
+	mock := &mockQuerier{
+		getUserByIDFn: func(_ context.Context, id uuid.UUID) (storage.User, error) {
+			return usr, nil
+		},
+		updateUserAnonymousFn: func(_ context.Context, arg storage.UpdateUserAnonymousParams) (storage.User, error) {
+			capturedArg = arg
+			usr.AnonymousAllowed = arg.AnonymousAllowed
+			usr.AnonymousAllowedCidrs = arg.AnonymousAllowedCidrs
+			return usr, nil
+		},
+	}
+
+	body := `{"anonymous_allowed":true,"anonymous_allowed_cidrs":["10.1.1.0/24","10.2.0.0/16"]}`
+	ctx := setJWTContext(context.Background(), usr.ID, groupID, "admin", "organization")
+	rec, req := makeAnonymousRequest(t, usr.ID, body, ctx)
+
+	UpdateUserAnonymousHandler(mock, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+	if !capturedArg.AnonymousAllowed {
+		t.Error("expected AnonymousAllowed=true to be passed to query")
+	}
+
+	var resp userResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.AnonymousAllowed {
+		t.Error("expected anonymous_allowed=true in response")
+	}
+	if len(resp.AnonymousAllowedCidrs) != 2 {
+		t.Errorf("expected 2 CIDRs in response, got %d", len(resp.AnonymousAllowedCidrs))
+	}
+}
+
+func TestUpdateUserAnonymousHandler_EmptyCIDRsWhenAllowed(t *testing.T) {
+	usr := smtpTestUser()
+	groupID := testGroup().ID
+	mock := &mockQuerier{
+		getUserByIDFn: func(_ context.Context, _ uuid.UUID) (storage.User, error) {
+			return usr, nil
+		},
+	}
+
+	body := `{"anonymous_allowed":true,"anonymous_allowed_cidrs":[]}`
+	ctx := setJWTContext(context.Background(), usr.ID, groupID, "admin", "organization")
+	rec, req := makeAnonymousRequest(t, usr.ID, body, ctx)
+
+	UpdateUserAnonymousHandler(mock, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty CIDRs with allowed=true, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateUserAnonymousHandler_MalformedCIDR(t *testing.T) {
+	usr := smtpTestUser()
+	groupID := testGroup().ID
+	mock := &mockQuerier{
+		getUserByIDFn: func(_ context.Context, _ uuid.UUID) (storage.User, error) {
+			return usr, nil
+		},
+	}
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"not-a-cidr", `{"anonymous_allowed":true,"anonymous_allowed_cidrs":["not-a-cidr"]}`},
+		{"bad-prefix-length", `{"anonymous_allowed":true,"anonymous_allowed_cidrs":["10.1.1.0/99"]}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := setJWTContext(context.Background(), usr.ID, groupID, "admin", "organization")
+			rec, req := makeAnonymousRequest(t, usr.ID, tt.body, ctx)
+			UpdateUserAnonymousHandler(mock, nil).ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for %s, got %d; body: %s", tt.name, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestUpdateUserAnonymousHandler_DuplicateCIDR(t *testing.T) {
+	usr := smtpTestUser()
+	groupID := testGroup().ID
+	mock := &mockQuerier{
+		getUserByIDFn: func(_ context.Context, _ uuid.UUID) (storage.User, error) {
+			return usr, nil
+		},
+	}
+
+	body := `{"anonymous_allowed":true,"anonymous_allowed_cidrs":["10.1.1.0/24","10.1.1.0/24"]}`
+	ctx := setJWTContext(context.Background(), usr.ID, groupID, "admin", "organization")
+	rec, req := makeAnonymousRequest(t, usr.ID, body, ctx)
+
+	UpdateUserAnonymousHandler(mock, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for duplicate CIDR, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateUserAnonymousHandler_CatchAllCIDRRejected(t *testing.T) {
+	usr := smtpTestUser()
+	groupID := testGroup().ID
+	mock := &mockQuerier{
+		getUserByIDFn: func(_ context.Context, _ uuid.UUID) (storage.User, error) {
+			return usr, nil
+		},
+	}
+
+	body := `{"anonymous_allowed":true,"anonymous_allowed_cidrs":["0.0.0.0/0"]}`
+	ctx := setJWTContext(context.Background(), usr.ID, groupID, "admin", "organization")
+	rec, req := makeAnonymousRequest(t, usr.ID, body, ctx)
+
+	UpdateUserAnonymousHandler(mock, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for 0.0.0.0/0, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateUserAnonymousHandler_NonSMTPAccount(t *testing.T) {
+	usr := testUser() // account_type = "user"
+	groupID := testGroup().ID
+	mock := &mockQuerier{
+		getUserByIDFn: func(_ context.Context, _ uuid.UUID) (storage.User, error) {
+			return usr, nil
+		},
+	}
+
+	body := `{"anonymous_allowed":true,"anonymous_allowed_cidrs":["10.1.1.0/24"]}`
+	ctx := setJWTContext(context.Background(), usr.ID, groupID, "admin", "organization")
+	rec, req := makeAnonymousRequest(t, usr.ID, body, ctx)
+
+	UpdateUserAnonymousHandler(mock, nil).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-smtp account, got %d; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestToUserResponse_AnonymousFields(t *testing.T) {
+	cidrsJSON := []byte(`["10.1.1.0/24","192.168.0.0/16"]`)
+	usr := smtpTestUser()
+	usr.AnonymousAllowed = true
+	usr.AnonymousAllowedCidrs = cidrsJSON
+
+	resp := toUserResponse(usr)
+
+	if !resp.AnonymousAllowed {
+		t.Error("expected AnonymousAllowed=true in response")
+	}
+	if len(resp.AnonymousAllowedCidrs) != 2 {
+		t.Errorf("expected 2 CIDRs, got %d", len(resp.AnonymousAllowedCidrs))
+	}
+	if resp.AnonymousAllowedCidrs[0] != "10.1.1.0/24" {
+		t.Errorf("unexpected CIDR[0]: %s", resp.AnonymousAllowedCidrs[0])
+	}
+}

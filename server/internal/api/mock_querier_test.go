@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,9 +28,10 @@ type mockQuerier struct {
 	getAPIKeyByPrefixFn func(ctx context.Context, keyPrefix string) (storage.ApiKey, error)
 	createAPIKeyFn      func(ctx context.Context, arg storage.CreateAPIKeyParams) (storage.ApiKey, error)
 	listUsersFn        func(ctx context.Context) ([]storage.User, error)
-	updateUserFn         func(ctx context.Context, arg storage.UpdateUserParams) (storage.User, error)
-	updateUserProviderFn func(ctx context.Context, arg storage.UpdateUserProviderParams) (storage.User, error)
-	updateUserStatusFn   func(ctx context.Context, arg storage.UpdateUserStatusParams) (storage.User, error)
+	updateUserFn              func(ctx context.Context, arg storage.UpdateUserParams) (storage.User, error)
+	updateUserProviderFn      func(ctx context.Context, arg storage.UpdateUserProviderParams) (storage.User, error)
+	updateUserStatusFn        func(ctx context.Context, arg storage.UpdateUserStatusParams) (storage.User, error)
+	updateUserAnonymousFn     func(ctx context.Context, arg storage.UpdateUserAnonymousParams) (storage.User, error)
 	deleteUserFn       func(ctx context.Context, id uuid.UUID) error
 	softDeleteUserFn   func(ctx context.Context, id uuid.UUID) (storage.User, error)
 
@@ -180,6 +182,13 @@ func (m *mockQuerier) UpdateUser(ctx context.Context, arg storage.UpdateUserPara
 }
 
 func (m *mockQuerier) UpdatePasswordDisabled(_ context.Context, _ storage.UpdatePasswordDisabledParams) (storage.User, error) {
+	return storage.User{}, nil
+}
+
+func (m *mockQuerier) UpdateUserAnonymous(ctx context.Context, arg storage.UpdateUserAnonymousParams) (storage.User, error) {
+	if m.updateUserAnonymousFn != nil {
+		return m.updateUserAnonymousFn(ctx, arg)
+	}
 	return storage.User{}, nil
 }
 
@@ -808,6 +817,10 @@ func testRoutingRule() storage.RoutingRule {
 
 func (m *mockQuerier) GetUserByUsernameAndGroupID(_ context.Context, _ storage.GetUserByUsernameAndGroupIDParams) (storage.User, error) {
 	return storage.User{}, nil
+}
+
+func (m *mockQuerier) ResolveAnonymousSMTPByIP(_ context.Context, _ netip.Addr) ([]storage.User, error) {
+	return nil, nil
 }
 
 func (m *mockQuerier) SoftDeleteUser(ctx context.Context, id uuid.UUID) (storage.User, error) {

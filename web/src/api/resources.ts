@@ -82,6 +82,11 @@ export const fetchUserMemberships = async (id: string): Promise<Membership[]> =>
   (await api.get(`/users/${id}/memberships`)).data;
 export const updatePasswordDisabled = async (id: string, password_disabled: boolean): Promise<User> =>
   (await api.patch(`/users/${id}/password-disabled`, { password_disabled })).data;
+export const updateUserAnonymous = async (
+  id: string,
+  data: { anonymous_allowed: boolean; anonymous_allowed_cidrs: string[] }
+): Promise<User> =>
+  (await api.patch(`/users/${id}/anonymous`, data)).data;
 
 // Providers
 export const fetchProviders = async (groupId?: string): Promise<Provider[]> =>

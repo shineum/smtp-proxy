@@ -29,6 +29,8 @@ export interface User {
   description?: string;
   api_key_expires_at?: string;
   deleted_at?: string;
+  anonymous_allowed?: boolean;
+  anonymous_allowed_cidrs?: string[];
 }
 
 export interface Group {

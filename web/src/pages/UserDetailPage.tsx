@@ -6,9 +6,10 @@ import {
   DescriptionListTerm, DescriptionListDescription, Label, Spinner,
   Button, Modal, ModalVariant,
   Form, FormGroup, TextInput, FormSelect, FormSelectOption,
+  Switch, TextArea, HelperText, HelperTextItem,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
-import { fetchUser, resetUserPassword, fetchUserMemberships, fetchGroups, addGroupMember, removeMember, updateMemberRole, updatePasswordDisabled } from '../api/resources';
+import { fetchUser, resetUserPassword, fetchUserMemberships, fetchGroups, addGroupMember, removeMember, updateMemberRole, updatePasswordDisabled, updateUserAnonymous } from '../api/resources';
 import { useAuth } from '../context/AuthContext';
 
 export default function UserDetailPage() {
@@ -20,6 +21,10 @@ export default function UserDetailPage() {
   const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
   const [addGroupForm, setAddGroupForm] = useState({ group_id: '', role: 'member' });
   const [editingMembership, setEditingMembership] = useState<{ groupId: string; role: string } | null>(null);
+  const [isAnonOpen, setIsAnonOpen] = useState(false);
+  const [anonAllowed, setAnonAllowed] = useState(false);
+  const [anonCidrs, setAnonCidrs] = useState('');
+  const [anonValidationError, setAnonValidationError] = useState('');
 
   const { data: user, isLoading } = useQuery({
     queryKey: ['user', id],
@@ -73,6 +78,59 @@ export default function UserDetailPage() {
       setEditingMembership(null);
     },
   });
+
+  const updateAnonMutation = useMutation({
+    mutationFn: (data: { anonymous_allowed: boolean; anonymous_allowed_cidrs: string[] }) =>
+      updateUserAnonymous(id!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['user', id] });
+      setIsAnonOpen(false);
+    },
+  });
+
+  // Parse and validate CIDRs client-side (mirrors server rules)
+  function parseCidrs(raw: string): { cidrs: string[]; error: string } {
+    if (!raw.trim()) return { cidrs: [], error: '' };
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    const seen = new Set<string>();
+    const cidrRe = /^([0-9a-fA-F:.]+)\/(\d+)$/;
+    for (const entry of lines) {
+      if (!cidrRe.test(entry)) return { cidrs: [], error: `Invalid CIDR format: ${entry}` };
+      const m = entry.match(cidrRe)!;
+      const prefix = parseInt(m[2], 10);
+      const isIPv6 = entry.includes(':');
+      const maxPrefix = isIPv6 ? 128 : 32;
+      if (prefix < 0 || prefix > maxPrefix) return { cidrs: [], error: `Prefix out of range: ${entry}` };
+      if (entry === '0.0.0.0/0' || entry === '::/0') return { cidrs: [], error: `Catch-all prefix not allowed: ${entry}` };
+      if (seen.has(entry)) return { cidrs: [], error: `Duplicate CIDR: ${entry}` };
+      seen.add(entry);
+    }
+    if (lines.length > 64) return { cidrs: [], error: 'Maximum 64 CIDR entries allowed' };
+    return { cidrs: lines, error: '' };
+  }
+
+  function openAnonModal() {
+    setAnonAllowed(user?.anonymous_allowed ?? false);
+    setAnonCidrs((user?.anonymous_allowed_cidrs ?? []).join('\n'));
+    setAnonValidationError('');
+    updateAnonMutation.reset();
+    setIsAnonOpen(true);
+  }
+
+  function handleAnonSave() {
+    const { cidrs, error } = parseCidrs(anonCidrs);
+    if (anonAllowed && cidrs.length === 0) {
+      setAnonValidationError(error || 'At least one CIDR is required when anonymous access is enabled.');
+      return;
+    }
+    if (!anonAllowed && anonCidrs.trim()) {
+      setAnonValidationError('Clear the CIDR list when disabling anonymous access.');
+      return;
+    }
+    if (error) { setAnonValidationError(error); return; }
+    setAnonValidationError('');
+    updateAnonMutation.mutate({ anonymous_allowed: anonAllowed, anonymous_allowed_cidrs: cidrs });
+  }
 
   if (isLoading || !user) return <PageSection><Spinner size="xl" /></PageSection>;
 
@@ -147,6 +205,37 @@ export default function UserDetailPage() {
                 <DescriptionListTerm>API Key</DescriptionListTerm>
                 <DescriptionListDescription><code>{user.api_key}</code></DescriptionListDescription>
               </DescriptionListGroup>
+            )}
+            {user.account_type === 'smtp' && (
+              <>
+                <DescriptionListGroup>
+                  <DescriptionListTerm>Anonymous SMTP</DescriptionListTerm>
+                  <DescriptionListDescription>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Label color={user.anonymous_allowed ? 'green' : 'grey'}>
+                        {user.anonymous_allowed ? 'Allowed' : 'Disabled'}
+                      </Label>
+                      {isSystemAdmin && (
+                        <Button variant="secondary" size="sm" onClick={openAnonModal}>
+                          Edit anonymous access
+                        </Button>
+                      )}
+                    </span>
+                  </DescriptionListDescription>
+                </DescriptionListGroup>
+                {user.anonymous_allowed && user.anonymous_allowed_cidrs && user.anonymous_allowed_cidrs.length > 0 && (
+                  <DescriptionListGroup>
+                    <DescriptionListTerm>Allowed CIDRs</DescriptionListTerm>
+                    <DescriptionListDescription>
+                      <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {user.anonymous_allowed_cidrs.map(cidr => (
+                          <Label key={cidr} color="cyan">{cidr}</Label>
+                        ))}
+                      </span>
+                    </DescriptionListDescription>
+                  </DescriptionListGroup>
+                )}
+              </>
             )}
             <DescriptionListGroup>
               <DescriptionListTerm>Last Login</DescriptionListTerm>
@@ -267,6 +356,73 @@ export default function UserDetailPage() {
           <FormGroup label="New Password" isRequired fieldId="new-password">
             <TextInput id="new-password" type="password" value={newPassword} onChange={(_e, v) => setNewPassword(v)} isRequired />
           </FormGroup>
+        </Form>
+      </Modal>
+
+      {/* Anonymous Access Modal */}
+      <Modal
+        variant={ModalVariant.small}
+        title="Edit Anonymous SMTP Access"
+        isOpen={isAnonOpen}
+        onClose={() => setIsAnonOpen(false)}
+        actions={[
+          <Button
+            key="save"
+            variant="primary"
+            onClick={handleAnonSave}
+            isDisabled={updateAnonMutation.isPending}
+          >
+            {updateAnonMutation.isPending ? 'Saving...' : 'Save'}
+          </Button>,
+          <Button key="cancel" variant="link" onClick={() => setIsAnonOpen(false)}>Cancel</Button>,
+        ]}
+      >
+        <Form>
+          <FormGroup fieldId="anon-switch" label="Allow anonymous submissions">
+            <Switch
+              id="anon-switch"
+              isChecked={anonAllowed}
+              onChange={(_e, checked) => {
+                setAnonAllowed(checked);
+                if (!checked) setAnonCidrs('');
+                setAnonValidationError('');
+              }}
+              label="Enabled"
+              labelOff="Disabled"
+            />
+          </FormGroup>
+          {anonAllowed && (
+            <FormGroup
+              label="Allowed CIDRs (one per line)"
+              isRequired
+              fieldId="anon-cidrs"
+            >
+              <TextArea
+                id="anon-cidrs"
+                value={anonCidrs}
+                onChange={(_e, v) => { setAnonCidrs(v); setAnonValidationError(''); }}
+                rows={6}
+                placeholder={"10.1.1.0/24\n192.168.0.0/16"}
+                validated={anonValidationError ? 'error' : 'default'}
+              />
+              <HelperText>
+                <HelperTextItem>
+                  Enter IPv4 or IPv6 CIDR prefixes, one per line. Max 64 entries. Catch-all (0.0.0.0/0, ::/0) not permitted.
+                </HelperTextItem>
+              </HelperText>
+            </FormGroup>
+          )}
+          {(anonValidationError || updateAnonMutation.isError) && (
+            <HelperText>
+              <HelperTextItem variant="error">
+                {anonValidationError ||
+                  (() => {
+                    const err = updateAnonMutation.error as { response?: { data?: { error?: string } } };
+                    return err?.response?.data?.error ?? 'An error occurred. Please try again.';
+                  })()}
+              </HelperTextItem>
+            </HelperText>
+          )}
         </Form>
       </Modal>
 

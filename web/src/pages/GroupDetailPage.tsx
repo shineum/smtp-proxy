@@ -6,13 +6,14 @@ import {
   DescriptionListTerm, DescriptionListDescription, Label, Spinner,
   Button, Modal, ModalVariant, Form, FormGroup, TextInput,
   FormSelect, FormSelectOption, ClipboardCopy, Switch,
+  TextArea, HelperText, HelperTextItem,
 } from '@patternfly/react-core';
 import { Table, Thead, Tr, Th, Tbody, Td } from '@patternfly/react-table';
 import { useState, useEffect } from 'react';
 import {
   fetchGroup, fetchGroupMembers, fetchActivityLogs,
   addGroupMember, removeMember, updateMemberRole,
-  createServiceAccount, updateServiceAccount, fetchUser,
+  createServiceAccount, updateServiceAccount, updateUserAnonymous, fetchUser,
   fetchProviders, updateGroup,
   fetchApiKeys, createApiKey, updateApiKeyStatus, deleteApiKey,
   fetchProviderFallbacks, createProviderFallback, deleteProviderFallback,
@@ -38,6 +39,9 @@ export default function GroupDetailPage() {
   const [editSAUserId, setEditSAUserId] = useState('');
   const [editSADomains, setEditSADomains] = useState('');
   const [editSAProviderId, setEditSAProviderId] = useState('');
+  const [editSAAnonAllowed, setEditSAAnonAllowed] = useState(false);
+  const [editSAAnonCidrs, setEditSAAnonCidrs] = useState('');
+  const [editSAAnonError, setEditSAAnonError] = useState('');
 
   // Add member state
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
@@ -181,18 +185,59 @@ export default function GroupDetailPage() {
   });
 
   const editSAMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async (cidrs: string[]) => {
       const domains = editSADomains.trim() ? editSADomains.split(',').map(d => d.trim()).filter(Boolean) : [];
-      return updateServiceAccount(id!, editSAUserId, {
+      await updateServiceAccount(id!, editSAUserId, {
         allowed_domains: domains,
         provider_id: editSAProviderId || undefined,
+      });
+      await updateUserAnonymous(editSAUserId, {
+        anonymous_allowed: editSAAnonAllowed,
+        anonymous_allowed_cidrs: cidrs,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['group-members', id] });
+      queryClient.invalidateQueries({ queryKey: ['user', editSAUserId] });
       setIsEditSAOpen(false);
     },
   });
+
+  // Parse and validate CIDRs client-side (mirrors server validateAnonymousCIDRs rules)
+  function parseSAAnonCidrs(raw: string): { cidrs: string[]; error: string } {
+    if (!raw.trim()) return { cidrs: [], error: '' };
+    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    const seen = new Set<string>();
+    const cidrRe = /^([0-9a-fA-F:.]+)\/(\d+)$/;
+    for (const entry of lines) {
+      if (!cidrRe.test(entry)) return { cidrs: [], error: `Invalid CIDR format: ${entry}` };
+      const m = entry.match(cidrRe)!;
+      const prefix = parseInt(m[2], 10);
+      const isIPv6 = entry.includes(':');
+      const maxPrefix = isIPv6 ? 128 : 32;
+      if (prefix < 0 || prefix > maxPrefix) return { cidrs: [], error: `Prefix out of range: ${entry}` };
+      if (entry === '0.0.0.0/0' || entry === '::/0') return { cidrs: [], error: `Catch-all prefix not allowed: ${entry}` };
+      if (seen.has(entry)) return { cidrs: [], error: `Duplicate CIDR: ${entry}` };
+      seen.add(entry);
+    }
+    if (lines.length > 64) return { cidrs: [], error: 'Maximum 64 CIDR entries allowed' };
+    return { cidrs: lines, error: '' };
+  }
+
+  function handleEditSASave() {
+    const { cidrs, error } = parseSAAnonCidrs(editSAAnonCidrs);
+    if (editSAAnonAllowed && cidrs.length === 0) {
+      setEditSAAnonError(error || 'At least one CIDR is required when anonymous access is enabled.');
+      return;
+    }
+    if (!editSAAnonAllowed && editSAAnonCidrs.trim()) {
+      setEditSAAnonError('Clear the CIDR list when disabling anonymous access.');
+      return;
+    }
+    if (error) { setEditSAAnonError(error); return; }
+    setEditSAAnonError('');
+    editSAMutation.mutate(cidrs);
+  }
 
   const createKeyMutation = useMutation({
     mutationFn: () => createApiKey(id!, createKeyUserId, {
@@ -225,10 +270,16 @@ export default function GroupDetailPage() {
       const user = await fetchUser(userId);
       setEditSADomains(user.allowed_domains?.join(', ') || '');
       setEditSAProviderId(user.provider_id || '');
+      setEditSAAnonAllowed(user.anonymous_allowed ?? false);
+      setEditSAAnonCidrs((user.anonymous_allowed_cidrs ?? []).join('\n'));
     } catch {
       setEditSADomains('');
       setEditSAProviderId('');
+      setEditSAAnonAllowed(false);
+      setEditSAAnonCidrs('');
     }
+    setEditSAAnonError('');
+    editSAMutation.reset();
     setIsEditSAOpen(true);
   };
 
@@ -649,7 +700,7 @@ export default function GroupDetailPage() {
         isOpen={isEditSAOpen}
         onClose={() => setIsEditSAOpen(false)}
         actions={[
-          <Button key="save" onClick={() => editSAMutation.mutate()} isDisabled={editSAMutation.isPending}>
+          <Button key="save" onClick={handleEditSASave} isDisabled={editSAMutation.isPending}>
             {editSAMutation.isPending ? 'Saving...' : 'Save'}
           </Button>,
           <Button key="cancel" variant="link" onClick={() => setIsEditSAOpen(false)}>Cancel</Button>,
@@ -667,8 +718,46 @@ export default function GroupDetailPage() {
               ))}
             </FormSelect>
           </FormGroup>
-          {editSAMutation.isError && (
-            <p className="feedback-message feedback-message--error">Failed to update service account.</p>
+          <FormGroup fieldId="edit-sa-anon-switch" label="Allow anonymous submissions">
+            <Switch
+              id="edit-sa-anon-switch"
+              isChecked={editSAAnonAllowed}
+              onChange={(_e, checked) => {
+                setEditSAAnonAllowed(checked);
+                if (!checked) setEditSAAnonCidrs('');
+                setEditSAAnonError('');
+              }}
+              label="Enabled"
+              labelOff="Disabled"
+            />
+          </FormGroup>
+          {editSAAnonAllowed && (
+            <FormGroup label="Allowed CIDRs (one per line)" isRequired fieldId="edit-sa-anon-cidrs">
+              <TextArea
+                id="edit-sa-anon-cidrs"
+                value={editSAAnonCidrs}
+                onChange={(_e, v) => { setEditSAAnonCidrs(v); setEditSAAnonError(''); }}
+                rows={6}
+                placeholder={"10.1.1.0/24\n192.168.0.0/16"}
+                validated={editSAAnonError ? 'error' : 'default'}
+              />
+              <HelperText>
+                <HelperTextItem>
+                  Enter IPv4 or IPv6 CIDR prefixes, one per line. Max 64 entries. Catch-all (0.0.0.0/0, ::/0) not permitted.
+                </HelperTextItem>
+              </HelperText>
+            </FormGroup>
+          )}
+          {(editSAAnonError || editSAMutation.isError) && (
+            <HelperText>
+              <HelperTextItem variant="error">
+                {editSAAnonError ||
+                  (() => {
+                    const err = editSAMutation.error as { response?: { data?: { error?: string } } } | null;
+                    return err?.response?.data?.error ?? 'Failed to update service account.';
+                  })()}
+              </HelperTextItem>
+            </HelperText>
           )}
         </Form>
       </Modal>

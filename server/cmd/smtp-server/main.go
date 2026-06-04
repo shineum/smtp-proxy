@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	gosmtp "github.com/emersion/go-smtp"
 
 	"github.com/sungwon/smtp-proxy/server/internal/config"
@@ -86,28 +88,70 @@ func main() {
 	s.WriteTimeout = cfg.SMTP.WriteTimeout
 	s.MaxMessageBytes = cfg.SMTP.MaxMessageSize
 	// Configure TLS based on mode.
+	// The tls.mode == "none" path is intentionally unchanged (NLB/proxy TLS termination).
 	if cfg.TLS.Mode == "none" {
 		s.AllowInsecureAuth = true
 		log.Warn().Msg("TLS disabled (mode=none); ensure TLS is terminated upstream (NLB/proxy)")
 	} else {
 		s.AllowInsecureAuth = false
-		var cert tls.Certificate
+
+		// Precedence:
+		//   1. CertFile+KeyFile set → use file cert (static, no hot-reload).
+		//   2. SecretID set          → use Secrets Manager provider (hot-reload).
+		//   3. Neither               → generate and serve a self-signed cert.
 		if cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
+			var cert tls.Certificate
 			cert, err = tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
 			if err != nil {
-				log.Fatal().Err(err).Msg("failed to load TLS certificate")
+				log.Fatal().Err(err).Msg("failed to load TLS certificate from files")
 			}
 			log.Info().Msg("TLS: loaded certificate from files")
-		} else {
-			cert, err = tlsutil.GenerateSelfSigned()
-			if err != nil {
-				log.Fatal().Err(err).Msg("failed to generate self-signed TLS certificate")
+			s.TLSConfig = &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				MinVersion:   tls.VersionTLS12,
 			}
-			log.Info().Msg("TLS: using auto-generated self-signed certificate")
-		}
-		s.TLSConfig = &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
+		} else {
+			// Generate the self-signed certificate once; it is used as the fallback
+			// when Secrets Manager is not configured or a reload/handshake match fails.
+			selfSigned, ssErr := tlsutil.GenerateSelfSigned()
+			if ssErr != nil {
+				log.Fatal().Err(ssErr).Msg("failed to generate self-signed TLS certificate")
+			}
+
+			// Build a cancellable context for the provider reload goroutine.
+			// It will be cancelled on server shutdown.
+			providerCtx, providerCancel := context.WithCancel(ctx)
+
+			var smFetcher tlsutil.SecretsManagerFetcher
+			if cfg.TLS.SecretID != "" {
+				awsCfg, awsErr := awsconfig.LoadDefaultConfig(ctx)
+				if awsErr != nil {
+					log.Fatal().Err(awsErr).Msg("failed to load AWS config for Secrets Manager")
+				}
+				smFetcher = secretsmanager.NewFromConfig(awsCfg)
+				log.Info().Str("secret_id", cfg.TLS.SecretID).Msg("TLS: Secrets Manager provider enabled")
+			} else {
+				log.Info().Msg("TLS: using auto-generated self-signed certificate (no SecretID configured)")
+			}
+
+			reloadInterval := time.Duration(cfg.TLS.ReloadInterval) * time.Hour
+			provider := tlsutil.NewProvider(
+				smFetcher,
+				cfg.TLS.SecretID,
+				cfg.TLS.DefaultCert,
+				reloadInterval,
+				selfSigned,
+				log,
+			)
+			provider.Start(providerCtx)
+
+			s.TLSConfig = &tls.Config{
+				GetCertificate: provider.GetCertificate,
+				MinVersion:     tls.VersionTLS12,
+			}
+
+			// Ensure the provider goroutine stops on shutdown.
+			defer providerCancel()
 		}
 	}
 	s.EnableSMTPUTF8 = true

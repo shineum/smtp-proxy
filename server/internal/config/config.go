@@ -105,6 +105,16 @@ type TLSConfig struct {
 	Mode     string `mapstructure:"mode"`
 	CertFile string `mapstructure:"cert_file"`
 	KeyFile  string `mapstructure:"key_file"`
+	// SecretID is the AWS Secrets Manager secret ID/ARN holding the certificate JSON.
+	// If empty, the Secrets Manager provider is disabled and the server falls back to
+	// file-based or self-signed certificates.
+	SecretID string `mapstructure:"secret_id"`
+	// ReloadInterval is the certificate reload interval in whole hours.
+	// Default is 168 (7 days). Values <= 0 are treated as the default.
+	ReloadInterval int `mapstructure:"reload_interval"`
+	// DefaultCert is the domain key whose certificate is served when a TLS handshake
+	// carries no SNI server name. If empty, the first domain in sorted order is used.
+	DefaultCert string `mapstructure:"default_cert"`
 }
 
 // QueueConfig holds queue configuration for async delivery mode.
@@ -183,6 +193,7 @@ func Load(configPath string) (*Config, error) {
 
 	// Set defaults for TLS configuration.
 	v.SetDefault("tls.mode", "starttls")
+	v.SetDefault("tls.reload_interval", 168)
 
 	// Set defaults for storage configuration.
 	v.SetDefault("storage.type", "local")
@@ -220,6 +231,9 @@ func Load(configPath string) (*Config, error) {
 		// tls
 		{"tls.cert_file", "SMTP_PROXY_TLS_CERT_FILE"},
 		{"tls.key_file", "SMTP_PROXY_TLS_KEY_FILE"},
+		{"tls.secret_id", "SMTP_PROXY_TLS_SECRET_ID"},
+		{"tls.reload_interval", "SMTP_PROXY_TLS_RELOAD_INTERVAL"},
+		{"tls.default_cert", "SMTP_PROXY_TLS_DEFAULT_CERT"},
 		// auth
 		{"auth.signing_key", "SMTP_PROXY_AUTH_SIGNING_KEY"},
 		{"auth.access_token_expiry", "SMTP_PROXY_AUTH_ACCESS_TOKEN_EXPIRY"},

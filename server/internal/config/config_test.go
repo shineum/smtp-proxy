@@ -95,6 +95,15 @@ func TestLoad_ValidConfigFile(t *testing.T) {
 	if cfg.TLS.KeyFile != "" {
 		t.Errorf("expected empty key file, got %s", cfg.TLS.KeyFile)
 	}
+	if cfg.TLS.SecretID != "" {
+		t.Errorf("expected empty TLS secret ID, got %s", cfg.TLS.SecretID)
+	}
+	if cfg.TLS.ReloadInterval != 168 {
+		t.Errorf("expected TLS reload interval 168, got %d", cfg.TLS.ReloadInterval)
+	}
+	if cfg.TLS.DefaultCert != "" {
+		t.Errorf("expected empty TLS default cert, got %s", cfg.TLS.DefaultCert)
+	}
 }
 
 func TestLoad_EnvironmentVariableOverride(t *testing.T) {
@@ -202,6 +211,38 @@ func TestLoad_StorageEnvironmentVariableOverride(t *testing.T) {
 	}
 	if cfg.Storage.Path != "/custom/path" {
 		t.Errorf("expected storage path /custom/path from env override, got %s", cfg.Storage.Path)
+	}
+}
+
+func TestLoad_TLSReloadIntervalDefault(t *testing.T) {
+	cfg, err := Load("../../config")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if cfg.TLS.ReloadInterval != 168 {
+		t.Errorf("expected TLS reload interval default 168, got %d", cfg.TLS.ReloadInterval)
+	}
+}
+
+func TestLoad_TLSEnvVarBindings(t *testing.T) {
+	t.Setenv("SMTP_PROXY_TLS_SECRET_ID", "arn:aws:secretsmanager:us-east-1:123:secret:certs")
+	t.Setenv("SMTP_PROXY_TLS_RELOAD_INTERVAL", "24")
+	t.Setenv("SMTP_PROXY_TLS_DEFAULT_CERT", "smtp.example.com")
+
+	cfg, err := Load("../../config")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if cfg.TLS.SecretID != "arn:aws:secretsmanager:us-east-1:123:secret:certs" {
+		t.Errorf("expected TLS secret ID from env, got %s", cfg.TLS.SecretID)
+	}
+	if cfg.TLS.ReloadInterval != 24 {
+		t.Errorf("expected TLS reload interval 24 from env, got %d", cfg.TLS.ReloadInterval)
+	}
+	if cfg.TLS.DefaultCert != "smtp.example.com" {
+		t.Errorf("expected TLS default cert from env, got %s", cfg.TLS.DefaultCert)
 	}
 }
 

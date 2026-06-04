@@ -94,7 +94,7 @@ queued → processing → delivered
 | Enqueue retry with backoff | Tolerates transient queue failures without losing mail |
 | Row-Level Security | PostgreSQL RLS enforces group-level isolation at the database layer |
 | Unified auth (JWT + API key) | Single middleware accepts both human (JWT) and SMTP (API key) users |
-| Optional TLS with auto-generation | `tls.mode=none` for NLB termination; self-signed auto-generation for dev |
+| Flexible TLS sources | Files, AWS Secrets Manager (hot-reload + SNI), or self-signed auto-generation; `tls.mode=none` for NLB termination |
 
 ## Services
 
@@ -132,7 +132,7 @@ server/
 │   ├── routing/           # Routing engine (primary + fallback providers)
 │   ├── smtp/              # SMTP backend + session (go-smtp)
 │   ├── storage/           # sqlc-generated PostgreSQL queries
-│   ├── tlsutil/           # Self-signed TLS certificate generator
+│   ├── tlsutil/           # TLS certs: self-signed + Secrets Manager provider
 │   └── worker/            # Queue message handler (delivery orchestration)
 ├── migrations/            # 25 up/down SQL migration pairs
 └── config/config.yaml     # Default application config
@@ -171,6 +171,9 @@ cp .env.example .env
 | `SMTP_PROXY_TLS_CERT_FILE` | *(auto-generate)* | Path to TLS certificate |
 | `SMTP_PROXY_TLS_KEY_FILE` | *(auto-generate)* | Path to TLS private key |
 | `SMTP_PROXY_TLS_MODE` | `starttls` | TLS mode: `starttls` or `none` (for NLB/proxy) |
+| `SMTP_PROXY_TLS_SECRET_ID` | *(empty)* | AWS Secrets Manager secret ID/ARN holding TLS certs (hot-reloaded) |
+| `SMTP_PROXY_TLS_RELOAD_INTERVAL` | `168` | Secrets Manager reload interval, in whole hours (default 7 days) |
+| `SMTP_PROXY_TLS_DEFAULT_CERT` | *(empty)* | Domain key served for handshakes without SNI (default: first by sorted order) |
 | `SMTP_PROXY_ADMIN_EMAIL` | `admin@localhost` | System admin email (auto-seeded on startup) |
 | `SMTP_PROXY_ADMIN_PASSWORD` | `admin` | System admin password (auto-seeded on startup) |
 | `SMTP_PROXY_LOGGING_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
@@ -208,6 +211,9 @@ tls:
   mode: "starttls"              # starttls | none (for NLB/proxy)
   cert_file: ""
   key_file: ""
+  secret_id: ""                 # AWS Secrets Manager secret ID/ARN (hot-reload)
+  reload_interval: 168          # Secrets Manager reload interval in hours (7 days)
+  default_cert: ""              # domain served when a handshake omits SNI
 
 delivery:
   mode: "sync"                  # sync | async (requires redis or sqs)
@@ -524,6 +530,62 @@ docker compose run --rm test-client --tls=none
 ```
 
 When `mode=none`, the server skips all certificate loading and allows plaintext authentication. A warning is logged on startup to confirm TLS is disabled.
+
+### Certificate sources (`mode=starttls`)
+
+In `starttls` mode the certificate is resolved by the following precedence:
+
+| Precedence | Condition | Source |
+|------------|-----------|--------|
+| 1 | `SMTP_PROXY_TLS_CERT_FILE` + `SMTP_PROXY_TLS_KEY_FILE` set | Static cert loaded from files (no hot-reload) |
+| 2 | `SMTP_PROXY_TLS_SECRET_ID` set | AWS Secrets Manager (periodic hot-reload) |
+| 3 | neither | Auto-generated in-memory self-signed cert |
+
+#### AWS Secrets Manager (hot-reload)
+
+When `SMTP_PROXY_TLS_SECRET_ID` is set, the server fetches certificates from
+Secrets Manager at startup and reloads them every `SMTP_PROXY_TLS_RELOAD_INTERVAL`
+hours (default 168 = 7 days) **without restarting**. This pairs with an external
+certbot process that publishes renewed certificates to the secret.
+
+The secret value is a JSON object keyed by domain name:
+
+```json
+{
+  "smtp.example.com": {
+    "cert": "<fullchain.pem contents>",
+    "key": "<privkey.pem contents>"
+  }
+}
+```
+
+Generate it from certbot output with `jq`:
+
+```sh
+jq -n --arg name "$DOMAIN" \
+  --rawfile cert "$LIVE/fullchain.pem" \
+  --rawfile key "$LIVE/privkey.pem" \
+  '{ ($name): { cert: $cert, key: $key } }' > sm_value.json
+```
+
+Behavior:
+
+- **Multi-domain / SNI**: the secret may hold multiple domains. The handshake's
+  SNI selects the matching certificate; a non-matching SNI falls back to
+  self-signed for that connection.
+- **No SNI** (common for SMTP clients): the `SMTP_PROXY_TLS_DEFAULT_CERT` domain
+  is served, or the first domain in sorted order if unset.
+- **Graceful fallback**: if the secret is missing, unreadable, or invalid at
+  startup, the server logs a warning and serves a self-signed certificate.
+- **Last-good retention**: if a periodic reload fails, the previously loaded
+  certificate is kept (never downgraded to self-signed mid-traffic); the next
+  interval retries. A self-signed start is promoted automatically once a later
+  reload succeeds.
+- **Partial-failure isolation**: an invalid entry in a multi-domain secret is
+  skipped while valid entries continue to be served.
+
+The ECS task role (or instance/credentials chain) must grant
+`secretsmanager:GetSecretValue` on the secret.
 
 ## Test Client
 
